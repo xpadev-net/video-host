@@ -4,6 +4,7 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import { type FC, type FormEvent, useState } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
+import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useSelf } from "@/hooks/useUser";
 
@@ -12,6 +13,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
 const NewPlaylistPage: FC = () => {
   const router = useRouter();
   const token = useAtomValue(AuthTokenAtom);
+  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const { data: user, isLoading } = useSelf();
 
   const [title, setTitle] = useState("");
@@ -31,8 +33,13 @@ const NewPlaylistPage: FC = () => {
 
     try {
       await axios.post(
-        `${API_URL}/api/v4/playlists`,
-        { title: title.trim(), description: description.trim(), visibility },
+        `${API_URL}playlists`,
+        {
+          title: title.trim(),
+          description: description.trim(),
+          visibility,
+          ...(selectedAccountId && { asUserId: selectedAccountId }),
+        },
         { headers: { Authorization: `Bearer ${token}` } },
       );
       router.push("/dashboard/playlists");

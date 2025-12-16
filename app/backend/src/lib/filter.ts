@@ -10,6 +10,7 @@ export const filterUser = (user: FilteredUser): FilteredUser => {
   return {
     id: user.id,
     name: user.name,
+    role: user.role,
     avatarUrl: user.avatarUrl,
   };
 };

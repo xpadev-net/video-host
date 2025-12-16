@@ -26,7 +26,7 @@ const EditSeriesPage: FC = () => {
     if (!id || !token) return;
     const fetchSeries = async () => {
       try {
-        const res = await axios.get(`${API_URL}/api/v4/series/${id}`, {
+        const res = await axios.get(`${API_URL}series/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = res.data.data;
@@ -51,7 +51,7 @@ const EditSeriesPage: FC = () => {
 
     try {
       await axios.patch(
-        `${API_URL}/api/v4/series/${id}`,
+        `${API_URL}series/${id}`,
         { title: title.trim(), description: description.trim(), visibility },
         { headers: { Authorization: `Bearer ${token}` } },
       );

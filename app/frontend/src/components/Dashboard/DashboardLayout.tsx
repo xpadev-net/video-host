@@ -2,6 +2,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import type { FC, ReactNode } from "react";
 import { useSelf } from "@/hooks/useUser";
+import { AccountSwitcher } from "./AccountSwitcher";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -36,6 +37,7 @@ export const DashboardLayout: FC<DashboardLayoutProps> = ({ children }) => {
             ← サイトに戻る
           </Link>
         </div>
+        <AccountSwitcher />
         <nav className="dashboard-nav">
           {navItems.map((item) => (
             <Link

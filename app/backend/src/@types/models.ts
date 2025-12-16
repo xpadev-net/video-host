@@ -3,6 +3,7 @@ import { z } from "zod";
 export type FilteredUser = {
   id: string;
   name: string;
+  role: "USER" | "ADMIN";
   avatarUrl?: string | null;
 };
 

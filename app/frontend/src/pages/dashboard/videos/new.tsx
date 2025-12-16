@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
+import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useUpload } from "@/hooks/useUpload";
 import { useSelf } from "@/hooks/useUser";
@@ -19,6 +20,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
 const NewVideoPage: FC = () => {
   const router = useRouter();
   const token = useAtomValue(AuthTokenAtom);
+  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const { data: user, isLoading: isUserLoading } = useSelf();
   const { upload, state: uploadState, reset: resetUpload } = useUpload();
 
@@ -67,6 +69,7 @@ const NewVideoPage: FC = () => {
           description: description.trim(),
           s3Key,
           visibility,
+          ...(selectedAccountId && { asUserId: selectedAccountId }),
         },
         {
           headers: {

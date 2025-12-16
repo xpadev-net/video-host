@@ -38,7 +38,7 @@ const EditPlaylistPage: FC = () => {
     if (!id || !token) return;
     const fetchPlaylist = async () => {
       try {
-        const res = await axios.get(`${API_URL}/api/v4/playlists/${id}`, {
+        const res = await axios.get(`${API_URL}playlists/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = res.data.data;
@@ -64,7 +64,7 @@ const EditPlaylistPage: FC = () => {
 
     try {
       await axios.patch(
-        `${API_URL}/api/v4/playlists/${id}`,
+        `${API_URL}playlists/${id}`,
         { title: title.trim(), description: description.trim(), visibility },
         { headers: { Authorization: `Bearer ${token}` } },
       );
@@ -77,12 +77,9 @@ const EditPlaylistPage: FC = () => {
 
   const handleRemoveMovie = async (movieId: string) => {
     try {
-      await axios.delete(
-        `${API_URL}/api/v4/playlists/${id}/movies/${movieId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      await axios.delete(`${API_URL}playlists/${id}/movies/${movieId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       setMovies((prev) => prev.filter((m) => m.movie.id !== movieId));
     } catch {
       alert("動画の削除に失敗しました");

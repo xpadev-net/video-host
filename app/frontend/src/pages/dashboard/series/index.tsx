@@ -21,7 +21,7 @@ const SeriesPage: FC = () => {
 
     setDeletingId(id);
     try {
-      await axios.delete(`${API_URL}/api/v4/series/${id}`, {
+      await axios.delete(`${API_URL}series/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       mutate();

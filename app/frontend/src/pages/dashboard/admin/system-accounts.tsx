@@ -36,7 +36,7 @@ const SystemAccountsPage: FC = () => {
 
     try {
       await axios.post(
-        `${API_URL}/api/v4/system-accounts`,
+        `${API_URL}system-accounts`,
         { username: username.trim(), name: name.trim() },
         { headers: { Authorization: `Bearer ${token}` } },
       );
@@ -60,7 +60,7 @@ const SystemAccountsPage: FC = () => {
 
     setDeletingId(id);
     try {
-      await axios.delete(`${API_URL}/api/v4/system-accounts/${id}`, {
+      await axios.delete(`${API_URL}system-accounts/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       mutate();

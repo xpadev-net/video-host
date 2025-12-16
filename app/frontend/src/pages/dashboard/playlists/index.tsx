@@ -20,7 +20,7 @@ const PlaylistsPage: FC = () => {
     if (!confirm("このプレイリストを削除しますか？")) return;
     setDeletingId(id);
     try {
-      await axios.delete(`${API_URL}/api/v4/playlists/${id}`, {
+      await axios.delete(`${API_URL}playlists/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       mutate();
