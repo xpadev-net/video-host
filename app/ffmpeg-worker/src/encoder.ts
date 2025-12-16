@@ -10,15 +10,69 @@ export interface EncodeResult {
   error?: string;
 }
 
+export interface ProgressCallback {
+  (progress: { currentTime: number; duration: number; percent: number }): void;
+}
+
 // Ensure temp directory exists
 if (!existsSync(TEMP_DIR)) {
   mkdirSync(TEMP_DIR, { recursive: true });
 }
 
+// Get input file duration before encoding
+const getInputDuration = async (inputPath: string): Promise<number> => {
+  return new Promise((resolve) => {
+    const ffprobe = spawn("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "default=noprint_wrappers=1:nokey=1",
+      inputPath,
+    ]);
+
+    let stdout = "";
+    ffprobe.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    ffprobe.on("close", (code) => {
+      if (code === 0) {
+        const duration = parseFloat(stdout.trim());
+        resolve(isNaN(duration) ? 0 : duration);
+      } else {
+        resolve(0);
+      }
+    });
+
+    ffprobe.on("error", () => {
+      resolve(0);
+    });
+  });
+};
+
+// Parse time=HH:MM:SS.XX from ffmpeg stderr
+const parseTimeFromStderr = (line: string): number | null => {
+  const match = line.match(/time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
+  if (match) {
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const seconds = parseInt(match[3], 10);
+    const centiseconds = parseInt(match[4], 10);
+    return hours * 3600 + minutes * 60 + seconds + centiseconds / 100;
+  }
+  return null;
+};
+
 export const encodeVideo = async (
   inputPath: string,
   outputPath: string,
+  onProgress?: ProgressCallback,
 ): Promise<EncodeResult> => {
+  // Get input duration for progress calculation
+  const inputDuration = await getInputDuration(inputPath);
+
   return new Promise((resolve) => {
     // Ensure output directory exists
     const outputDir = dirname(outputPath);
@@ -27,22 +81,25 @@ export const encodeVideo = async (
     }
 
     // FFmpeg command for re-encoding to mp4
-    // This is a basic configuration - adjust settings as needed
     const ffmpegArgs = [
       "-i",
       inputPath,
       "-c:v",
       "libx264",
       "-preset",
-      "medium",
+      "fast",
       "-crf",
       "23",
       "-c:a",
       "aac",
+      "-ac",
+      "2",
       "-b:a",
       "128k",
       "-movflags",
       "+faststart",
+      "-progress",
+      "pipe:2", // Output progress to stderr
       "-y",
       outputPath,
     ];
@@ -53,7 +110,21 @@ export const encodeVideo = async (
 
     let stderr = "";
     ffmpeg.stderr.on("data", (data) => {
-      stderr += data.toString();
+      const line = data.toString();
+      stderr += line;
+
+      // Parse progress if callback provided and we have duration
+      if (onProgress && inputDuration > 0) {
+        const currentTime = parseTimeFromStderr(line);
+        if (currentTime !== null) {
+          const percent = Math.min(100, Math.round((currentTime / inputDuration) * 100));
+          onProgress({
+            currentTime: Math.round(currentTime),
+            duration: Math.round(inputDuration),
+            percent,
+          });
+        }
+      }
     });
 
     ffmpeg.on("close", (code) => {

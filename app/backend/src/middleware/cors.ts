@@ -8,7 +8,7 @@ export const handleCors = (app: HonoApp) => {
     cors({
       origin: CORS_ORIGIN,
       credentials: true,
-      allowMethods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
+      allowMethods: ["GET", "POST", "OPTIONS", "DELETE", "PUT", "PATCH"],
       allowHeaders: ["Authorization", "Content-Type"],
     }),
   );

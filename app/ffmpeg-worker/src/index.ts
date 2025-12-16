@@ -1,5 +1,10 @@
 import { POLL_INTERVAL_MS, VOD_BASE_URL } from "./env";
-import { getEncodeJob, closeRedis, type EncodeJob } from "./queue";
+import {
+  getEncodeJob,
+  closeRedis,
+  type EncodeJob,
+  setEncodeProgress,
+} from "./queue";
 import { downloadFromTmp, uploadToProd, deleteFromTmp } from "./s3";
 import { encodeVideo, getLocalPath, cleanup } from "./encoder";
 import { sendCallback } from "./callback";
@@ -11,6 +16,9 @@ let isShuttingDown = false;
 const processJob = async (job: EncodeJob): Promise<void> => {
   console.log(`Processing job: movieId=${job.movieId}, s3Key=${job.s3Key}`);
 
+  // Set status to processing
+  await setEncodeProgress(job.movieId, { status: "processing", progress: 0 });
+
   const inputPath = getLocalPath(job.s3Key, "_input");
   const outputPath = getLocalPath(job.s3Key, "_output.mp4");
   const filesToCleanup = [inputPath, outputPath];
@@ -20,12 +28,21 @@ const processJob = async (job: EncodeJob): Promise<void> => {
     console.log(`Downloading from tmp-bucket: ${job.s3Key}`);
     await downloadFromTmp(job.s3Key, inputPath);
 
-    // Encode video
+    // Encode video with progress callback
     console.log(`Encoding video to: ${outputPath}`);
-    const result = await encodeVideo(inputPath, outputPath);
+    const result = await encodeVideo(inputPath, outputPath, async (progress) => {
+      // Update progress in Redis
+      await setEncodeProgress(job.movieId, {
+        status: "processing",
+        progress: progress.percent,
+        currentTime: progress.currentTime,
+        duration: progress.duration,
+      });
+    });
 
     if (!result.success) {
       console.error(`Encoding failed: ${result.error}`);
+      await setEncodeProgress(job.movieId, { status: "failed" });
       await sendCallback({
         movieId: job.movieId,
         variantId: "original",
@@ -45,6 +62,9 @@ const processJob = async (job: EncodeJob): Promise<void> => {
     // Generate content URL for VOD streaming
     const contentUrl = `${VOD_BASE_URL}/vod/${job.s3Key}/master.m3u8`;
 
+    // Set status to completed
+    await setEncodeProgress(job.movieId, { status: "completed", progress: 100 });
+
     // Send success callback
     await sendCallback({
       movieId: job.movieId,
@@ -58,6 +78,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
     console.log(`Job completed successfully: movieId=${job.movieId}`);
   } catch (error) {
     console.error(`Job failed: movieId=${job.movieId}`, error);
+    await setEncodeProgress(job.movieId, { status: "failed" });
     await sendCallback({
       movieId: job.movieId,
       variantId: "original",

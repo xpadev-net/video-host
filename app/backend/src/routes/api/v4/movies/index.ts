@@ -9,7 +9,7 @@ import {
 } from "@/@types/models";
 import { filterMovie } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
-import { addEncodeJob } from "@/lib/redis";
+import { addEncodeJob, setEncodeProgress } from "@/lib/redis";
 import { registerMovieRoute } from "@/routes/api/v4/movies/[movie]";
 import { buildVisibilityFilter } from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
@@ -160,6 +160,9 @@ const registerPostIndexRoute = (app: HonoApp) => {
       userId: authorId,
       createdAt: new Date().toISOString(),
     });
+
+    // Set initial queued status for progress tracking
+    await setEncodeProgress(movie.id, { status: "queued" });
 
     if (data.seriesId) {
       await prisma.series.update({

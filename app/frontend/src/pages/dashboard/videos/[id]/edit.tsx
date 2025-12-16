@@ -9,6 +9,14 @@ import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 
 const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
 
+interface EncodeProgress {
+  status: "queued" | "processing" | "completed" | "failed";
+  progress?: number;
+  queuePosition?: number;
+  currentTime?: number;
+  duration?: number;
+}
+
 const EditVideoPage: FC = () => {
   const router = useRouter();
   const { id } = router.query;
@@ -23,6 +31,9 @@ const EditVideoPage: FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [encodeProgress, setEncodeProgress] = useState<EncodeProgress | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!id || !token) return;
@@ -46,6 +57,65 @@ const EditVideoPage: FC = () => {
 
     fetchMovie();
   }, [id, token]);
+
+  // SSE for encoding progress with authentication
+  useEffect(() => {
+    if (!id || !movie || !token) return;
+
+    const variant = movie.variants?.[0];
+    if (!variant || variant.status !== "PROCESSING") {
+      return;
+    }
+
+    // Use dynamic import to avoid SSR issues
+    let controller: AbortController | null = null;
+
+    const setupSSE = async () => {
+      const { EventSourcePlus } = await import("event-source-plus");
+      controller = new AbortController();
+
+      const eventSource = new EventSourcePlus(`${API_URL}progress/${id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        signal: controller.signal,
+      });
+
+      eventSource.listen({
+        onMessage: (event) => {
+          try {
+            const data = JSON.parse(event.data) as EncodeProgress;
+            setEncodeProgress(data);
+
+            // Reload movie data when completed
+            if (data.status === "completed" || data.status === "failed") {
+              controller?.abort();
+              // Refresh movie data
+              axios
+                .get(`${API_URL}movies/${id}`, {
+                  headers: { Authorization: `Bearer ${token}` },
+                })
+                .then((res) => {
+                  setMovie(res.data.data);
+                  setEncodeProgress(null);
+                });
+            }
+          } catch (_e) {
+            // ignore parse errors
+          }
+        },
+        onResponseError: () => {
+          controller?.abort();
+        },
+      });
+    };
+
+    setupSSE();
+
+    return () => {
+      controller?.abort();
+    };
+  }, [id, movie, token]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -89,6 +159,9 @@ const EditVideoPage: FC = () => {
     );
   }
 
+  const variant = movie.variants?.[0];
+  const isEncoding = variant?.status === "PROCESSING";
+
   return (
     <DashboardLayout>
       <Head>
@@ -96,6 +169,50 @@ const EditVideoPage: FC = () => {
       </Head>
       <div className="edit-page">
         <h1>動画を編集</h1>
+
+        {/* Encoding Progress Display */}
+        {isEncoding && (
+          <div className="encoding-progress">
+            <div className="progress-header">
+              <span className="progress-status">
+                {encodeProgress?.status === "queued" && (
+                  <>
+                    ⏳ エンコード待ち
+                    {encodeProgress.queuePosition &&
+                      encodeProgress.queuePosition > 0 &&
+                      ` (待ち順: ${encodeProgress.queuePosition}番目)`}
+                  </>
+                )}
+                {encodeProgress?.status === "processing" && (
+                  <>🔄 エンコード中 ({encodeProgress.progress ?? 0}%)</>
+                )}
+                {!encodeProgress && "🔄 エンコード中..."}
+              </span>
+            </div>
+            {encodeProgress?.status === "processing" && (
+              <div className="progress-bar-container">
+                <div
+                  className="progress-bar-fill"
+                  style={{ width: `${encodeProgress.progress ?? 0}%` }}
+                />
+              </div>
+            )}
+            {encodeProgress?.currentTime !== undefined &&
+              encodeProgress?.duration !== undefined && (
+                <div className="progress-time">
+                  {encodeProgress.currentTime}秒 / {encodeProgress.duration}秒
+                </div>
+              )}
+          </div>
+        )}
+
+        {variant?.status === "FAILED" && (
+          <div className="encode-failed">
+            ❌
+            エンコードに失敗しました。動画を削除して再度アップロードしてください。
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="edit-form">
           <div className="form-group">
             <label htmlFor="title">タイトル</label>
@@ -229,6 +346,47 @@ const EditVideoPage: FC = () => {
         .submit-button:disabled {
           opacity: 0.5;
           cursor: not-allowed;
+        }
+        .encoding-progress {
+          padding: 1.5rem;
+          background: rgba(59, 130, 246, 0.1);
+          border: 1px solid rgba(59, 130, 246, 0.3);
+          border-radius: 12px;
+          margin-bottom: 1.5rem;
+          max-width: 600px;
+        }
+        .progress-header {
+          margin-bottom: 0.75rem;
+        }
+        .progress-status {
+          color: #3b82f6;
+          font-weight: 500;
+        }
+        .progress-bar-container {
+          height: 8px;
+          background: rgba(59, 130, 246, 0.2);
+          border-radius: 4px;
+          overflow: hidden;
+          margin-bottom: 0.5rem;
+        }
+        .progress-bar-fill {
+          height: 100%;
+          background: #3b82f6;
+          border-radius: 4px;
+          transition: width 0.3s ease;
+        }
+        .progress-time {
+          font-size: 0.875rem;
+          color: var(--text-secondary, #999);
+        }
+        .encode-failed {
+          padding: 1rem;
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid #ef4444;
+          border-radius: 8px;
+          color: #ef4444;
+          margin-bottom: 1.5rem;
+          max-width: 600px;
         }
       `}</style>
     </DashboardLayout>

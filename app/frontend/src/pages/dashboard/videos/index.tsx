@@ -98,10 +98,22 @@ const VideosPage: FC = () => {
                           ? "限定公開"
                           : "非公開"}
                     </span>
-                    <span className="video-duration">
-                      {Math.floor(movie.duration / 60)}:
-                      {(movie.duration % 60).toString().padStart(2, "0")}
-                    </span>
+                    {movie.variants?.[0]?.status === "PROCESSING" && (
+                      <span className="status-badge encoding">
+                        エンコード中
+                      </span>
+                    )}
+                    {movie.variants?.[0]?.status === "FAILED" && (
+                      <span className="status-badge failed">
+                        エンコード失敗
+                      </span>
+                    )}
+                    {movie.variants?.[0]?.status === "READY" && (
+                      <span className="video-duration">
+                        {Math.floor(movie.duration / 60)}:
+                        {(movie.duration % 60).toString().padStart(2, "0")}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="video-actions">
@@ -215,6 +227,25 @@ const VideosPage: FC = () => {
         .visibility-badge.private {
           background: rgba(239, 68, 68, 0.2);
           color: #ef4444;
+        }
+        .status-badge {
+          padding: 0.25rem 0.5rem;
+          border-radius: 4px;
+          font-size: 0.75rem;
+          font-weight: 500;
+        }
+        .status-badge.encoding {
+          background: rgba(59, 130, 246, 0.2);
+          color: #3b82f6;
+          animation: pulse 2s infinite;
+        }
+        .status-badge.failed {
+          background: rgba(239, 68, 68, 0.2);
+          color: #ef4444;
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
         }
         .video-duration {
           color: var(--text-secondary, #999);

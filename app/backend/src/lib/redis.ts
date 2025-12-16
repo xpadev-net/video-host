@@ -71,6 +71,51 @@ export const getEncodeJob = async (): Promise<EncodeJob | null> => {
   return JSON.parse(result) as EncodeJob;
 };
 
+// Progress tracking
+export const ENCODE_PROGRESS_PREFIX = "video:encode:progress:";
+export const ENCODE_PROCESSING_KEY = "video:encode:processing";
+
+export interface EncodeProgress {
+  status: "queued" | "processing" | "completed" | "failed";
+  progress?: number; // 0-100 percentage
+  queuePosition?: number;
+  currentTime?: number;
+  duration?: number;
+}
+
+export const setEncodeProgress = async (
+  movieId: string,
+  progress: EncodeProgress,
+): Promise<void> => {
+  const client = await getRedisClient();
+  await client.setEx(
+    `${ENCODE_PROGRESS_PREFIX}${movieId}`,
+    3600, // 1 hour TTL
+    JSON.stringify(progress),
+  );
+};
+
+export const getEncodeProgress = async (
+  movieId: string,
+): Promise<EncodeProgress | null> => {
+  const client = await getRedisClient();
+  const result = await client.get(`${ENCODE_PROGRESS_PREFIX}${movieId}`);
+  if (!result) return null;
+  return JSON.parse(result) as EncodeProgress;
+};
+
+export const getQueuePosition = async (movieId: string): Promise<number> => {
+  const client = await getRedisClient();
+  const queue = await client.lRange(ENCODE_QUEUE_KEY, 0, -1);
+  for (let i = 0; i < queue.length; i++) {
+    const job = JSON.parse(queue[i]) as EncodeJob;
+    if (job.movieId === movieId) {
+      return queue.length - i; // Position from end (1 = next to process)
+    }
+  }
+  return -1; // Not in queue
+};
+
 export const closeRedis = async (): Promise<void> => {
   if (redisClient) {
     await redisClient.quit();

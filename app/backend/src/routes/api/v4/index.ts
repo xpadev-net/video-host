@@ -7,6 +7,7 @@ import { registerSystemAccountsRoute } from "@/routes/api/v4/system-accounts";
 import { registerUsersRoute } from "@/routes/api/v4/users";
 import { registerAuthRoute } from "./auth";
 import { registerCallbackRoute } from "./callback";
+import { registerProgressRoute } from "./progress";
 import { registerUploadRoute } from "./upload";
 import { registerVodRoute } from "./vod";
 
@@ -21,5 +22,6 @@ export const registerV4Route = (app: HonoApp) => {
   registerUploadRoute(v4);
   registerCallbackRoute(v4);
   registerVodRoute(v4);
+  registerProgressRoute(v4);
   app.route("/v4", v4);
 };

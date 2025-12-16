@@ -60,7 +60,7 @@ const NewVideoPage: FC = () => {
       }
 
       // Create movie record
-      await axios.post(
+      const response = await axios.post(
         `${API_URL}movies`,
         {
           title: title.trim(),
@@ -75,7 +75,8 @@ const NewVideoPage: FC = () => {
         },
       );
 
-      router.push("/dashboard/videos");
+      const movieId = response.data.data.id;
+      router.push(`/dashboard/videos/${movieId}/edit`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "動画の作成に失敗しました");
       setIsSubmitting(false);

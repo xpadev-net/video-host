@@ -61,6 +61,33 @@ export const getEncodeJob = async (): Promise<EncodeJob | null> => {
   return JSON.parse(result) as EncodeJob;
 };
 
+// Progress tracking
+export const ENCODE_PROGRESS_PREFIX = "video:encode:progress:";
+
+export interface EncodeProgress {
+  status: "queued" | "processing" | "completed" | "failed";
+  progress?: number;
+  currentTime?: number;
+  duration?: number;
+}
+
+export const setEncodeProgress = async (
+  movieId: string,
+  progress: EncodeProgress,
+): Promise<void> => {
+  const client = await getRedisClient();
+  await client.setEx(
+    `${ENCODE_PROGRESS_PREFIX}${movieId}`,
+    3600, // 1 hour TTL
+    JSON.stringify(progress),
+  );
+};
+
+export const clearEncodeProgress = async (movieId: string): Promise<void> => {
+  const client = await getRedisClient();
+  await client.del(`${ENCODE_PROGRESS_PREFIX}${movieId}`);
+};
+
 export const closeRedis = async (): Promise<void> => {
   if (redisClient) {
     await redisClient.quit();

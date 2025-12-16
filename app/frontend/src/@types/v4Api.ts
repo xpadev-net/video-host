@@ -118,4 +118,5 @@ export type FilteredMovie = {
 export type FilteredMovieVariant = {
   variantId: string;
   contentUrl: string;
+  status: "PROCESSING" | "READY" | "FAILED";
 };
