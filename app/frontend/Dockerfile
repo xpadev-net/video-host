@@ -24,11 +24,11 @@ WORKDIR /app
 
 COPY --from=builder /app/app/frontend ./
 
-COPY ./docker/.env.placeholder ./.env
+COPY app/frontend/docker/.env.placeholder ./.env
 
 RUN npm run build
 
-COPY ./docker/env-replacer.sh ./
+COPY app/frontend/docker/env-replacer.sh ./
 
 RUN chmod +x ./env-replacer.sh
 RUN chmod +x ./start.sh
