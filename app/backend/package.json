@@ -11,6 +11,8 @@
     "prepare": "pnpm prisma generate || true"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.952.0",
+    "@aws-sdk/s3-request-presigner": "^3.952.0",
     "@hono/node-server": "^1.19.7",
     "@hono/zod-validator": "^0.7.5",
     "@prisma/client": "6.19.0",
@@ -20,6 +22,7 @@
     "hono": "^4.11.1",
     "jsonwebtoken": "^9.0.3",
     "prisma": "^6.19.1",
+    "redis": "^5.10.0",
     "zod": "^4.2.1"
   },
   "devDependencies": {

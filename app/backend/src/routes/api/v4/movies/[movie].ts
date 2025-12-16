@@ -4,12 +4,14 @@ import type { HonoApp } from "@/@types/hono";
 import { ZVisibility } from "@/@types/models";
 import { filterMovie } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
+import { deleteProdFile, deleteTmpFile } from "@/lib/s3";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 export const registerMovieRoute = (app: HonoApp) => {
   handleGet(app);
   handlePatch(app);
+  handleDelete(app);
 };
 
 const handleGet = (app: HonoApp) => {
@@ -65,10 +67,11 @@ const handleGet = (app: HonoApp) => {
 };
 
 const MoviePatchSchema = z.object({
-  title: z.string(),
-  description: z.string(),
-  seriesId: z.string().optional(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  seriesId: z.string().optional().nullable(),
   visibility: ZVisibility.optional(),
+  order: z.number().optional(),
 });
 
 const handlePatch = (app: HonoApp) => {
@@ -81,27 +84,36 @@ const handlePatch = (app: HonoApp) => {
     if (!param) {
       return badRequest(c, "No movie provided");
     }
-    {
-      const movie = await prisma.movie.findUnique({
-        where: {
-          id: param,
-          authorId: user.id,
-        },
-      });
-      if (!movie) {
-        return notFound(c, "Movie not found");
-      }
+
+    const existingMovie = await prisma.movie.findUnique({
+      where: { id: param },
+    });
+    if (!existingMovie) {
+      return notFound(c, "Movie not found");
     }
-    const { title, description, seriesId, visibility } = c.req.valid("json");
+
+    // Check ownership: owner or admin (for system accounts)
+    const isOwner = existingMovie.authorId === user.id;
+    const isAdminForSystemAccount =
+      user.role === "ADMIN" && (await isSystemAccount(existingMovie.authorId));
+
+    if (!isOwner && !isAdminForSystemAccount) {
+      return unauthorized(c, "Not authorized to edit this movie");
+    }
+
+    const { title, description, seriesId, visibility, order } =
+      c.req.valid("json");
     const movie = await prisma.movie.update({
       where: {
         id: param,
       },
       data: {
-        title,
-        description,
-        seriesId,
-        visibility,
+        title: title ?? existingMovie.title,
+        description: description ?? existingMovie.description,
+        seriesId:
+          seriesId === null ? null : (seriesId ?? existingMovie.seriesId),
+        visibility: visibility ?? existingMovie.visibility,
+        order: order ?? existingMovie.order,
       },
       include: {
         author: true,
@@ -124,4 +136,70 @@ const handlePatch = (app: HonoApp) => {
     });
     return ok(c, filterMovie(movie));
   });
+};
+
+const handleDelete = (app: HonoApp) => {
+  app.delete("/:movie", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return unauthorized(c, "Unauthorized");
+    }
+    const param = c.req.param("movie");
+    if (!param) {
+      return badRequest(c, "No movie provided");
+    }
+
+    const movie = await prisma.movie.findUnique({
+      where: { id: param },
+      include: { variants: true },
+    });
+    if (!movie) {
+      return notFound(c, "Movie not found");
+    }
+
+    // Check ownership: owner or admin (for system accounts)
+    const isOwner = movie.authorId === user.id;
+    const isAdminForSystemAccount =
+      user.role === "ADMIN" && (await isSystemAccount(movie.authorId));
+
+    if (!isOwner && !isAdminForSystemAccount) {
+      return unauthorized(c, "Not authorized to delete this movie");
+    }
+
+    // Try to delete S3 files (don't fail if this errors)
+    for (const variant of movie.variants) {
+      try {
+        if (variant.s3Key) {
+          await deleteProdFile(variant.s3Key);
+          await deleteTmpFile(variant.s3Key);
+        }
+      } catch (e) {
+        console.error("Failed to delete S3 files for variant", variant.id, e);
+      }
+    }
+
+    // Delete from playlists first
+    await prisma.movieOnPlaylist.deleteMany({
+      where: { movieId: param },
+    });
+
+    // Delete variants
+    await prisma.movieVariant.deleteMany({
+      where: { movieId: param },
+    });
+
+    // Delete movie
+    await prisma.movie.delete({
+      where: { id: param },
+    });
+
+    return ok(c, { success: true });
+  });
+};
+
+const isSystemAccount = async (userId: string): Promise<boolean> => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+  return user?.password === null;
 };

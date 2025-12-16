@@ -32,6 +32,16 @@ export type FilteredMovie = {
 export type FilteredMovieVariant = {
   variantId: string;
   contentUrl: string;
+  status?: "PROCESSING" | "READY" | "FAILED";
+};
+
+export type FilteredPlaylist = {
+  id: string;
+  title: string;
+  description?: string | null;
+  visibility: Visibility;
+  author: FilteredUser;
+  movies?: FilteredMovie[];
 };
 
 export const ZVisibility = z.union([

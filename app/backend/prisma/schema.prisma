@@ -18,6 +18,12 @@ enum Role {
   ADMIN
 }
 
+enum MovieStatus {
+  PROCESSING
+  READY
+  FAILED
+}
+
 model User {
   id         String     @id @default(uuid())
   name       String
@@ -99,12 +105,15 @@ model Movie {
 }
 
 model MovieVariant {
-  id         String   @id @default(uuid())
-  movie      Movie    @relation(fields: [movieId], references: [id])
+  id         String      @id @default(uuid())
+  movie      Movie       @relation(fields: [movieId], references: [id])
   movieId    String
   variantId  String
   contentUrl String
-  externalId String?  @unique @db.VarChar(512)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  s3Key      String?     @db.VarChar(512)
+  status     MovieStatus @default(READY)
+  externalId String?     @unique @db.VarChar(512)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 }
+

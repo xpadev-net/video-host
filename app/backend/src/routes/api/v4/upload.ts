@@ -1,0 +1,40 @@
+import { zValidator } from "@hono/zod-validator";
+import { Hono } from "hono";
+import { z } from "zod";
+import type { HonoApp } from "@/@types/hono";
+import { generateUploadKey, getPresignedUploadUrl } from "@/lib/s3";
+import { unauthorized } from "@/utils/response";
+import { ok } from "@/utils/response/ok";
+
+export const registerUploadRoute = (app: HonoApp) => {
+  const api = new Hono() as HonoApp;
+  registerPresignedUrlRoute(api);
+  app.route("/upload", api);
+};
+
+const PresignedUrlSchema = z.object({
+  filename: z.string(),
+  contentType: z.string(),
+});
+
+const registerPresignedUrlRoute = (app: HonoApp) => {
+  app.post(
+    "/presigned-url",
+    zValidator("json", PresignedUrlSchema),
+    async (c) => {
+      const user = c.get("user");
+      if (!user) {
+        return unauthorized(c, "Unauthorized");
+      }
+
+      const { filename, contentType } = c.req.valid("json");
+      const key = generateUploadKey(user.id, filename);
+      const uploadUrl = await getPresignedUploadUrl(key, contentType);
+
+      return ok(c, {
+        uploadUrl,
+        key,
+      });
+    },
+  );
+};

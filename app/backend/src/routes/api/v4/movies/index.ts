@@ -9,6 +9,7 @@ import {
 } from "@/@types/models";
 import { filterMovie } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
+import { addEncodeJob } from "@/lib/redis";
 import { registerMovieRoute } from "@/routes/api/v4/movies/[movie]";
 import { buildVisibilityFilter } from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
@@ -80,10 +81,12 @@ const registerGetIndexRoute = (app: HonoApp) => {
 
 const MovieBodySchema = z.object({
   title: z.string(),
-  description: z.string(),
+  description: z.string().optional(),
   seriesId: z.string().optional(),
-  contentUrl: z.string(),
+  s3Key: z.string(),
   visibility: ZVisibility.optional().default("PUBLIC"),
+  asUserId: z.string().optional(),
+  order: z.number().optional(),
 });
 
 const registerPostIndexRoute = (app: HonoApp) => {
@@ -96,13 +99,39 @@ const registerPostIndexRoute = (app: HonoApp) => {
     if (!data) {
       return badRequest(c, "Invalid data");
     }
+
+    // Handle asUserId for admin proxy
+    let authorId = user.id;
+    if (data.asUserId) {
+      if (user.role !== "ADMIN") {
+        return unauthorized(c, "Only admins can post as other users");
+      }
+      // Verify target user is a system account (password is null)
+      const targetUser = await prisma.user.findUnique({
+        where: { id: data.asUserId },
+      });
+      if (!targetUser || targetUser.password !== null) {
+        return badRequest(c, "Target user must be a system account");
+      }
+      authorId = data.asUserId;
+    }
+
     const movie = await prisma.movie.create({
       data: {
         title: data.title,
         description: data.description,
-        authorId: user.id,
+        authorId,
         seriesId: data.seriesId,
         visibility: data.visibility,
+        order: data.order ?? 0,
+        variants: {
+          create: {
+            variantId: "original",
+            contentUrl: "", // Will be set after encoding
+            s3Key: data.s3Key,
+            status: "PROCESSING",
+          },
+        },
       },
       include: {
         series: {
@@ -123,6 +152,15 @@ const registerPostIndexRoute = (app: HonoApp) => {
         variants: true,
       },
     });
+
+    // Add encode job to Redis queue
+    await addEncodeJob({
+      movieId: movie.id,
+      s3Key: data.s3Key,
+      userId: authorId,
+      createdAt: new Date().toISOString(),
+    });
+
     if (data.seriesId) {
       await prisma.series.update({
         where: {

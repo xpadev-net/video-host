@@ -15,6 +15,7 @@ import { ok } from "@/utils/response/ok";
 export const registerSeriesRoute = (app: HonoApp) => {
   handleGet(app);
   handlePatch(app);
+  handleDelete(app);
   handleGetMovies(app);
 };
 
@@ -191,7 +192,7 @@ const handleGetMovies = (app: HonoApp) => {
 };
 
 const PatchSchema = z.object({
-  title: z.string(),
+  title: z.string().optional(),
   description: z.string().optional(),
   visibility: ZVisibility.optional(),
 });
@@ -206,27 +207,32 @@ const handlePatch = (app: HonoApp) => {
     if (!param) {
       return notFound(c, "Series not found");
     }
-    {
-      const series = await prisma.series.findUnique({
-        where: {
-          id: param,
-          authorId: user.id,
-        },
-      });
-      if (!series) {
-        return notFound(c, "Series not found");
-      }
+
+    const existingSeries = await prisma.series.findUnique({
+      where: { id: param },
+    });
+    if (!existingSeries) {
+      return notFound(c, "Series not found");
     }
+
+    // Check ownership: owner or admin (for system accounts)
+    const isOwner = existingSeries.authorId === user.id;
+    const isAdminForSystemAccount =
+      user.role === "ADMIN" && (await isSystemAccount(existingSeries.authorId));
+
+    if (!isOwner && !isAdminForSystemAccount) {
+      return unauthorized(c, "Not authorized to edit this series");
+    }
+
     const { title, description, visibility } = c.req.valid("json");
     const series = await prisma.series.update({
       where: {
         id: param,
-        authorId: user.id,
       },
       data: {
-        title,
-        description,
-        visibility,
+        title: title ?? existingSeries.title,
+        description: description ?? existingSeries.description,
+        visibility: visibility ?? existingSeries.visibility,
       },
       include: {
         author: true,
@@ -243,4 +249,53 @@ const handlePatch = (app: HonoApp) => {
     });
     return ok(c, filterSeries(series));
   });
+};
+
+const handleDelete = (app: HonoApp) => {
+  app.delete("/:series", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return unauthorized(c, "Unauthorized");
+    }
+    const param = c.req.param("series");
+    if (!param) {
+      return notFound(c, "Series not found");
+    }
+
+    const series = await prisma.series.findUnique({
+      where: { id: param },
+    });
+    if (!series) {
+      return notFound(c, "Series not found");
+    }
+
+    // Check ownership: owner or admin (for system accounts)
+    const isOwner = series.authorId === user.id;
+    const isAdminForSystemAccount =
+      user.role === "ADMIN" && (await isSystemAccount(series.authorId));
+
+    if (!isOwner && !isAdminForSystemAccount) {
+      return unauthorized(c, "Not authorized to delete this series");
+    }
+
+    // Unlink movies from series (don't delete them)
+    await prisma.movie.updateMany({
+      where: { seriesId: param },
+      data: { seriesId: null },
+    });
+
+    // Delete series
+    await prisma.series.delete({
+      where: { id: param },
+    });
+
+    return ok(c, { success: true });
+  });
+};
+
+const isSystemAccount = async (userId: string): Promise<boolean> => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+  return user?.password === null;
 };

@@ -1,6 +1,7 @@
 import type {
   FilteredMovie,
   FilteredMovieVariant,
+  FilteredPlaylist,
   FilteredSeries,
   FilteredUser,
 } from "@/@types/models";
@@ -45,5 +46,23 @@ export const filterMovieVariant = (
   return {
     variantId: variant.variantId,
     contentUrl: variant.contentUrl,
+    status: variant.status,
+  };
+};
+
+export const filterPlaylist = (
+  playlist: Omit<FilteredPlaylist, "movies"> & {
+    movies?: { movie: FilteredMovie }[];
+  },
+): FilteredPlaylist => {
+  return {
+    id: playlist.id,
+    title: playlist.title,
+    description: playlist.description,
+    visibility: playlist.visibility,
+    author: filterUser(playlist.author),
+    movies: playlist.movies?.map((m: { movie: FilteredMovie }) =>
+      filterMovie(m.movie),
+    ),
   };
 };
