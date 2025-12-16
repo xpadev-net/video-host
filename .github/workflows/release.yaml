@@ -1,0 +1,280 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      release_backend:
+        description: 'Release Backend'
+        required: true
+        default: true
+        type: boolean
+      release_frontend:
+        description: 'Release Frontend'
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches-ignore:
+      - "**"
+    tags:
+      - "backend-v*"
+      - "frontend-v*"
+
+env:
+  REGISTRY: ghcr.io
+  NODE_VERSION: '22'
+
+jobs:
+  # Backend version bump
+  bump-backend-version:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        working-directory: app/backend
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT_VERSION"
+          
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          
+          case "${{ inputs.version_type }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+          
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+            pkg.version = '$NEW_VERSION';
+            fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Commit and push
+        run: |
+          git add app/backend/package.json
+          git commit -m "chore(backend): bump version to ${{ steps.bump.outputs.new_version }}"
+          git push
+
+      - name: Create and push tag
+        run: |
+          TAG_NAME="backend-v${{ steps.bump.outputs.new_version }}"
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
+
+  # Frontend version bump
+  bump-frontend-version:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_frontend
+    needs: [bump-backend-version]
+    # Run even if backend job was skipped
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ needs.bump-backend-version.outputs.new_version && format('backend-v{0}', needs.bump-backend-version.outputs.new_version) || 'master' }}
+
+      - name: Pull latest changes
+        run: |
+          git fetch origin master
+          git checkout master
+          git pull origin master
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        working-directory: app/frontend
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT_VERSION"
+          
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          
+          case "${{ inputs.version_type }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+          
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+            pkg.version = '$NEW_VERSION';
+            fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Commit and push
+        run: |
+          git add app/frontend/package.json
+          git commit -m "chore(frontend): bump version to ${{ steps.bump.outputs.new_version }}"
+          git push
+
+      - name: Create and push tag
+        run: |
+          TAG_NAME="frontend-v${{ steps.bump.outputs.new_version }}"
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
+
+  # Backend Docker build
+  build-backend:
+    if: |
+      always() && (
+        (github.event_name == 'workflow_dispatch' && inputs.release_backend && needs.bump-backend-version.result == 'success') ||
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/backend-v'))
+      )
+    needs: [bump-backend-version]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('backend-v{0}', needs.bump-backend-version.outputs.new_version) || github.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get tag name
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "TAG_NAME=v${{ needs.bump-backend-version.outputs.new_version }}" >> $GITHUB_ENV
+          else
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/backend-}" >> $GITHUB_ENV
+          fi
+
+      - name: Build and push with registry cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./app/backend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository }}/backend:${{ env.TAG_NAME }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/backend:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/backend:buildcache,mode=max
+
+  # Frontend Docker build
+  build-frontend:
+    if: |
+      always() && (
+        (github.event_name == 'workflow_dispatch' && inputs.release_frontend && needs.bump-frontend-version.result == 'success') ||
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/frontend-v'))
+      )
+    needs: [bump-frontend-version]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('frontend-v{0}', needs.bump-frontend-version.outputs.new_version) || github.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get tag name
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "TAG_NAME=v${{ needs.bump-frontend-version.outputs.new_version }}" >> $GITHUB_ENV
+          else
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/frontend-}" >> $GITHUB_ENV
+          fi
+
+      - name: Build and push with registry cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./app/frontend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository }}/frontend:${{ env.TAG_NAME }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/frontend:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/frontend:buildcache,mode=max
