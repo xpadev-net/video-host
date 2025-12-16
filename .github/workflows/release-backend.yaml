@@ -1,4 +1,4 @@
-name: release
+name: Release Backend
 
 on:
   workflow_dispatch:
@@ -6,11 +6,11 @@ on:
     branches-ignore:
       - "**"
     tags:
-      - "v*"
+      - "backend-v*"
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.repository }}/backend
 
 jobs:
   build-container-and-push-image:
@@ -34,12 +34,12 @@ jobs:
 
       - name: Get tag name
         id: get_tag
-        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/backend-}" >> $GITHUB_ENV
 
       - name: Build and push multi-arch with registry cache
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./app/backend
           platforms: linux/amd64
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG_NAME }}
