@@ -4,20 +4,25 @@ ARG NODE_VERSION=24-alpine
 FROM node:$NODE_VERSION AS builder
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
-RUN npm install -g pnpm@9
-RUN pnpm install --frozen-lockfile
+# Copy root workspace files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY app/frontend/package.json ./app/frontend/
 
-# Prepare node_modules
-COPY ./ ./
+RUN npm install -g pnpm@10
+RUN pnpm install --frozen-lockfile --filter @video-host/frontend
+
+# Copy frontend source
+COPY app/frontend/ ./app/frontend/
+
+WORKDIR /app/app/frontend
 
 # Run phase
 FROM node:$NODE_VERSION AS runner
 
-LABEL org.opencontainers.image.source=https://github.com/xpadev-net/video_host_frontend
+LABEL org.opencontainers.image.source=https://github.com/xpadev-net/video-host
 WORKDIR /app
 
-COPY --from=builder /app ./
+COPY --from=builder /app/app/frontend ./
 
 COPY ./docker/.env.placeholder ./.env
 

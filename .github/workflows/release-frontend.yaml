@@ -39,7 +39,8 @@ jobs:
       - name: Build and push multi-arch with registry cache
         uses: docker/build-push-action@v6
         with:
-          context: ./app/frontend
+          context: .
+          file: ./app/frontend/Dockerfile
           platforms: linux/amd64
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG_NAME }}
