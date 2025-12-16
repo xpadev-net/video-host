@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Visibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model User {
+  id         String     @id @default(uuid())
+  name       String
+  username   String     @unique
+  password   String? // if null, it means the user is using by system
+  role       Role       @default(USER)
+  avatarUrl  String?
+  series     Series[]
+  movies     Movie[]
+  externalId String?    @unique @db.VarChar(512)
+  sessions   Session[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  playlists  Playlist[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  token     String   @unique @db.VarChar(512)
+  expiredAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Series {
+  id          String     @id @default(uuid())
+  title       String     @db.VarChar(512)
+  description String?    @db.Text
+  author      User       @relation(fields: [authorId], references: [id])
+  authorId    String
+  movies      Movie[]
+  visibility  Visibility @default(PUBLIC)
+  externalId  String?    @unique @db.VarChar(512)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Playlist {
+  id          String            @id @default(uuid())
+  title       String            @db.VarChar(512)
+  description String?           @db.Text
+  author      User              @relation(fields: [authorId], references: [id])
+  authorId    String
+  visibility  Visibility        @default(PUBLIC)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  movies      MovieOnPlaylist[]
+}
+
+model MovieOnPlaylist {
+  playlist   Playlist @relation(fields: [playlistId], references: [id])
+  playlistId String
+  movie      Movie    @relation(fields: [movieId], references: [id])
+  movieId    String
+  order      Int
+
+  @@id([playlistId, movieId])
+}
+
+model Movie {
+  id           String            @id @default(uuid())
+  title        String            @db.VarChar(512)
+  description  String?           @db.Text
+  author       User              @relation(fields: [authorId], references: [id])
+  authorId     String
+  series       Series?           @relation(fields: [seriesId], references: [id])
+  seriesId     String?
+  duration     Int               @default(0)
+  thumbnailUrl String?
+  visibility   Visibility        @default(PUBLIC)
+  externalId   String?           @unique @db.VarChar(512)
+  order        Int               @default(0)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  variants     MovieVariant[]
+  playlists    MovieOnPlaylist[]
+}
+
+model MovieVariant {
+  id         String   @id @default(uuid())
+  movie      Movie    @relation(fields: [movieId], references: [id])
+  movieId    String
+  variantId  String
+  contentUrl String
+  externalId String?  @unique @db.VarChar(512)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
