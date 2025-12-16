@@ -13,12 +13,11 @@ RUN npm install -g pnpm@10 \
 	&& pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/backend
 
 # Generate Prisma client
-RUN pnpm --filter @video-host/backend prisma generate
+WORKDIR /app/app/backend
+RUN pnpm exec prisma generate
 
 # Copy backend source
 COPY app/backend/ ./app/backend/
-
-WORKDIR /app/app/backend
 
 # Run phase
 FROM --platform=linux/amd64 node:$NODE_VERSION AS runner
