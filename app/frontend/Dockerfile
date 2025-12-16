@@ -16,18 +16,26 @@ COPY app/frontend/ ./app/frontend/
 
 WORKDIR /app/app/frontend
 
+# Copy env placeholder for build
+COPY app/frontend/docker/.env.placeholder ./.env
+
+# Build the application
+RUN pnpm run build
+
 # Run phase
 FROM node:$NODE_VERSION AS runner
 
 LABEL org.opencontainers.image.source=https://github.com/xpadev-net/video-host
 WORKDIR /app
 
-COPY --from=builder /app/app/frontend ./
+# Copy built application and dependencies
+COPY --from=builder /app/app/frontend/.next ./.next
+COPY --from=builder /app/app/frontend/public ./public
+COPY --from=builder /app/app/frontend/package.json ./
+COPY --from=builder /app/app/frontend/start.sh ./
+COPY --from=builder /app/node_modules ./node_modules
 
 COPY app/frontend/docker/.env.placeholder ./.env
-
-RUN npm run build
-
 COPY app/frontend/docker/env-replacer.sh ./
 
 RUN chmod +x ./env-replacer.sh
