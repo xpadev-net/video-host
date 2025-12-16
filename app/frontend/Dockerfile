@@ -9,7 +9,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY app/frontend/package.json ./app/frontend/
 
 RUN npm install -g pnpm@10
-RUN pnpm install --frozen-lockfile --filter @video-host/frontend
+RUN pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/frontend
 
 # Copy frontend source
 COPY app/frontend/ ./app/frontend/

@@ -7,9 +7,13 @@ WORKDIR /app
 # Copy root workspace files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY app/backend/package.json ./app/backend/
+COPY app/backend/prisma ./app/backend/prisma/
 
 RUN npm install -g pnpm@10 \
-	&& pnpm install --frozen-lockfile --filter @video-host/backend
+	&& pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/backend
+
+# Generate Prisma client
+RUN pnpm --filter @video-host/backend prisma generate
 
 # Copy backend source
 COPY app/backend/ ./app/backend/
