@@ -228,7 +228,9 @@ jobs:
           file: ./app/backend/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository }}/backend:${{ env.TAG_NAME }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/backend:${{ env.TAG_NAME }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/backend:latest
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/backend:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/backend:buildcache,mode=max
 
@@ -275,6 +277,8 @@ jobs:
           file: ./app/frontend/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository }}/frontend:${{ env.TAG_NAME }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:${{ env.TAG_NAME }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/frontend:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/frontend:buildcache,mode=max
