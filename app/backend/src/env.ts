@@ -34,3 +34,5 @@ export const REDIS_SENTINEL_PASSWORD = process.env.REDIS_SENTINEL_PASSWORD;
 // Video Processing
 export const VOD_BASE_URL = process.env.VOD_BASE_URL || "";
 export const CALLBACK_SECRET = process.env.CALLBACK_SECRET || "callback-secret";
+export const VOD_INTERNAL_SECRET =
+  process.env.VOD_INTERNAL_SECRET || "vod-internal-secret";

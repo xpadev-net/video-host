@@ -49,6 +49,14 @@ const authMiddleware = createMiddleware<{
 });
 
 const isPublicEndpoint = (url: string) => {
+  // Callback endpoint has its own secret-based auth
+  if (url.startsWith("/api/v4/callback")) {
+    return true;
+  }
+  // VOD mapping endpoint is called by nginx internally
+  if (url.startsWith("/api/v4/vod")) {
+    return true;
+  }
   for (const publicPath of PUBLIC_ENDPOINTS) {
     if (url.startsWith(publicPath)) {
       return true;

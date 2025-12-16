@@ -8,6 +8,7 @@ import { registerUsersRoute } from "@/routes/api/v4/users";
 import { registerAuthRoute } from "./auth";
 import { registerCallbackRoute } from "./callback";
 import { registerUploadRoute } from "./upload";
+import { registerVodRoute } from "./vod";
 
 export const registerV4Route = (app: HonoApp) => {
   const v4 = new Hono() as HonoApp;
@@ -19,5 +20,6 @@ export const registerV4Route = (app: HonoApp) => {
   registerSystemAccountsRoute(v4);
   registerUploadRoute(v4);
   registerCallbackRoute(v4);
+  registerVodRoute(v4);
   app.route("/v4", v4);
 };

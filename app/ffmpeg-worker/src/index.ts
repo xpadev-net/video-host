@@ -1,4 +1,4 @@
-import { POLL_INTERVAL_MS } from "./env";
+import { POLL_INTERVAL_MS, VOD_BASE_URL } from "./env";
 import { getEncodeJob, closeRedis, type EncodeJob } from "./queue";
 import { downloadFromTmp, uploadToProd, deleteFromTmp } from "./s3";
 import { encodeVideo, getLocalPath, cleanup } from "./encoder";
@@ -42,12 +42,16 @@ const processJob = async (job: EncodeJob): Promise<void> => {
     console.log(`Deleting from tmp-bucket: ${job.s3Key}`);
     await deleteFromTmp(job.s3Key);
 
+    // Generate content URL for VOD streaming
+    const contentUrl = `${VOD_BASE_URL}/vod/${job.s3Key}/master.m3u8`;
+
     // Send success callback
     await sendCallback({
       movieId: job.movieId,
       variantId: "original",
       status: "success",
       s3Key: job.s3Key,
+      contentUrl,
       duration: result.duration,
     });
 

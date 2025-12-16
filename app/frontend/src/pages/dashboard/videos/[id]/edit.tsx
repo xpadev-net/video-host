@@ -29,7 +29,7 @@ const EditVideoPage: FC = () => {
 
     const fetchMovie = async () => {
       try {
-        const res = await axios.get(`${API_URL}/api/v4/movies/${id}`, {
+        const res = await axios.get(`${API_URL}movies/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = res.data.data;
@@ -56,7 +56,7 @@ const EditVideoPage: FC = () => {
 
     try {
       await axios.patch(
-        `${API_URL}/api/v4/movies/${id}`,
+        `${API_URL}movies/${id}`,
         {
           title: title.trim(),
           description: description.trim(),

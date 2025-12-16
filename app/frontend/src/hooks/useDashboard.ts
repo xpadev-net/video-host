@@ -19,10 +19,7 @@ export const useMyMovies = (page = 1, limit = 20) => {
 
   return useSWR<PaginatedResponse<FilteredMovie>>(
     token
-      ? [
-          `${API_URL}/api/v4/movies?mine=true&page=${page}&limit=${limit}`,
-          token,
-        ]
+      ? [`${API_URL}movies?mine=true&page=${page}&limit=${limit}`, token]
       : null,
     ([url, t]) => fetcher(url, t as string),
     {

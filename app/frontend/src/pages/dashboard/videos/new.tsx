@@ -61,7 +61,7 @@ const NewVideoPage: FC = () => {
 
       // Create movie record
       await axios.post(
-        `${API_URL}/api/v4/movies`,
+        `${API_URL}movies`,
         {
           title: title.trim(),
           description: description.trim(),

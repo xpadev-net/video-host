@@ -48,7 +48,7 @@ export const useUpload = (): UseUploadResult => {
       try {
         // Get presigned URL from backend
         const presignedRes = await axios.post(
-          `${API_URL}/api/v4/upload/presigned-url`,
+          `${API_URL}upload/presigned-url`,
           {
             filename: file.name,
             contentType: file.type,

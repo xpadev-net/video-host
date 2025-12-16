@@ -1,5 +1,5 @@
 pre-commit:
-  parallel: true
+  # parallel: true
   commands:
     backend-lint:
       glob: "app/backend/*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}"

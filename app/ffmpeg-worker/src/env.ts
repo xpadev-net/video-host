@@ -18,8 +18,11 @@ export const S3_FORCE_PATH_STYLE = process.env.S3_FORCE_PATH_STYLE === "true";
 // Backend callback
 export const BACKEND_CALLBACK_URL =
   process.env.BACKEND_CALLBACK_URL ||
-  "http://localhost:3000/api/v4/callback/encode-complete";
+  "http://localhost:3001/api/v4/callback/encode-complete";
 export const CALLBACK_SECRET = process.env.CALLBACK_SECRET || "callback-secret";
+
+// VOD streaming
+export const VOD_BASE_URL = process.env.VOD_BASE_URL || "http://localhost:3002";
 
 // Worker settings
 export const POLL_INTERVAL_MS = parseInt(

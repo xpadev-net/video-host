@@ -22,7 +22,7 @@ const VideosPage: FC = () => {
 
     setDeletingId(id);
     try {
-      await axios.delete(`${API_URL}/api/v4/movies/${id}`, {
+      await axios.delete(`${API_URL}movies/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       mutate();
