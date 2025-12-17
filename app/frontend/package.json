@@ -1,6 +1,6 @@
 {
   "name": "@video-host/frontend",
-  "version": "0.0.45",
+  "version": "0.0.46",
   "license": "MIT",
   "type": "module",
   "private": true,
