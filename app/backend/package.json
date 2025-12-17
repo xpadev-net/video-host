@@ -3,6 +3,7 @@
   "version": "0.0.29",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "build": "tsc",
     "run": "tsx src/index.ts",
     "lint": "biome check .",
     "lint:fix": "biome check . --write --unsafe",

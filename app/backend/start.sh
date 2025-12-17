@@ -1,1 +1,1 @@
-pnpm run run
+node dist/src/index.js
