@@ -24,7 +24,7 @@ const createRedisClient = (): RedisClientType => {
     // Build sentinel URL format
     const sentinelHosts = sentinels.map((s) => `${s.host}:${s.port}`).join(",");
     const passwordPart = REDIS_SENTINEL_PASSWORD ? `:${REDIS_SENTINEL_PASSWORD}@` : "";
-    const sentinelUrl = `redis+sentinel://${passwordPart}${sentinelHosts}/${REDIS_SENTINEL_NAME}`;
+    const sentinelUrl = `redis://${passwordPart}${sentinelHosts}/${REDIS_SENTINEL_NAME}`;
 
     return createClient({ url: sentinelUrl }) as RedisClientType;
   }
