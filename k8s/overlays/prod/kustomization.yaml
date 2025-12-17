@@ -85,6 +85,7 @@ secretGenerator:
   # Backend
   - name: backend-secrets
     literals:
+      - database-url=mysql://user:password@mysql:3306/video_host
       - jwt-secret=CHANGE_ME_jwt_secret
       - password-salt=CHANGE_ME_password_salt
       - signup-code=
