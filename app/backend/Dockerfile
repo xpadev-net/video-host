@@ -14,11 +14,10 @@ RUN npm install -g pnpm@10 \
 
 # Generate Prisma client
 WORKDIR /app/app/backend
+WORKDIR /app/app/backend
+COPY app/backend/ .
 RUN pnpm exec prisma generate
 RUN pnpm run build
-
-# Copy backend source
-COPY app/backend/ .
 
 # Run phase
 FROM --platform=linux/amd64 node:$NODE_VERSION AS runner
