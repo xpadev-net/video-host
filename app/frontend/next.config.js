@@ -1,3 +1,7 @@
+import * as path from "node:path";
+
+const __dirname = path.resolve();
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -13,6 +17,7 @@ const nextConfig = {
     deviceSizes: [300],
   },
   output: "standalone",
+  outputFileTracingRoot: path.join(__dirname, "../../"),
 };
 
-module.exports = nextConfig;
+export default nextConfig;

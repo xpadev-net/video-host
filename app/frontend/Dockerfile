@@ -16,7 +16,7 @@ COPY app/frontend/ ./app/frontend/
 
 WORKDIR /app/app/frontend
 
-# Copy env placeholder for build
+# Copy env placeholder for b　uild
 COPY app/frontend/docker/.env.placeholder ./.env
 
 # Build the application
@@ -30,8 +30,8 @@ WORKDIR /app
 
 # Copy built application and dependencies
 # Copy standalone build
-COPY --from=builder /app/app/frontend/public ./public
 COPY --from=builder /app/app/frontend/.next/standalone ./
+COPY --from=builder /app/app/frontend/public ./public
 COPY --from=builder /app/app/frontend/.next/static ./.next/static
 COPY --from=builder /app/app/frontend/start.sh ./
 
