@@ -3,7 +3,7 @@
   "version": "0.0.32",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && tsc-alias",
     "run": "tsx src/index.ts",
     "lint": "biome check .",
     "lint:fix": "biome check . --write --unsafe",
@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.4",
+    "tsc-alias": "^1.8.8",
     "tsx": "^4.21.0"
   }
 }
