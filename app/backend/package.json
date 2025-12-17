@@ -1,6 +1,6 @@
 {
   "name": "@video-host/backend",
-  "version": "0.0.29",
+  "version": "0.0.30",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
