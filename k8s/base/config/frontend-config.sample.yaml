@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: video-host
+data:
+  api-endpoint: "https://api.your-domain.com"
+  allowed-image-hostname: "your-s3-domain.com"
+  enable-comments: "true"
+  site-name: "Video Host"

@@ -1,0 +1,112 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: video-host
+
+resources:
+  - ../../base
+
+# イメージタグのオーバーライド（リリースバージョンを指定）
+images:
+  - name: ghcr.io/xpadev-net/video-host/backend
+    newTag: latest  # 例: v0.0.25
+  - name: ghcr.io/xpadev-net/video-host/frontend
+    newTag: latest  # 例: v0.0.40
+  - name: ghcr.io/xpadev-net/video-host/ffmpeg-worker
+    newTag: latest  # 例: v0.0.1
+  - name: ghcr.io/xpadev-net/nginx-vod-module-docker
+    newTag: latest
+
+# レプリカ数のパッチ
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        replicas: 2
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        replicas: 2
+
+# ConfigMap生成
+configMapGenerator:
+  # Backend
+  - name: backend-config
+    literals:
+      - signup-enabled=false
+      - cors-origin=https://your-frontend-domain.com
+      - public-endpoints=
+      - s3-tmp-bucket=video-tmp
+      - s3-prod-bucket=video-prod
+      - s3-region=ap-northeast-1
+      - s3-endpoint=
+      - s3-force-path-style=false
+      - redis-url=redis://redis:6379
+      - redis-sentinel-hosts=
+      - redis-sentinel-name=
+      - vod-base-url=http://vod/vod
+
+  # Frontend
+  - name: frontend-config
+    literals:
+      - api-endpoint=https://api.your-domain.com
+      - allowed-image-hostname=your-s3-domain.com
+      - enable-comments=true
+      - site-name=Video Host
+
+  # FFmpeg Worker
+  - name: ffmpeg-worker-config
+    literals:
+      - redis-url=redis://redis:6379
+      - redis-sentinel-hosts=
+      - redis-sentinel-name=
+      - s3-tmp-bucket=video-tmp
+      - s3-prod-bucket=video-prod
+      - s3-region=ap-northeast-1
+      - s3-endpoint=
+      - s3-force-path-style=false
+      - backend-callback-url=http://backend:3000/api/internal/video/callback
+      - vod-base-url=http://vod/vod
+      - poll-interval-ms=5000
+
+  # VOD nginx config
+  - name: vod-nginx-config
+    files:
+      - nginx.conf
+
+# Secret生成
+secretGenerator:
+  # Backend
+  - name: backend-secrets
+    literals:
+      - jwt-secret=CHANGE_ME_jwt_secret
+      - password-salt=CHANGE_ME_password_salt
+      - signup-code=
+      - s3-access-key-id=CHANGE_ME
+      - s3-secret-access-key=CHANGE_ME
+      - redis-sentinel-password=
+      - callback-secret=CHANGE_ME_callback_secret
+      - vod-internal-secret=CHANGE_ME_vod_internal_secret
+
+  # FFmpeg Worker
+  - name: ffmpeg-worker-secrets
+    literals:
+      - s3-access-key-id=CHANGE_ME
+      - s3-secret-access-key=CHANGE_ME
+      - redis-sentinel-password=
+      - callback-secret=CHANGE_ME_callback_secret
+
+  # VOD
+  - name: vod-secrets
+    literals:
+      - vod-internal-secret=CHANGE_ME_vod_internal_secret
+
+# ハッシュサフィックスを無効化（ConfigMap/Secret名を固定）
+generatorOptions:
+  disableNameSuffixHash: true

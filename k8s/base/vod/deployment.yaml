@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vod
+  labels:
+    app.kubernetes.io/name: vod
+    app.kubernetes.io/component: streaming
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vod
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vod
+        app.kubernetes.io/component: streaming
+    spec:
+      containers:
+        - name: vod
+          image: ghcr.io/xpadev-net/nginx-vod-module-docker:latest
+          ports:
+            - containerPort: 80
+              protocol: TCP
+          env:
+            - name: VOD_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: vod-secrets
+                  key: vod-internal-secret
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: vod-nginx-config

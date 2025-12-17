@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: video-host
+data:
+  # Auth
+  signup-enabled: "false"
+  # CORS (カンマ区切りで複数指定可能)
+  cors-origin: "https://your-frontend-domain.com"
+  public-endpoints: ""
+  # S3
+  s3-tmp-bucket: "video-tmp"
+  s3-prod-bucket: "video-prod"
+  s3-region: "ap-northeast-1"
+  s3-endpoint: ""  # MinIO等を使う場合に設定
+  s3-force-path-style: "false"
+  # Redis
+  redis-url: "redis://redis:6379"
+  redis-sentinel-hosts: ""
+  redis-sentinel-name: ""
+  # Video Processing
+  vod-base-url: "http://vod-server/vod"

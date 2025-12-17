@@ -1,0 +1,124 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ffmpeg-worker
+  labels:
+    app.kubernetes.io/name: ffmpeg-worker
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ffmpeg-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ffmpeg-worker
+        app.kubernetes.io/component: worker
+    spec:
+      containers:
+        - name: ffmpeg-worker
+          image: ghcr.io/xpadev-net/video-host/ffmpeg-worker:latest
+          env:
+            # Redis
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: redis-url
+            - name: REDIS_SENTINEL_HOSTS
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: redis-sentinel-hosts
+                  optional: true
+            - name: REDIS_SENTINEL_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: redis-sentinel-name
+                  optional: true
+            - name: REDIS_SENTINEL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ffmpeg-worker-secrets
+                  key: redis-sentinel-password
+                  optional: true
+            # S3
+            - name: S3_TMP_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: s3-tmp-bucket
+            - name: S3_PROD_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: s3-prod-bucket
+            - name: S3_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: s3-region
+            - name: S3_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: s3-endpoint
+                  optional: true
+            - name: S3_FORCE_PATH_STYLE
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: s3-force-path-style
+                  optional: true
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ffmpeg-worker-secrets
+                  key: s3-access-key-id
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ffmpeg-worker-secrets
+                  key: s3-secret-access-key
+            # Callback
+            - name: BACKEND_CALLBACK_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: backend-callback-url
+            - name: CALLBACK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ffmpeg-worker-secrets
+                  key: callback-secret
+            # VOD
+            - name: VOD_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: vod-base-url
+            # Worker Settings
+            - name: POLL_INTERVAL_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: poll-interval-ms
+                  optional: true
+            - name: TEMP_DIR
+              value: /tmp/ffmpeg-worker
+          volumeMounts:
+            - name: temp-storage
+              mountPath: /tmp/ffmpeg-worker
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+      volumes:
+        - name: temp-storage
+          emptyDir:
+            sizeLimit: 10Gi

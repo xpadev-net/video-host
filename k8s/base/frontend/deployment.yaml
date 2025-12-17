@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/component: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frontend
+        app.kubernetes.io/component: web
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/xpadev-net/video-host/frontend:latest
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NEXT_PUBLIC_API_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: api-endpoint
+            - name: NEXT_PUBLIC_ALLOWED_IMAGE_HOSTNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: allowed-image-hostname
+            - name: NEXT_PUBLIC_ENABLE_COMMENTS
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: enable-comments
+            - name: NEXT_PUBLIC_SITE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: site-name
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20

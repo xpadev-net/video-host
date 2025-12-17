@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ffmpeg-worker-config
+  namespace: video-host
+data:
+  # Redis
+  redis-url: "redis://redis:6379"
+  redis-sentinel-hosts: ""
+  redis-sentinel-name: ""
+  # S3
+  s3-tmp-bucket: "video-tmp"
+  s3-prod-bucket: "video-prod"
+  s3-region: "ap-northeast-1"
+  s3-endpoint: ""
+  s3-force-path-style: "false"
+  # Callback
+  backend-callback-url: "http://backend:3000/api/internal/video/callback"
+  # VOD
+  vod-base-url: "http://vod-server/vod"
+  # Worker
+  poll-interval-ms: "5000"
