@@ -25,7 +25,7 @@ FROM --platform=linux/amd64 node:$NODE_VERSION AS runner
 LABEL org.opencontainers.image.source=https://github.com/xpadev-net/video-host
 
 WORKDIR /app
-RUN apt-get update -y && apt-get install -y openssl
+RUN apt-get update -y && apt-get install -y openssl && npm install -g pnpm@10
 
 COPY --from=builder /app/app/backend ./
 COPY --from=builder /app/node_modules ./node_modules
