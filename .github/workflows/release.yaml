@@ -22,26 +22,34 @@ on:
         required: true
         default: true
         type: boolean
+      release_ffmpeg_worker:
+        description: 'Release FFmpeg Worker'
+        required: true
+        default: true
+        type: boolean
   push:
     branches-ignore:
       - "**"
     tags:
       - "backend-v*"
       - "frontend-v*"
+      - "ffmpeg-worker-v*"
 
 env:
   REGISTRY: ghcr.io
   NODE_VERSION: '22'
 
 jobs:
-  # Backend version bump
-  bump-backend-version:
-    if: github.event_name == 'workflow_dispatch' && inputs.release_backend
+  # Unified version bump job
+  bump-versions:
+    if: github.event_name == 'workflow_dispatch' && (inputs.release_backend || inputs.release_frontend || inputs.release_ffmpeg_worker)
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
-      new_version: ${{ steps.bump.outputs.new_version }}
+      backend_version: ${{ steps.bump-backend.outputs.new_version }}
+      frontend_version: ${{ steps.bump-frontend.outputs.new_version }}
+      ffmpeg_worker_version: ${{ steps.bump-ffmpeg-worker.outputs.new_version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -58,8 +66,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump version
-        id: bump
+      # Backend version bump
+      - name: Bump backend version
+        if: inputs.release_backend
+        id: bump-backend
         working-directory: app/backend
         run: |
           CURRENT_VERSION=$(node -p "require('./package.json').version")
@@ -93,53 +103,10 @@ jobs:
             fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
-      - name: Commit and push
-        run: |
-          git add app/backend/package.json
-          git commit -m "chore(backend): bump version to ${{ steps.bump.outputs.new_version }}"
-          git push
-
-      - name: Create and push tag
-        run: |
-          TAG_NAME="backend-v${{ steps.bump.outputs.new_version }}"
-          git tag "$TAG_NAME"
-          git push origin "$TAG_NAME"
-
-  # Frontend version bump
-  bump-frontend-version:
-    if: github.event_name == 'workflow_dispatch' && inputs.release_frontend
-    needs: [bump-backend-version]
-    # Run even if backend job was skipped
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      new_version: ${{ steps.bump.outputs.new_version }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ needs.bump-backend-version.outputs.new_version && format('backend-v{0}', needs.bump-backend-version.outputs.new_version) || 'master' }}
-
-      - name: Pull latest changes
-        run: |
-          git fetch origin master
-          git checkout master
-          git pull origin master
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Bump version
-        id: bump
+      # Frontend version bump
+      - name: Bump frontend version
+        if: inputs.release_frontend
+        id: bump-frontend
         working-directory: app/frontend
         run: |
           CURRENT_VERSION=$(node -p "require('./package.json').version")
@@ -173,15 +140,90 @@ jobs:
             fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
-      - name: Commit and push
+      # FFmpeg Worker version bump
+      - name: Bump ffmpeg-worker version
+        if: inputs.release_ffmpeg_worker
+        id: bump-ffmpeg-worker
+        working-directory: app/ffmpeg-worker
         run: |
-          git add app/frontend/package.json
-          git commit -m "chore(frontend): bump version to ${{ steps.bump.outputs.new_version }}"
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT_VERSION"
+          
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          
+          case "${{ inputs.version_type }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+          
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+            pkg.version = '$NEW_VERSION';
+            fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      # Commit all version changes at once
+      - name: Commit and push version changes
+        run: |
+          COMMIT_MSG="chore: bump versions"
+          FILES_TO_ADD=""
+          
+          if [ "${{ inputs.release_backend }}" == "true" ]; then
+            FILES_TO_ADD="$FILES_TO_ADD app/backend/package.json"
+            COMMIT_MSG="$COMMIT_MSG, backend v${{ steps.bump-backend.outputs.new_version }}"
+          fi
+          
+          if [ "${{ inputs.release_frontend }}" == "true" ]; then
+            FILES_TO_ADD="$FILES_TO_ADD app/frontend/package.json"
+            COMMIT_MSG="$COMMIT_MSG, frontend v${{ steps.bump-frontend.outputs.new_version }}"
+          fi
+          
+          if [ "${{ inputs.release_ffmpeg_worker }}" == "true" ]; then
+            FILES_TO_ADD="$FILES_TO_ADD app/ffmpeg-worker/package.json"
+            COMMIT_MSG="$COMMIT_MSG, ffmpeg-worker v${{ steps.bump-ffmpeg-worker.outputs.new_version }}"
+          fi
+          
+          # Clean up commit message (remove first comma)
+          COMMIT_MSG=$(echo "$COMMIT_MSG" | sed 's/versions, /versions: /')
+          
+          git add $FILES_TO_ADD
+          git commit -m "$COMMIT_MSG"
           git push
 
-      - name: Create and push tag
+      # Create and push tags
+      - name: Create and push backend tag
+        if: inputs.release_backend
         run: |
-          TAG_NAME="frontend-v${{ steps.bump.outputs.new_version }}"
+          TAG_NAME="backend-v${{ steps.bump-backend.outputs.new_version }}"
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
+
+      - name: Create and push frontend tag
+        if: inputs.release_frontend
+        run: |
+          TAG_NAME="frontend-v${{ steps.bump-frontend.outputs.new_version }}"
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
+
+      - name: Create and push ffmpeg-worker tag
+        if: inputs.release_ffmpeg_worker
+        run: |
+          TAG_NAME="ffmpeg-worker-v${{ steps.bump-ffmpeg-worker.outputs.new_version }}"
           git tag "$TAG_NAME"
           git push origin "$TAG_NAME"
 
@@ -189,10 +231,10 @@ jobs:
   build-backend:
     if: |
       always() && (
-        (github.event_name == 'workflow_dispatch' && inputs.release_backend && needs.bump-backend-version.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && inputs.release_backend && needs.bump-versions.result == 'success') ||
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/backend-v'))
       )
-    needs: [bump-backend-version]
+    needs: [bump-versions]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -201,7 +243,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('backend-v{0}', needs.bump-backend-version.outputs.new_version) || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('backend-v{0}', needs.bump-versions.outputs.backend_version) || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -216,7 +258,7 @@ jobs:
       - name: Get tag name
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "TAG_NAME=v${{ needs.bump-backend-version.outputs.new_version }}" >> $GITHUB_ENV
+            echo "TAG_NAME=v${{ needs.bump-versions.outputs.backend_version }}" >> $GITHUB_ENV
           else
             echo "TAG_NAME=${GITHUB_REF#refs/tags/backend-}" >> $GITHUB_ENV
           fi
@@ -238,10 +280,10 @@ jobs:
   build-frontend:
     if: |
       always() && (
-        (github.event_name == 'workflow_dispatch' && inputs.release_frontend && needs.bump-frontend-version.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && inputs.release_frontend && needs.bump-versions.result == 'success') ||
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/frontend-v'))
       )
-    needs: [bump-frontend-version]
+    needs: [bump-versions]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -250,7 +292,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('frontend-v{0}', needs.bump-frontend-version.outputs.new_version) || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('frontend-v{0}', needs.bump-versions.outputs.frontend_version) || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -265,7 +307,7 @@ jobs:
       - name: Get tag name
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "TAG_NAME=v${{ needs.bump-frontend-version.outputs.new_version }}" >> $GITHUB_ENV
+            echo "TAG_NAME=v${{ needs.bump-versions.outputs.frontend_version }}" >> $GITHUB_ENV
           else
             echo "TAG_NAME=${GITHUB_REF#refs/tags/frontend-}" >> $GITHUB_ENV
           fi
@@ -282,3 +324,52 @@ jobs:
             ${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/frontend:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/frontend:buildcache,mode=max
+
+  # FFmpeg Worker Docker build
+  build-ffmpeg-worker:
+    if: |
+      always() && (
+        (github.event_name == 'workflow_dispatch' && inputs.release_ffmpeg_worker && needs.bump-versions.result == 'success') ||
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/ffmpeg-worker-v'))
+      )
+    needs: [bump-versions]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('ffmpeg-worker-v{0}', needs.bump-versions.outputs.ffmpeg_worker_version) || github.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get tag name
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "TAG_NAME=v${{ needs.bump-versions.outputs.ffmpeg_worker_version }}" >> $GITHUB_ENV
+          else
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/ffmpeg-worker-}" >> $GITHUB_ENV
+          fi
+
+      - name: Build and push with registry cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./app/ffmpeg-worker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/ffmpeg-worker:${{ env.TAG_NAME }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/ffmpeg-worker:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/ffmpeg-worker:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/ffmpeg-worker:buildcache,mode=max
