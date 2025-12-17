@@ -25,6 +25,9 @@ RUN pnpm run build
 # Run phase
 FROM node:$NODE_VERSION AS runner
 
+ARG COMMIT_HASH
+ENV COMMIT_HASH=$COMMIT_HASH
+
 LABEL org.opencontainers.image.source=https://github.com/xpadev-net/video-host
 WORKDIR /app
 

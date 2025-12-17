@@ -10,6 +10,7 @@ import { encodeVideo, getLocalPath, cleanup } from "./encoder";
 import { sendCallback } from "./callback";
 
 console.log("FFmpeg Worker starting...");
+console.log(`Commit Hash: ${process.env.COMMIT_HASH || "unknown"}`);
 
 let isShuttingDown = false;
 

@@ -1,5 +1,8 @@
 FROM node:22-slim
 
+ARG COMMIT_HASH
+ENV COMMIT_HASH=$COMMIT_HASH
+
 # Install ffmpeg
 RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
