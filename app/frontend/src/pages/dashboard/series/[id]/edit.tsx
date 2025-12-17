@@ -5,8 +5,20 @@ import { useRouter } from "next/router";
 import { type FC, type FormEvent, useEffect, useState } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
+import { MovieManager } from "@/components/Dashboard/MovieManager";
 
 const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+
+interface Movie {
+  id: string;
+  title: string;
+  thumbnailUrl?: string;
+}
+
+interface SeriesMovie {
+  movie: Movie;
+  order: number;
+}
 
 const EditSeriesPage: FC = () => {
   const router = useRouter();
@@ -18,6 +30,7 @@ const EditSeriesPage: FC = () => {
   const [visibility, setVisibility] = useState<
     "PUBLIC" | "UNLISTED" | "PRIVATE"
   >("PUBLIC");
+  const [movies, setMovies] = useState<SeriesMovie[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +46,14 @@ const EditSeriesPage: FC = () => {
         setTitle(data.title);
         setDescription(data.description || "");
         setVisibility(data.visibility);
+        // Transform movies array
+        const seriesMovies: SeriesMovie[] = (data.movies || []).map(
+          (m: Movie, index: number) => ({
+            movie: m,
+            order: index + 1,
+          }),
+        );
+        setMovies(seriesMovies);
       } catch {
         setError("シリーズの取得に失敗しました");
       } finally {
@@ -112,6 +133,16 @@ const EditSeriesPage: FC = () => {
               <option value="PRIVATE">非公開</option>
             </select>
           </div>
+
+          {id && typeof id === "string" && (
+            <MovieManager
+              entityType="series"
+              entityId={id}
+              movies={movies}
+              onMoviesChange={setMovies}
+            />
+          )}
+
           {error && <div className="error-message">{error}</div>}
           <div className="form-actions">
             <button
@@ -132,16 +163,66 @@ const EditSeriesPage: FC = () => {
         </form>
       </div>
       <style jsx>{`
-        .edit-series-page h1 { margin-bottom: 2rem; color: var(--text-primary, #fff); }
-        .form { max-width: 600px; display: flex; flex-direction: column; gap: 1.5rem; }
-        .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
-        .form-group label { color: var(--text-secondary, #999); font-size: 0.875rem; }
-        .form-group input, .form-group textarea, .form-group select { padding: 0.75rem; background: var(--background-primary, #0d0d0d); border: 1px solid var(--border-color, #333); border-radius: 8px; color: var(--text-primary, #fff); font-size: 1rem; }
-        .error-message { padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 8px; color: #ef4444; }
-        .form-actions { display: flex; gap: 1rem; }
-        .cancel-button { padding: 0.875rem 1.5rem; background: transparent; border: 1px solid var(--border-color, #333); border-radius: 8px; color: var(--text-primary, #fff); cursor: pointer; }
-        .submit-button { padding: 0.875rem 1.5rem; background: var(--primary-color, #3b82f6); color: white; border: none; border-radius: 8px; cursor: pointer; }
-        .submit-button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .edit-series-page h1 {
+          margin-bottom: 2rem;
+          color: var(--text-primary, #fff);
+        }
+        .form {
+          max-width: 600px;
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+        }
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .form-group label {
+          color: var(--text-secondary, #999);
+          font-size: 0.875rem;
+        }
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+          padding: 0.75rem;
+          background: var(--background-primary, #0d0d0d);
+          border: 1px solid var(--border-color, #333);
+          border-radius: 8px;
+          color: var(--text-primary, #fff);
+          font-size: 1rem;
+        }
+        .error-message {
+          padding: 0.75rem;
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid #ef4444;
+          border-radius: 8px;
+          color: #ef4444;
+        }
+        .form-actions {
+          display: flex;
+          gap: 1rem;
+        }
+        .cancel-button {
+          padding: 0.875rem 1.5rem;
+          background: transparent;
+          border: 1px solid var(--border-color, #333);
+          border-radius: 8px;
+          color: var(--text-primary, #fff);
+          cursor: pointer;
+        }
+        .submit-button {
+          padding: 0.875rem 1.5rem;
+          background: var(--primary-color, #3b82f6);
+          color: white;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+        }
+        .submit-button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
       `}</style>
     </DashboardLayout>
   );

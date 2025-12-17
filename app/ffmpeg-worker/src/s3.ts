@@ -63,15 +63,41 @@ export const uploadToProd = async (
   localPath: string,
   contentType = "video/mp4",
 ): Promise<void> => {
-  const readStream = createReadStream(localPath);
-  const command = new PutObjectCommand({
-    Bucket: S3_PROD_BUCKET,
-    Key: s3Key,
-    Body: readStream,
-    ContentType: contentType,
-  });
+  const maxRetries = 3;
+  let lastError: Error | undefined;
 
-  await s3Client.send(command);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const readStream = createReadStream(localPath);
+      const command = new PutObjectCommand({
+        Bucket: S3_PROD_BUCKET,
+        Key: s3Key,
+        Body: readStream,
+        ContentType: contentType,
+      });
+
+      await s3Client.send(command);
+      return; // Success
+    } catch (error) {
+      lastError = error as Error;
+      const isRetryable =
+        error instanceof Error &&
+        ("$fault" in error || error.message.includes("InternalError"));
+
+      if (isRetryable && attempt < maxRetries) {
+        console.log(
+          `Upload attempt ${attempt} failed, retrying in ${attempt * 2}s...`,
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, attempt * 2000),
+        );
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
 };
 
 export const deleteFromTmp = async (s3Key: string): Promise<void> => {

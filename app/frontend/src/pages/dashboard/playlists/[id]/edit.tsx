@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 import { type FC, type FormEvent, useEffect, useState } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
+import { MovieManager } from "@/components/Dashboard/MovieManager";
 
 const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
 
@@ -75,17 +76,6 @@ const EditPlaylistPage: FC = () => {
     }
   };
 
-  const handleRemoveMovie = async (movieId: string) => {
-    try {
-      await axios.delete(`${API_URL}playlists/${id}/movies/${movieId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setMovies((prev) => prev.filter((m) => m.movie.id !== movieId));
-    } catch {
-      alert("動画の削除に失敗しました");
-    }
-  };
-
   if (isLoading)
     return (
       <DashboardLayout>
@@ -137,27 +127,14 @@ const EditPlaylistPage: FC = () => {
             </select>
           </div>
 
-          <div className="movies-section">
-            <h3>動画一覧</h3>
-            {movies.length === 0 ? (
-              <p className="no-movies">動画がありません</p>
-            ) : (
-              <div className="movies-list">
-                {movies.map((m) => (
-                  <div key={m.movie.id} className="movie-item">
-                    <span>{m.movie.title}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveMovie(m.movie.id)}
-                      className="remove-btn"
-                    >
-                      削除
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {id && typeof id === "string" && (
+            <MovieManager
+              entityType="playlist"
+              entityId={id}
+              movies={movies}
+              onMoviesChange={setMovies}
+            />
+          )}
 
           {error && <div className="error-message">{error}</div>}
           <div className="form-actions">
@@ -179,21 +156,66 @@ const EditPlaylistPage: FC = () => {
         </form>
       </div>
       <style jsx>{`
-        .edit-playlist-page h1 { margin-bottom: 2rem; color: var(--text-primary, #fff); }
-        .form { max-width: 600px; display: flex; flex-direction: column; gap: 1.5rem; }
-        .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
-        .form-group label { color: var(--text-secondary, #999); font-size: 0.875rem; }
-        .form-group input, .form-group textarea, .form-group select { padding: 0.75rem; background: var(--background-primary, #0d0d0d); border: 1px solid var(--border-color, #333); border-radius: 8px; color: var(--text-primary, #fff); font-size: 1rem; }
-        .movies-section h3 { color: var(--text-primary, #fff); margin-bottom: 1rem; }
-        .no-movies { color: var(--text-secondary, #999); }
-        .movies-list { display: flex; flex-direction: column; gap: 0.5rem; }
-        .movie-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: var(--background-primary, #0d0d0d); border: 1px solid var(--border-color, #333); border-radius: 8px; color: var(--text-primary, #fff); }
-        .remove-btn { padding: 0.25rem 0.5rem; background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; font-size: 0.75rem; }
-        .error-message { padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 8px; color: #ef4444; }
-        .form-actions { display: flex; gap: 1rem; }
-        .cancel-button { padding: 0.875rem 1.5rem; background: transparent; border: 1px solid var(--border-color, #333); border-radius: 8px; color: var(--text-primary, #fff); cursor: pointer; }
-        .submit-button { padding: 0.875rem 1.5rem; background: var(--primary-color, #3b82f6); color: white; border: none; border-radius: 8px; cursor: pointer; }
-        .submit-button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .edit-playlist-page h1 {
+          margin-bottom: 2rem;
+          color: var(--text-primary, #fff);
+        }
+        .form {
+          max-width: 600px;
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+        }
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .form-group label {
+          color: var(--text-secondary, #999);
+          font-size: 0.875rem;
+        }
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+          padding: 0.75rem;
+          background: var(--background-primary, #0d0d0d);
+          border: 1px solid var(--border-color, #333);
+          border-radius: 8px;
+          color: var(--text-primary, #fff);
+          font-size: 1rem;
+        }
+        .error-message {
+          padding: 0.75rem;
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid #ef4444;
+          border-radius: 8px;
+          color: #ef4444;
+        }
+        .form-actions {
+          display: flex;
+          gap: 1rem;
+        }
+        .cancel-button {
+          padding: 0.875rem 1.5rem;
+          background: transparent;
+          border: 1px solid var(--border-color, #333);
+          border-radius: 8px;
+          color: var(--text-primary, #fff);
+          cursor: pointer;
+        }
+        .submit-button {
+          padding: 0.875rem 1.5rem;
+          background: var(--primary-color, #3b82f6);
+          color: white;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+        }
+        .submit-button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
       `}</style>
     </DashboardLayout>
   );

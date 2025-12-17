@@ -9,7 +9,7 @@ import {
 } from "@/@types/models";
 import { filterMovie, filterSeries } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
-import { notFound, unauthorized } from "@/utils/response";
+import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 export const registerSeriesRoute = (app: HonoApp) => {
@@ -17,6 +17,9 @@ export const registerSeriesRoute = (app: HonoApp) => {
   handlePatch(app);
   handleDelete(app);
   handleGetMovies(app);
+  handleAddMovie(app);
+  handleRemoveMovie(app);
+  handleReorderMovies(app);
 };
 
 const DEFAULT_MOVIES_LIMIT = 20;
@@ -291,6 +294,195 @@ const handleDelete = (app: HonoApp) => {
 
     return ok(c, { success: true });
   });
+};
+
+// Add movie to series
+const AddMovieSchema = z.object({
+  movieId: z.string(),
+});
+
+const handleAddMovie = (app: HonoApp) => {
+  app.post("/:series/movies", zValidator("json", AddMovieSchema), async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return unauthorized(c, "Unauthorized");
+    }
+
+    const seriesId = c.req.param("series");
+    if (!seriesId) {
+      return notFound(c, "Series not found");
+    }
+
+    const series = await prisma.series.findUnique({
+      where: { id: seriesId },
+    });
+    if (!series) {
+      return notFound(c, "Series not found");
+    }
+
+    const isOwner = series.authorId === user.id;
+    const isAdminForSystemAccount =
+      user.role === "ADMIN" && (await isSystemAccount(series.authorId));
+
+    if (!isOwner && !isAdminForSystemAccount) {
+      return unauthorized(c, "Not authorized to edit this series");
+    }
+
+    const { movieId } = c.req.valid("json");
+
+    // Check if movie exists
+    const movie = await prisma.movie.findUnique({
+      where: { id: movieId },
+    });
+    if (!movie) {
+      return notFound(c, "Movie not found");
+    }
+
+    // Check if movie is already in this series
+    if (movie.seriesId === seriesId) {
+      return badRequest(c, "Movie is already in this series");
+    }
+
+    // Get max order
+    const maxOrder = await prisma.movie.aggregate({
+      where: { seriesId },
+      _max: { order: true },
+    });
+
+    // Add movie to series
+    await prisma.movie.update({
+      where: { id: movieId },
+      data: {
+        seriesId,
+        order: (maxOrder._max.order ?? 0) + 1,
+      },
+    });
+
+    // Return updated series
+    const updatedSeries = await prisma.series.findUnique({
+      where: { id: seriesId },
+      include: {
+        author: true,
+        movies: {
+          orderBy: { order: "asc" },
+          include: { author: true, variants: true },
+        },
+      },
+    });
+
+    if (!updatedSeries) {
+      return notFound(c, "Series not found");
+    }
+
+    return ok(c, filterSeries(updatedSeries));
+  });
+};
+
+// Remove movie from series
+const handleRemoveMovie = (app: HonoApp) => {
+  app.delete("/:series/movies/:movie", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return unauthorized(c, "Unauthorized");
+    }
+
+    const seriesId = c.req.param("series");
+    const movieId = c.req.param("movie");
+    if (!seriesId || !movieId) {
+      return notFound(c, "Not found");
+    }
+
+    const series = await prisma.series.findUnique({
+      where: { id: seriesId },
+    });
+    if (!series) {
+      return notFound(c, "Series not found");
+    }
+
+    const isOwner = series.authorId === user.id;
+    const isAdminForSystemAccount =
+      user.role === "ADMIN" && (await isSystemAccount(series.authorId));
+
+    if (!isOwner && !isAdminForSystemAccount) {
+      return unauthorized(c, "Not authorized to edit this series");
+    }
+
+    // Remove movie from series (don't delete the movie)
+    await prisma.movie.update({
+      where: { id: movieId },
+      data: { seriesId: null, order: 0 },
+    });
+
+    return ok(c, { success: true });
+  });
+};
+
+// Reorder movies in series
+const ReorderMoviesSchema = z.object({
+  movieIds: z.array(z.string()),
+});
+
+const handleReorderMovies = (app: HonoApp) => {
+  app.patch(
+    "/:series/movies",
+    zValidator("json", ReorderMoviesSchema),
+    async (c) => {
+      const user = c.get("user");
+      if (!user) {
+        return unauthorized(c, "Unauthorized");
+      }
+
+      const seriesId = c.req.param("series");
+      if (!seriesId) {
+        return notFound(c, "Series not found");
+      }
+
+      const series = await prisma.series.findUnique({
+        where: { id: seriesId },
+      });
+      if (!series) {
+        return notFound(c, "Series not found");
+      }
+
+      const isOwner = series.authorId === user.id;
+      const isAdminForSystemAccount =
+        user.role === "ADMIN" && (await isSystemAccount(series.authorId));
+
+      if (!isOwner && !isAdminForSystemAccount) {
+        return unauthorized(c, "Not authorized to edit this series");
+      }
+
+      const { movieIds } = c.req.valid("json");
+
+      // Update order for each movie
+      await Promise.all(
+        movieIds.map((movieId, index) =>
+          prisma.movie.update({
+            where: { id: movieId },
+            data: { order: index + 1 },
+          }),
+        ),
+      );
+
+      // Return updated series
+      const updatedSeries = await prisma.series.findUnique({
+        where: { id: seriesId },
+        include: {
+          author: true,
+          movies: {
+            orderBy: { order: "asc" },
+            include: { author: true, variants: true },
+          },
+        },
+      });
+
+      if (!updatedSeries) {
+        return notFound(c, "Series not found");
+      }
+
+      return ok(c, filterSeries(updatedSeries));
+    },
+  );
 };
 
 const isSystemAccount = async (userId: string): Promise<boolean> => {
