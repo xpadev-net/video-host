@@ -1,1 +1,1 @@
-./node_modules/next/dist/bin/next start
+node server.js

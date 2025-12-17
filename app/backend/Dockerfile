@@ -17,7 +17,7 @@ WORKDIR /app/app/backend
 RUN pnpm exec prisma generate
 
 # Copy backend source
-COPY app/backend/ ./app/backend/
+COPY app/backend/ .
 
 # Run phase
 FROM --platform=linux/amd64 node:$NODE_VERSION AS runner
@@ -28,6 +28,9 @@ WORKDIR /app
 RUN apt-get update -y && apt-get install -y openssl
 
 COPY --from=builder /app/app/backend ./
+COPY --from=builder /app/node_modules ./node_modules
+
+RUN chmod +x ./start.sh
 
 # Copy artifacts
 CMD ["/bin/bash","./start.sh"]

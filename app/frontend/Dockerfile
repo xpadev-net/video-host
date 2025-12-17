@@ -29,11 +29,11 @@ LABEL org.opencontainers.image.source=https://github.com/xpadev-net/video-host
 WORKDIR /app
 
 # Copy built application and dependencies
-COPY --from=builder /app/app/frontend/.next ./.next
+# Copy standalone build
 COPY --from=builder /app/app/frontend/public ./public
-COPY --from=builder /app/app/frontend/package.json ./
+COPY --from=builder /app/app/frontend/.next/standalone ./
+COPY --from=builder /app/app/frontend/.next/static ./.next/static
 COPY --from=builder /app/app/frontend/start.sh ./
-COPY --from=builder /app/node_modules ./node_modules
 
 COPY app/frontend/docker/.env.placeholder ./.env
 COPY app/frontend/docker/env-replacer.sh ./

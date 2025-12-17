@@ -12,6 +12,7 @@ const nextConfig = {
     formats: ["image/webp"],
     deviceSizes: [300],
   },
+  output: "standalone",
 };
 
 module.exports = nextConfig;
