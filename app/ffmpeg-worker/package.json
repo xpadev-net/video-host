@@ -1,6 +1,6 @@
 {
   "name": "@video-host/ffmpeg-worker",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
