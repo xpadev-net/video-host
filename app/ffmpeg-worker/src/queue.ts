@@ -1,4 +1,4 @@
-import { createClient, type RedisClientType } from "redis";
+import { createClient, createSentinel, RedisSentinelType, type RedisClientType } from "redis";
 import {
   REDIS_URL,
   REDIS_SENTINEL_HOSTS,
@@ -6,14 +6,14 @@ import {
   REDIS_SENTINEL_PASSWORD,
 } from "./env";
 
-let redisClient: RedisClientType | null = null;
+let redisClient: RedisClientType | RedisSentinelType | null = null;
 
 interface SentinelNode {
   host: string;
   port: number;
 }
 
-const createRedisClient = (): RedisClientType => {
+const createRedisClient = (): RedisClientType | RedisSentinelType => {
   // If Sentinel is configured, use Sentinel mode
   if (REDIS_SENTINEL_HOSTS && REDIS_SENTINEL_NAME) {
     const sentinels: SentinelNode[] = REDIS_SENTINEL_HOSTS.split(",").map((host) => {
@@ -21,19 +21,20 @@ const createRedisClient = (): RedisClientType => {
       return { host: hostname, port: parseInt(port || "26379", 10) };
     });
 
-    // Build sentinel URL format
-    const sentinelHosts = sentinels.map((s) => `${s.host}:${s.port}`).join(",");
-    const passwordPart = REDIS_SENTINEL_PASSWORD ? `:${REDIS_SENTINEL_PASSWORD}@` : "";
-    const sentinelUrl = `redis://${passwordPart}${sentinelHosts}/${REDIS_SENTINEL_NAME}`;
-
-    return createClient({ url: sentinelUrl }) as RedisClientType;
+    return createSentinel({
+      name: REDIS_SENTINEL_NAME,
+      sentinelRootNodes: sentinels,
+      sentinelClientOptions: {
+        password: REDIS_SENTINEL_PASSWORD,
+      },
+    });
   }
 
   // Otherwise, use standard connection
   return createClient({ url: REDIS_URL });
 };
 
-export const getRedisClient = async (): Promise<RedisClientType> => {
+export const getRedisClient = async (): Promise<RedisClientType | RedisSentinelType> => {
   if (!redisClient) {
     redisClient = createRedisClient();
     redisClient.on("error", (err: Error) =>
@@ -90,7 +91,7 @@ export const clearEncodeProgress = async (movieId: string): Promise<void> => {
 
 export const closeRedis = async (): Promise<void> => {
   if (redisClient) {
-    await redisClient.quit();
+    await ((redisClient as RedisClientType).quit || (redisClient as RedisSentinelType).close)?.();
     redisClient = null;
   }
 };
