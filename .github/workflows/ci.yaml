@@ -64,6 +64,9 @@ jobs:
       - name: Build backend
         run: pnpm -F @video-host/backend build
 
+      - name: Copy env placeholder
+        run: cp app/frontend/docker/.env.placeholder app/frontend/.env
+
       - name: Run ${{ matrix.task }} (frontend)
         run: pnpm -F @video-host/frontend ${{ matrix.task }}
 
