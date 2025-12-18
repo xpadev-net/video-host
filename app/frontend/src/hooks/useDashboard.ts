@@ -71,7 +71,7 @@ export const useSystemAccounts = () => {
   const token = useAtomValue(AuthTokenAtom);
 
   return useSWR(
-    token ? [`${API_URL}system-accounts`, token] : null,
+    token ? [`${API_URL}/system-accounts`, token] : null,
     ([url, t]) => fetcher(url, t as string),
     {
       revalidateOnFocus: false,
