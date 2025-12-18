@@ -7,19 +7,20 @@ WORKDIR /app
 # Copy root workspace files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY app/frontend/package.json ./app/frontend/
+COPY app/backend/package.json ./app/backend/
 
 RUN npm install -g pnpm@10
-RUN pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/frontend
+RUN pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/frontend --filter @video-host/backend
 
 # Copy frontend source
 COPY app/frontend/ ./app/frontend/
+COPY app/backend/ ./app/backend/
 
-WORKDIR /app/app/frontend
+RUN pnpm run prisma:generate
 
 # Copy env placeholder for b　uild
-COPY app/frontend/docker/.env.placeholder ./.env
+COPY app/frontend/docker/.env.placeholder ./app/frontend/.env
 
-# Build the application
 RUN pnpm run build
 
 # Run phase

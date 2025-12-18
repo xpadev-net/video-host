@@ -54,7 +54,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
 
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
-      const allMovies = json.data.items || [];
+      const allMovies = (json.data.items || []) as Movie[];
       // Filter out movies already in the list
       const movieIds = new Set(movies.map((m) => m.movie.id));
       setAvailableMovies(

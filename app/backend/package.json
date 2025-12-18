@@ -10,7 +10,8 @@
     "lint:fix": "biome check . --write --unsafe",
     "format": "biome format . --write",
     "typecheck": "tsc --noEmit --skipLibCheck --pretty --noErrorTruncation --skipDefaultLibCheck --project tsconfig.json",
-    "prepare": "pnpm prisma generate || true"
+    "prepare": "pnpm prisma generate || true",
+    "prisma:generate": "prisma generate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.952.0",

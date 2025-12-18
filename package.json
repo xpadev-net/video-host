@@ -11,7 +11,8 @@
     "lint:fix": "pnpm -r lint:fix",
     "format": "pnpm -r format",
     "typecheck": "pnpm -r typecheck",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "prisma:generate": "pnpm -r prisma:generate"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.9",
