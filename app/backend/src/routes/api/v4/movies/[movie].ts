@@ -1,6 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
+import type { User } from "@prisma/client"; // Import User type
+import { Hono } from "hono";
 import { z } from "zod";
-import type { HonoApp } from "@/@types/hono";
 import { ZVisibility } from "@/@types/models";
 import { filterMovie } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
@@ -8,14 +9,25 @@ import { deleteProdFile, deleteTmpFile } from "@/lib/s3";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
-export const registerMovieRoute = (app: HonoApp) => {
-  handleGet(app);
-  handlePatch(app);
-  handleDelete(app);
+// Define Env locally or import if available. using inline for now to match HonoApp
+type Env = {
+  Variables: {
+    user?: User;
+  };
 };
 
-const handleGet = (app: HonoApp) => {
-  app.get("/:movie", async (c) => {
+const MoviePatchSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().optional(),
+  seriesId: z.string().optional().nullable(),
+  visibility: ZVisibility.optional(),
+  order: z.number().optional(),
+});
+
+const app = new Hono<Env>();
+
+export const movieRoute = app
+  .get("/:movie", async (c) => {
     const param = c.req.param("movie");
     if (!param) {
       return badRequest(c, "No movie provided");
@@ -63,19 +75,8 @@ const handleGet = (app: HonoApp) => {
       ...filterMovie(movie),
       isOwner: c.get("user")?.id === movie.authorId,
     });
-  });
-};
-
-const MoviePatchSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
-  seriesId: z.string().optional().nullable(),
-  visibility: ZVisibility.optional(),
-  order: z.number().optional(),
-});
-
-const handlePatch = (app: HonoApp) => {
-  app.patch("/:movie", zValidator("json", MoviePatchSchema), async (c) => {
+  })
+  .patch("/:movie", zValidator("json", MoviePatchSchema), async (c) => {
     const user = c.get("user");
     if (!user) {
       return unauthorized(c, "Unauthorized");
@@ -135,11 +136,8 @@ const handlePatch = (app: HonoApp) => {
       },
     });
     return ok(c, filterMovie(movie));
-  });
-};
-
-const handleDelete = (app: HonoApp) => {
-  app.delete("/:movie", async (c) => {
+  })
+  .delete("/:movie", async (c) => {
     const user = c.get("user");
     if (!user) {
       return unauthorized(c, "Unauthorized");
@@ -195,7 +193,6 @@ const handleDelete = (app: HonoApp) => {
 
     return ok(c, { success: true });
   });
-};
 
 const isSystemAccount = async (userId: string): Promise<boolean> => {
   const user = await prisma.user.findUnique({

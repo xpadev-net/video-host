@@ -1,9 +1,18 @@
+import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import type { HonoApp } from "@/@types/hono";
-import { registerV4Route } from "./v4";
+import { v4Route } from "./v4";
 
-export const registerApiRoute = (app: HonoApp) => {
-  const api = new Hono() as HonoApp;
-  registerV4Route(api);
-  app.route("/api", api);
+type Env = {
+  Variables: {
+    user?: User;
+  };
+};
+
+const app = new Hono<Env>();
+
+export const apiRoute = app.route("/v4", v4Route);
+
+export const registerApiRoute = (parent: HonoApp) => {
+  parent.route("/api", apiRoute);
 };

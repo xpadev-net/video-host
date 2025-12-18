@@ -1,4 +1,6 @@
 import { zValidator } from "@hono/zod-validator";
+import type { User } from "@prisma/client";
+import { Hono } from "hono";
 import { z } from "zod";
 import type { HonoApp } from "@/@types/hono";
 import {
@@ -12,21 +14,33 @@ import { prisma } from "@/lib/prisma";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
-export const registerSeriesRoute = (app: HonoApp) => {
-  handleGet(app);
-  handlePatch(app);
-  handleDelete(app);
-  handleGetMovies(app);
-  handleAddMovie(app);
-  handleRemoveMovie(app);
-  handleReorderMovies(app);
+type Env = {
+  Variables: {
+    user?: User;
+  };
 };
+
+const app = new Hono<Env>();
 
 const DEFAULT_MOVIES_LIMIT = 20;
 const MAX_MOVIES_LIMIT = 100;
 
-const handleGet = (app: HonoApp) => {
-  app.get("/:series", async (c) => {
+const SeriesPatchSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().optional(),
+  visibility: ZVisibility.optional(),
+});
+
+const AddMovieSchema = z.object({
+  movieId: z.string(),
+});
+
+const ReorderMoviesSchema = z.object({
+  movieIds: z.array(z.string()),
+});
+
+export const seriesDetailRoute = app
+  .get("/:series", async (c) => {
     const seriesId = c.req.param("series");
     if (!seriesId) {
       return notFound(c, "Series not found");
@@ -111,11 +125,98 @@ const handleGet = (app: HonoApp) => {
     }
 
     return ok(c, filterSeries(series));
-  });
-};
+  })
+  .patch("/:series", zValidator("json", SeriesPatchSchema), async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return unauthorized(c, "Unauthorized");
+    }
+    const param = c.req.param("series");
+    if (!param) {
+      return notFound(c, "Series not found");
+    }
 
-const handleGetMovies = (app: HonoApp) => {
-  app.get("/:series/movies", async (c) => {
+    const existingSeries = await prisma.series.findUnique({
+      where: { id: param },
+    });
+    if (!existingSeries) {
+      return notFound(c, "Series not found");
+    }
+
+    // Check ownership: owner or admin (for system accounts)
+    const isOwner = existingSeries.authorId === user.id;
+    const isAdminForSystemAccount =
+      user.role === "ADMIN" && (await isSystemAccount(existingSeries.authorId));
+
+    if (!isOwner && !isAdminForSystemAccount) {
+      return unauthorized(c, "Not authorized to edit this series");
+    }
+
+    const { title, description, visibility } = c.req.valid("json");
+    const series = await prisma.series.update({
+      where: {
+        id: param,
+      },
+      data: {
+        title: title ?? existingSeries.title,
+        description: description ?? existingSeries.description,
+        visibility: visibility ?? existingSeries.visibility,
+      },
+      include: {
+        author: true,
+        movies: {
+          orderBy: {
+            createdAt: "asc",
+          },
+          include: {
+            author: true,
+            variants: true,
+          },
+        },
+      },
+    });
+    return ok(c, filterSeries(series));
+  })
+  .delete("/:series", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return unauthorized(c, "Unauthorized");
+    }
+    const param = c.req.param("series");
+    if (!param) {
+      return notFound(c, "Series not found");
+    }
+
+    const series = await prisma.series.findUnique({
+      where: { id: param },
+    });
+    if (!series) {
+      return notFound(c, "Series not found");
+    }
+
+    // Check ownership: owner or admin (for system accounts)
+    const isOwner = series.authorId === user.id;
+    const isAdminForSystemAccount =
+      user.role === "ADMIN" && (await isSystemAccount(series.authorId));
+
+    if (!isOwner && !isAdminForSystemAccount) {
+      return unauthorized(c, "Not authorized to delete this series");
+    }
+
+    // Unlink movies from series (don't delete them)
+    await prisma.movie.updateMany({
+      where: { seriesId: param },
+      data: { seriesId: null },
+    });
+
+    // Delete series
+    await prisma.series.delete({
+      where: { id: param },
+    });
+
+    return ok(c, { success: true });
+  })
+  .get("/:series/movies", async (c) => {
     const seriesId = c.req.param("series");
     if (!seriesId) {
       return notFound(c, "Series not found");
@@ -191,118 +292,8 @@ const handleGetMovies = (app: HonoApp) => {
     };
 
     return ok(c, response);
-  });
-};
-
-const PatchSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
-  visibility: ZVisibility.optional(),
-});
-
-const handlePatch = (app: HonoApp) => {
-  app.patch("/:series", zValidator("json", PatchSchema), async (c) => {
-    const user = c.get("user");
-    if (!user) {
-      return unauthorized(c, "Unauthorized");
-    }
-    const param = c.req.param("series");
-    if (!param) {
-      return notFound(c, "Series not found");
-    }
-
-    const existingSeries = await prisma.series.findUnique({
-      where: { id: param },
-    });
-    if (!existingSeries) {
-      return notFound(c, "Series not found");
-    }
-
-    // Check ownership: owner or admin (for system accounts)
-    const isOwner = existingSeries.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(existingSeries.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to edit this series");
-    }
-
-    const { title, description, visibility } = c.req.valid("json");
-    const series = await prisma.series.update({
-      where: {
-        id: param,
-      },
-      data: {
-        title: title ?? existingSeries.title,
-        description: description ?? existingSeries.description,
-        visibility: visibility ?? existingSeries.visibility,
-      },
-      include: {
-        author: true,
-        movies: {
-          orderBy: {
-            createdAt: "asc",
-          },
-          include: {
-            author: true,
-            variants: true,
-          },
-        },
-      },
-    });
-    return ok(c, filterSeries(series));
-  });
-};
-
-const handleDelete = (app: HonoApp) => {
-  app.delete("/:series", async (c) => {
-    const user = c.get("user");
-    if (!user) {
-      return unauthorized(c, "Unauthorized");
-    }
-    const param = c.req.param("series");
-    if (!param) {
-      return notFound(c, "Series not found");
-    }
-
-    const series = await prisma.series.findUnique({
-      where: { id: param },
-    });
-    if (!series) {
-      return notFound(c, "Series not found");
-    }
-
-    // Check ownership: owner or admin (for system accounts)
-    const isOwner = series.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(series.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to delete this series");
-    }
-
-    // Unlink movies from series (don't delete them)
-    await prisma.movie.updateMany({
-      where: { seriesId: param },
-      data: { seriesId: null },
-    });
-
-    // Delete series
-    await prisma.series.delete({
-      where: { id: param },
-    });
-
-    return ok(c, { success: true });
-  });
-};
-
-// Add movie to series
-const AddMovieSchema = z.object({
-  movieId: z.string(),
-});
-
-const handleAddMovie = (app: HonoApp) => {
-  app.post("/:series/movies", zValidator("json", AddMovieSchema), async (c) => {
+  })
+  .post("/:series/movies", zValidator("json", AddMovieSchema), async (c) => {
     const user = c.get("user");
     if (!user) {
       return unauthorized(c, "Unauthorized");
@@ -375,12 +366,8 @@ const handleAddMovie = (app: HonoApp) => {
     }
 
     return ok(c, filterSeries(updatedSeries));
-  });
-};
-
-// Remove movie from series
-const handleRemoveMovie = (app: HonoApp) => {
-  app.delete("/:series/movies/:movie", async (c) => {
+  })
+  .delete("/:series/movies/:movie", async (c) => {
     const user = c.get("user");
     if (!user) {
       return unauthorized(c, "Unauthorized");
@@ -414,16 +401,8 @@ const handleRemoveMovie = (app: HonoApp) => {
     });
 
     return ok(c, { success: true });
-  });
-};
-
-// Reorder movies in series
-const ReorderMoviesSchema = z.object({
-  movieIds: z.array(z.string()),
-});
-
-const handleReorderMovies = (app: HonoApp) => {
-  app.patch(
+  })
+  .patch(
     "/:series/movies",
     zValidator("json", ReorderMoviesSchema),
     async (c) => {
@@ -483,6 +462,9 @@ const handleReorderMovies = (app: HonoApp) => {
       return ok(c, filterSeries(updatedSeries));
     },
   );
+
+export const registerSeriesRoute = (app: HonoApp) => {
+  app.route("/", seriesDetailRoute);
 };
 
 const isSystemAccount = async (userId: string): Promise<boolean> => {

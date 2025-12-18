@@ -1,4 +1,6 @@
 import { zValidator } from "@hono/zod-validator";
+import type { User } from "@prisma/client";
+import { Hono } from "hono";
 import { z } from "zod";
 import type { HonoApp } from "@/@types/hono";
 import { isPasswordValid } from "@/lib/password";
@@ -6,6 +8,12 @@ import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/session";
 import { unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
+
+type Env = {
+  Variables: {
+    user?: User;
+  };
+};
 
 const passwordAuthSchema = z.object({
   username: z.string(),
@@ -20,8 +28,10 @@ const tokenAuthSchema = z.object({
 
 const authSchema = z.union([passwordAuthSchema, tokenAuthSchema]);
 
-export const registerAuthRoute = (app: HonoApp) => {
-  app.post("/auth", zValidator("json", authSchema), async (c) => {
+const app = new Hono<Env>();
+
+export const authRoute = app
+  .post("/", zValidator("json", authSchema), async (c) => {
     const data = c.req.valid("json");
     if (data.type === "token") {
       const { token } = data;
@@ -56,9 +66,8 @@ export const registerAuthRoute = (app: HonoApp) => {
     }
     const token = await createSession(user.id);
     return ok(c, token);
-  });
-
-  app.delete("/auth", zValidator("json", tokenAuthSchema), async (c) => {
+  })
+  .delete("/", zValidator("json", tokenAuthSchema), async (c) => {
     const token = c.req.valid("json").token;
     if (!token) {
       return unauthorized(c, "Not logged in");
@@ -70,4 +79,7 @@ export const registerAuthRoute = (app: HonoApp) => {
     });
     return ok(c, null);
   });
+
+export const registerAuthRoute = (app: HonoApp) => {
+  app.route("/auth", authRoute);
 };

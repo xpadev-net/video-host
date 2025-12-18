@@ -1,40 +1,56 @@
 import { zValidator } from "@hono/zod-validator";
+import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
-import type { HonoApp } from "@/@types/hono";
-import {
-  type FilteredMovie,
-  type PaginatedResponse,
-  ZVisibility,
-} from "@/@types/models";
+import type { FilteredMovie, PaginatedResponse } from "@/@types/models";
+import { ZVisibility } from "@/@types/models";
 import { filterMovie } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
 import { addEncodeJob, setEncodeProgress } from "@/lib/redis";
-import { registerMovieRoute } from "@/routes/api/v4/movies/[movie]";
+import { movieRoute } from "@/routes/api/v4/movies/[movie]";
 import { buildVisibilityFilter } from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
-export const registerMoviesRoutes = (app: HonoApp) => {
-  const api = new Hono() as HonoApp;
-  registerMovieRoute(api);
-  registerGetIndexRoute(api);
-  registerPostIndexRoute(api);
-  app.route("/movies", api);
+type Env = {
+  Variables: {
+    user?: User;
+  };
 };
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 200;
 
-const registerGetIndexRoute = (app: HonoApp) => {
-  app.get("/", async (c) => {
-    const page = parseInt(c.req.queries("page")?.[0] || "1", 10);
-    const limit = Math.min(
-      parseInt(c.req.queries("limit")?.[0] || DEFAULT_PAGE_SIZE.toString(), 10),
-      MAX_PAGE_SIZE,
-    );
-    const query = c.req.queries("query")?.[0];
-    const author = c.req.queries("author")?.[0];
+const QuerySchema = z.object({
+  page: z
+    .string()
+    .optional()
+    .default("1")
+    .transform((v) => parseInt(v, 10)),
+  limit: z
+    .string()
+    .optional()
+    .default(DEFAULT_PAGE_SIZE.toString())
+    .transform((v) => Math.min(parseInt(v, 10), MAX_PAGE_SIZE)),
+  query: z.string().optional(),
+  author: z.string().optional(),
+});
+
+const MovieBodySchema = z.object({
+  title: z.string(),
+  description: z.string().optional(),
+  seriesId: z.string().optional(),
+  s3Key: z.string(),
+  visibility: ZVisibility.optional().default("PUBLIC"),
+  asUserId: z.string().optional(), // Admin only
+  order: z.number().optional(),
+});
+
+const app = new Hono<Env>();
+
+export const moviesRoute = app
+  .get("/", zValidator("query", QuerySchema), async (c) => {
+    const { page, limit, query, author } = c.req.valid("query");
 
     const where = buildVisibilityFilter(c.get("user"), query, author);
 
@@ -76,26 +92,15 @@ const registerGetIndexRoute = (app: HonoApp) => {
     };
 
     return ok(c, response);
-  });
-};
-
-const MovieBodySchema = z.object({
-  title: z.string(),
-  description: z.string().optional(),
-  seriesId: z.string().optional(),
-  s3Key: z.string(),
-  visibility: ZVisibility.optional().default("PUBLIC"),
-  asUserId: z.string().optional(),
-  order: z.number().optional(),
-});
-
-const registerPostIndexRoute = (app: HonoApp) => {
-  app.post("/", zValidator("json", MovieBodySchema), async (c) => {
+  })
+  .post("/", zValidator("json", MovieBodySchema), async (c) => {
     const user = c.get("user");
     if (!user) {
       return unauthorized(c, "Unauthorized");
     }
     const data = c.req.valid("json");
+    // The zValidator already handles invalid data, so this check is technically redundant
+    // but kept for consistency if the schema was more complex or had custom refinements.
     if (!data) {
       return badRequest(c, "Invalid data");
     }
@@ -175,5 +180,5 @@ const registerPostIndexRoute = (app: HonoApp) => {
       });
     }
     return ok(c, filterMovie(movie));
-  });
-};
+  })
+  .route("/", movieRoute);

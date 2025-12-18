@@ -1,45 +1,60 @@
 import { zValidator } from "@hono/zod-validator";
+import type { User } from "@prisma/client";
+import { Hono } from "hono";
 import { z } from "zod";
 import type { HonoApp } from "@/@types/hono";
 import { filterUser } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
-import { unauthorized } from "@/utils/response";
+import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
-export const registerUsersMeRoute = (app: HonoApp) => {
-  registerGet(app);
-  registerPatch(app);
+type Env = {
+  Variables: {
+    user?: User;
+  };
 };
 
-const registerGet = (app: HonoApp) => {
-  app.get("/me", async (c) => {
+const app = new Hono<Env>();
+
+export const meRoute = app
+  .get("/me", async (c) => {
     const user = c.get("user");
     if (!user) {
-      return ok(c, null);
+      return unauthorized(c, "Unauthorized");
     }
     return ok(c, filterUser(user));
-  });
-};
+  })
+  .patch(
+    "/me",
+    zValidator(
+      "json",
+      z.object({
+        name: z.string().optional(),
+        avatarUrl: z.string().optional(),
+      }),
+    ),
+    async (c) => {
+      const user = c.get("user");
+      if (!user) {
+        return unauthorized(c, "Unauthorized");
+      }
+      const data = c.req.valid("json");
+      if (!data) {
+        return badRequest(c, "Invalid data");
+      }
+      const updatedUser = await prisma.user.update({
+        where: {
+          id: user.id,
+        },
+        data: {
+          name: data.name ?? user.name,
+          avatarUrl: data.avatarUrl ?? user.avatarUrl,
+        },
+      });
+      return ok(c, filterUser(updatedUser));
+    },
+  );
 
-const PatchSchema = z.object({
-  name: z.string(),
-});
-
-const registerPatch = (app: HonoApp) => {
-  app.patch("/me", zValidator("json", PatchSchema), async (c) => {
-    const user = c.get("user");
-    if (!user) {
-      return unauthorized(c, "Not logged in");
-    }
-    const { name } = c.req.valid("json");
-    const newUser = await prisma.user.update({
-      where: {
-        id: user.id,
-      },
-      data: {
-        name,
-      },
-    });
-    return ok(c, newUser);
-  });
+export const registerUsersMeRoute = (app: HonoApp) => {
+  app.route("/", meRoute);
 };

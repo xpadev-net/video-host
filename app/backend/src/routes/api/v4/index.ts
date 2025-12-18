@@ -1,27 +1,37 @@
+import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import type { HonoApp } from "@/@types/hono";
-import { registerMoviesRoutes } from "@/routes/api/v4/movies";
-import { registerPlaylistsRoutes } from "@/routes/api/v4/playlists";
-import { registerSeriesRoutes } from "@/routes/api/v4/series";
-import { registerSystemAccountsRoute } from "@/routes/api/v4/system-accounts";
-import { registerUsersRoute } from "@/routes/api/v4/users";
-import { registerAuthRoute } from "./auth";
-import { registerCallbackRoute } from "./callback";
-import { registerProgressRoute } from "./progress";
-import { registerUploadRoute } from "./upload";
-import { registerVodRoute } from "./vod";
+import { authRoute } from "./auth";
+import { callbackRoute } from "./callback";
+import { moviesRoute } from "./movies";
+import { playlistsRoute } from "./playlists";
+import { progressRoute } from "./progress";
+import { seriesRoute } from "./series";
+import { systemAccountsRoute } from "./system-accounts";
+import { uploadRoute } from "./upload";
+import { usersRoute } from "./users";
+import { vodRoute } from "./vod";
 
-export const registerV4Route = (app: HonoApp) => {
-  const v4 = new Hono() as HonoApp;
-  registerAuthRoute(v4);
-  registerUsersRoute(v4);
-  registerSeriesRoutes(v4);
-  registerMoviesRoutes(v4);
-  registerPlaylistsRoutes(v4);
-  registerSystemAccountsRoute(v4);
-  registerUploadRoute(v4);
-  registerCallbackRoute(v4);
-  registerVodRoute(v4);
-  registerProgressRoute(v4);
-  app.route("/v4", v4);
+type Env = {
+  Variables: {
+    user?: User;
+  };
+};
+
+const app = new Hono<Env>();
+
+export const v4Route = app
+  .route("/auth", authRoute)
+  .route("/users", usersRoute)
+  .route("/movies", moviesRoute)
+  .route("/series", seriesRoute)
+  .route("/playlists", playlistsRoute)
+  .route("/system-accounts", systemAccountsRoute)
+  .route("/upload", uploadRoute)
+  .route("/callback", callbackRoute)
+  .route("/vod", vodRoute)
+  .route("/progress", progressRoute);
+
+export const registerV4Route = (parentApp: HonoApp) => {
+  parentApp.route("/v4", v4Route);
 };

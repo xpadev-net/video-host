@@ -1,4 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
+import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { HonoApp } from "@/@types/hono";
@@ -6,17 +7,21 @@ import { prisma } from "@/lib/prisma";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
-export const registerSystemAccountsRoute = (app: HonoApp) => {
-  const api = new Hono() as HonoApp;
-  registerGetRoute(api);
-  registerPostRoute(api);
-  registerDeleteRoute(api);
-  app.route("/system-accounts", api);
+type Env = {
+  Variables: {
+    user?: User;
+  };
 };
 
-// GET /api/v4/system-accounts - List all system accounts (admin only)
-const registerGetRoute = (app: HonoApp) => {
-  app.get("/", async (c) => {
+const CreateSystemAccountSchema = z.object({
+  username: z.string().min(1),
+  name: z.string().min(1),
+});
+
+const app = new Hono<Env>();
+
+export const systemAccountsRoute = app
+  .get("/", async (c) => {
     const user = c.get("user");
     if (!user || user.role !== "ADMIN") {
       return unauthorized(c, "Admin access required");
@@ -39,17 +44,8 @@ const registerGetRoute = (app: HonoApp) => {
     });
 
     return ok(c, systemAccounts);
-  });
-};
-
-const CreateSystemAccountSchema = z.object({
-  username: z.string().min(1),
-  name: z.string().min(1),
-});
-
-// POST /api/v4/system-accounts - Create a system account (admin only)
-const registerPostRoute = (app: HonoApp) => {
-  app.post("/", zValidator("json", CreateSystemAccountSchema), async (c) => {
+  })
+  .post("/", zValidator("json", CreateSystemAccountSchema), async (c) => {
     const user = c.get("user");
     if (!user || user.role !== "ADMIN") {
       return unauthorized(c, "Admin access required");
@@ -81,12 +77,8 @@ const registerPostRoute = (app: HonoApp) => {
     });
 
     return ok(c, systemAccount);
-  });
-};
-
-// DELETE /api/v4/system-accounts/:id - Delete a system account (admin only)
-const registerDeleteRoute = (app: HonoApp) => {
-  app.delete("/:id", async (c) => {
+  })
+  .delete("/:id", async (c) => {
     const user = c.get("user");
     if (!user || user.role !== "ADMIN") {
       return unauthorized(c, "Admin access required");
@@ -128,4 +120,7 @@ const registerDeleteRoute = (app: HonoApp) => {
 
     return ok(c, { success: true });
   });
+
+export const registerSystemAccountsRoute = (app: HonoApp) => {
+  app.route("/system-accounts", systemAccountsRoute);
 };

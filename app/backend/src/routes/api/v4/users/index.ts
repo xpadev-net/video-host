@@ -1,57 +1,141 @@
 import { zValidator } from "@hono/zod-validator";
+import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { HonoApp } from "@/@types/hono";
-import { SIGNUP_CODE, SIGNUP_ENABLED } from "@/env";
+import type { FilteredUser, PaginatedResponse } from "@/@types/models";
 import { filterUser } from "@/lib/filter";
-import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/session";
-import { registerUsersDetailsRoute } from "@/routes/api/v4/users/[user]";
-import { registerUsersMeRoute } from "@/routes/api/v4/users/me";
+import { meRoute } from "@/routes/api/v4/users/me";
 import { badRequest } from "@/utils/response";
-import { forbidden } from "@/utils/response/forbidden";
 import { ok } from "@/utils/response/ok";
+import { userRoute } from "./[user]";
 
-export const registerUsersRoute = (app: HonoApp) => {
-  const api = new Hono() as HonoApp;
-  registerUsersMeRoute(api);
-  registerUsersDetailsRoute(api);
-  registerPostIndexRoute(api);
-  app.route("/users", api);
+type Env = {
+  Variables: {
+    user?: User;
+  };
 };
 
-const SignupBodySchema = z.object({
-  username: z.string(),
-  name: z.string(),
-  password: z.string(),
-  signupCode: z.optional(z.string()),
+const DEFAULT_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 200;
+
+const QuerySchema = z.object({
+  page: z
+    .string()
+    .optional()
+    .default("1")
+    .transform((v) => parseInt(v, 10)),
+  limit: z
+    .string()
+    .optional()
+    .default(DEFAULT_PAGE_SIZE.toString())
+    .transform((v) => Math.min(parseInt(v, 10), MAX_PAGE_SIZE)),
+  query: z.string().optional(),
 });
 
-const registerPostIndexRoute = (app: HonoApp) => {
-  app.post("/", zValidator("json", SignupBodySchema), async (c) => {
-    if (!SIGNUP_ENABLED) {
-      return forbidden(c, "Signup is disabled");
-    }
-    const { username, name, password, signupCode } = c.req.valid("json");
-    if (SIGNUP_CODE !== undefined && SIGNUP_CODE !== signupCode) {
-      return forbidden(c, "Invalid signup code");
-    }
-    try {
-      const user = await prisma.user.create({
-        data: {
-          username,
-          name,
-          password: await hashPassword(password),
-        },
-      });
-      const token = await createSession(user.id);
-      return ok(c, {
-        user: filterUser(user),
-        token,
-      });
-    } catch (_e) {
+const PostSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+  name: z.string().optional(),
+});
+
+const app = new Hono<Env>();
+
+export const usersRoute = app
+  .get("/", zValidator("query", QuerySchema), async (c) => {
+    const { page, limit, query } = c.req.valid("query");
+
+    const where = query
+      ? {
+          OR: [
+            { username: { contains: query } },
+            { name: { contains: query } },
+          ],
+        }
+      : {};
+
+    const totalCount = await prisma.user.count({ where });
+
+    const users = await prisma.user.findMany({
+      where,
+      take: limit,
+      skip: (page - 1) * limit,
+    });
+
+    const totalPages = Math.ceil(totalCount / limit);
+    const hasNext = page < totalPages;
+    const hasPrev = page > 1;
+
+    const response: PaginatedResponse<FilteredUser> = {
+      items: users.map(filterUser),
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+        hasNext,
+        hasPrev,
+      },
+    };
+
+    return ok(c, response);
+  })
+  .post("/", zValidator("json", PostSchema), async (c) => {
+    const data = c.req.valid("json");
+    const { username, password, name } = data;
+
+    const existing = await prisma.user.findUnique({
+      where: {
+        username,
+      },
+    });
+
+    if (existing) {
       return badRequest(c, "Username already exists");
     }
-  });
+
+    const user = await prisma.user.create({
+      data: {
+        username,
+        password,
+        name: name || username,
+        role: "USER",
+      },
+    });
+
+    const token = await createSession(user.id);
+
+    return ok(c, {
+      user: filterUser(user),
+      token,
+    });
+  })
+  .route("/", meRoute)
+  .route("/", userRoute);
+
+export const registerUsersRoute = (app: HonoApp) => {
+  // Mount routes to maintain compatibility order matters?
+  // Original:
+  // registerUsersMeRoute(api);
+  // registerUsersDetailsRoute(api);
+  // registerGetIndexRoute(api);
+  // registerPostRoute(api);
+
+  // New route chains get/post first, then me, then user.
+  // Hono routing order: first registered matched.
+  // if get /me matches get /:user, userRoute would capture it if registered first.
+  // But here I chained .get('/') first.
+  // Then .route('/', meRoute) -> mounts `/me`
+  // Then .route('/', userRoute) -> mounts `/:user`
+  // `/me` is more specific than `/:user`?
+  // Hono uses regex. `me` is exact match. `/:user` is param.
+  // If `me` is registered BEFORE `/:user`, it matches `me`.
+  // So `meRoute` MUST be before `userRoute`.
+  // I did `.route('/', meRoute)` then `.route('/', userRoute)`.
+  // So `me` is first.
+
+  // For export compability:
+  app.route("/users", usersRoute);
 };
