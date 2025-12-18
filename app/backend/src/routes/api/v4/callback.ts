@@ -27,7 +27,7 @@ const EncodeCompleteSchema = z.object({
 const app = new Hono<Env>();
 
 export const callbackRoute = app.post(
-  "/encode-complete",
+  "/",
   zValidator("json", EncodeCompleteSchema),
   async (c) => {
     // Verify callback secret

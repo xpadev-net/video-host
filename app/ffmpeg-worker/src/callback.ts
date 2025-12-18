@@ -1,5 +1,9 @@
-import axios from "axios";
-import { BACKEND_CALLBACK_URL, CALLBACK_SECRET } from "./env";
+import { client } from "./client";
+
+const SECRET = process.env.SECRET;
+if (!SECRET) {
+  throw new Error("SECRET is not defined");
+}
 
 export interface CallbackPayload {
   movieId: string;
@@ -11,18 +15,34 @@ export interface CallbackPayload {
   thumbnailUrl?: string;
 }
 
-export const sendCallback = async (payload: CallbackPayload): Promise<void> => {
+export const sendCallback = async (payload: CallbackPayload) => {
   try {
-    await axios.post(BACKEND_CALLBACK_URL, payload, {
-      headers: {
-        Authorization: `Bearer ${CALLBACK_SECRET}`,
-        "Content-Type": "application/json",
+    const res = await client.api.v4.callback.$post(
+      {
+        json: {
+          movieId: payload.movieId,
+          status: payload.status === "success" ? "success" : "failed",
+          variantId: payload.variantId,
+          s3Key: payload.s3Key,
+          contentUrl: payload.contentUrl,
+          duration: payload.duration,
+          thumbnailUrl: payload.thumbnailUrl,
+        },
       },
-      timeout: 30000,
-    });
-    console.log(`Callback sent for movie ${payload.movieId}: ${payload.status}`);
+      {
+        headers: {
+          "X-Secret": SECRET,
+        },
+      },
+    );
+
+    if (!res.ok) {
+      console.error(`Failed to send callback: ${res.statusText}`);
+      throw new Error(`Failed to send callback: ${res.statusText}`);
+    }
+    console.log(`Callback sent for ID ${payload.movieId}: ${payload.status}`);
   } catch (error) {
-    console.error(`Failed to send callback for movie ${payload.movieId}:`, error);
+    console.error("Error sending callback:", error);
     throw error;
   }
 };

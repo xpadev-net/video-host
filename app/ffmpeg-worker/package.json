@@ -8,8 +8,9 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.952.0",
-    "axios": "^1.9.0",
+    "@video-host/backend": "workspace:*",
     "dotenv": "^17.2.3",
+    "hono": "^4.11.1",
     "redis": "^5.10.0"
   },
   "devDependencies": {
