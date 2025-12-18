@@ -1,14 +1,7 @@
-import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import type { HonoApp } from "@/@types/hono";
+import type { Env, HonoApp } from "@/@types/hono";
 import { getEncodeProgress, getQueuePosition } from "@/lib/redis";
-
-type Env = {
-  Variables: {
-    user?: User;
-  };
-};
 
 const app = new Hono<Env>();
 

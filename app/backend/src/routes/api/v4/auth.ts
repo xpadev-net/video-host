@@ -1,19 +1,12 @@
 import { zValidator } from "@hono/zod-validator";
-import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
-import type { HonoApp } from "@/@types/hono";
+import type { Env, HonoApp } from "@/@types/hono";
 import { isPasswordValid } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/session";
 import { unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
-
-type Env = {
-  Variables: {
-    user?: User;
-  };
-};
 
 const passwordAuthSchema = z.object({
   username: z.string(),

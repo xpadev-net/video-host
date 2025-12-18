@@ -1,8 +1,8 @@
 import { zValidator } from "@hono/zod-validator";
-import type { Prisma, User } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
-import type { HonoApp } from "@/@types/hono";
+import type { Env, HonoApp } from "@/@types/hono";
 import {
   type FilteredPlaylist,
   type PaginatedResponse,
@@ -14,12 +14,6 @@ import { buildVisibilityFilter } from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { playlistDetailRoute } from "./[playlist]";
-
-type Env = {
-  Variables: {
-    user?: User;
-  };
-};
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 200;

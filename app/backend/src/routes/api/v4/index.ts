@@ -1,6 +1,5 @@
-import type { User } from "@prisma/client";
 import { Hono } from "hono";
-import type { HonoApp } from "@/@types/hono";
+import type { Env, HonoApp } from "@/@types/hono";
 import { authRoute } from "./auth";
 import { callbackRoute } from "./callback";
 import { moviesRoute } from "./movies";
@@ -11,12 +10,6 @@ import { systemAccountsRoute } from "./system-accounts";
 import { uploadRoute } from "./upload";
 import { usersRoute } from "./users";
 import { vodRoute } from "./vod";
-
-type Env = {
-  Variables: {
-    user?: User;
-  };
-};
 
 const app = new Hono<Env>();
 

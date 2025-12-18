@@ -1,17 +1,10 @@
 import { zValidator } from "@hono/zod-validator";
-import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
-import type { HonoApp } from "@/@types/hono";
+import type { Env, HonoApp } from "@/@types/hono";
 import { prisma } from "@/lib/prisma";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
-
-type Env = {
-  Variables: {
-    user?: User;
-  };
-};
 
 const CreateSystemAccountSchema = z.object({
   username: z.string().min(1),

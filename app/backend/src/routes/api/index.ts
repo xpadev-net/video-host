@@ -1,13 +1,6 @@
-import type { User } from "@prisma/client";
 import { Hono } from "hono";
-import type { HonoApp } from "@/@types/hono";
+import type { Env, HonoApp } from "@/@types/hono";
 import { v4Route } from "./v4";
-
-type Env = {
-  Variables: {
-    user?: User;
-  };
-};
 
 const app = new Hono<Env>();
 

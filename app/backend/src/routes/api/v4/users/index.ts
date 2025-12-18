@@ -1,8 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
-import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
-import type { HonoApp } from "@/@types/hono";
+import type { Env, HonoApp } from "@/@types/hono";
 import type { FilteredUser, PaginatedResponse } from "@/@types/models";
 import { filterUser } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
@@ -11,12 +10,6 @@ import { meRoute } from "@/routes/api/v4/users/me";
 import { badRequest } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { userRoute } from "./[user]";
-
-type Env = {
-  Variables: {
-    user?: User;
-  };
-};
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 200;

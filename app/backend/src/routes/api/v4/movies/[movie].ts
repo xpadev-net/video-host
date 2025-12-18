@@ -1,20 +1,13 @@
 import { zValidator } from "@hono/zod-validator";
-import type { User } from "@prisma/client"; // Import User type
 import { Hono } from "hono";
 import { z } from "zod";
+import type { Env } from "@/@types/hono";
 import { ZVisibility } from "@/@types/models";
 import { filterMovie } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
 import { deleteProdFile, deleteTmpFile } from "@/lib/s3";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
-
-// Define Env locally or import if available. using inline for now to match HonoApp
-type Env = {
-  Variables: {
-    user?: User;
-  };
-};
 
 const MoviePatchSchema = z.object({
   title: z.string().optional(),

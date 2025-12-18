@@ -1,7 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
-import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
+import type { Env } from "@/@types/hono";
 import type { FilteredMovie, PaginatedResponse } from "@/@types/models";
 import { ZVisibility } from "@/@types/models";
 import { filterMovie } from "@/lib/filter";
@@ -11,12 +11,6 @@ import { movieRoute } from "@/routes/api/v4/movies/[movie]";
 import { buildVisibilityFilter } from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
-
-type Env = {
-  Variables: {
-    user?: User;
-  };
-};
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 200;

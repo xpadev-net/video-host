@@ -1,17 +1,10 @@
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import type { User } from "@prisma/client";
 import { Hono } from "hono";
-import type { HonoApp } from "@/@types/hono";
+import type { Env, HonoApp } from "@/@types/hono";
 import { S3_PROD_BUCKET, VOD_INTERNAL_SECRET } from "@/env";
 import { s3Client } from "@/lib/s3";
 import { unauthorized } from "@/utils/response";
-
-type Env = {
-  Variables: {
-    user?: User;
-  };
-};
 
 const app = new Hono<Env>();
 
