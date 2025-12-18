@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
@@ -6,8 +5,7 @@ import { type FC, type FormEvent, useEffect, useState } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { MovieManager } from "@/components/Dashboard/MovieManager";
-
-const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+import { client } from "@/lib/client";
 
 interface Movie {
   id: string;
@@ -36,20 +34,32 @@ const EditSeriesPage: FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id || !token) return;
+    if (!id || !token || typeof id !== "string") return;
     const fetchSeries = async () => {
       try {
-        const res = await axios.get(`${API_URL}series/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = res.data.data;
+        const res = await client.api.v4.series[":series"].$get(
+          {
+            param: { series: id },
+          },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+
+        if (!res.ok) throw new Error("Failed to fetch");
+
+        const json = await res.json();
+        const data = json.data;
         setTitle(data.title);
         setDescription(data.description || "");
         setVisibility(data.visibility);
         // Transform movies array
+        // Backend returns movies as Array<Movie>. We need to wrap them?
+        // Wait, the interface says `data.movies` is used.
+        // Assuming backend returns `movies: Movie[]`.
         const seriesMovies: SeriesMovie[] = (data.movies || []).map(
-          (m: Movie, index: number) => ({
-            movie: m,
+          (m: unknown, index: number) => ({
+            movie: m as Movie,
             order: index + 1,
           }),
         );
@@ -65,17 +75,26 @@ const EditSeriesPage: FC = () => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!id || !title.trim()) return;
+    if (!id || !title.trim() || typeof id !== "string") return;
 
     setIsSubmitting(true);
     setError(null);
 
     try {
-      await axios.patch(
-        `${API_URL}series/${id}`,
-        { title: title.trim(), description: description.trim(), visibility },
+      const res = await client.api.v4.series[":series"].$patch(
+        {
+          param: { series: id },
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+          },
+        },
         { headers: { Authorization: `Bearer ${token}` } },
       );
+
+      if (!res.ok) throw new Error("Failed to update");
+
       router.push("/dashboard/series");
     } catch (err) {
       setError(err instanceof Error ? err.message : "更新に失敗しました");

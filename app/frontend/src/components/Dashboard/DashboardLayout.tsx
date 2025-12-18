@@ -26,7 +26,9 @@ const adminNavItems = [
 export const DashboardLayout: FC<DashboardLayoutProps> = ({ children }) => {
   const router = useRouter();
   const { data: response } = useSelf();
-  const user = response?.status === "ok" ? response.data : null;
+  const user =
+    // biome-ignore lint/suspicious/noExplicitAny: complex type inference
+    response?.status === "ok" ? (response as any).data : null;
   const isAdmin = user && "role" in user && user.role === "ADMIN";
 
   return (

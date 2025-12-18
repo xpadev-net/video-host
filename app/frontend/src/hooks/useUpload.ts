@@ -1,9 +1,7 @@
-import axios from "axios";
 import { useAtomValue } from "jotai";
 import { useCallback, useState } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
-
-const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+import { client } from "@/lib/client";
 
 interface UploadState {
   isUploading: boolean;
@@ -47,11 +45,12 @@ export const useUpload = (): UseUploadResult => {
 
       try {
         // Get presigned URL from backend
-        const presignedRes = await axios.post(
-          `${API_URL}upload/presigned-url`,
+        const res = await client.api.v4.upload["presigned-url"].$post(
           {
-            filename: file.name,
-            contentType: file.type,
+            json: {
+              filename: file.name,
+              contentType: file.type,
+            },
           },
           {
             headers: {
@@ -60,21 +59,36 @@ export const useUpload = (): UseUploadResult => {
           },
         );
 
-        const { uploadUrl, key } = presignedRes.data.data;
+        if (!res.ok) {
+          throw new Error("Failed to get upload URL");
+        }
 
-        // Upload directly to S3
-        await axios.put(uploadUrl, file, {
-          headers: {
-            "Content-Type": file.type,
-          },
-          onUploadProgress: (progressEvent) => {
-            if (progressEvent.total) {
-              const progress = Math.round(
-                (progressEvent.loaded * 100) / progressEvent.total,
-              );
+        const json = await res.json();
+        const { uploadUrl, key } = json.data;
+
+        // Upload directly to S3 using XHR for progress
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", uploadUrl);
+          xhr.setRequestHeader("Content-Type", file.type);
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const progress = Math.round((event.loaded * 100) / event.total);
               setState((prev) => ({ ...prev, progress }));
             }
-          },
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              reject(new Error("Upload failed"));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error("Upload failed"));
+          xhr.send(file);
         });
 
         setState((prev) => ({

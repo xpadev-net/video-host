@@ -6,7 +6,8 @@ import { useSelf } from "@/hooks/useUser";
 
 const DashboardPage: FC = () => {
   const { data: response, isLoading } = useSelf();
-  const user = response?.status === "ok" ? response.data : null;
+  // biome-ignore lint/suspicious/noExplicitAny: complex type inference
+  const user = response?.status === "ok" ? (response as any).data : null;
 
   if (isLoading) {
     return (

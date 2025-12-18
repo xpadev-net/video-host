@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
@@ -14,8 +13,7 @@ import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useUpload } from "@/hooks/useUpload";
 import { useSelf } from "@/hooks/useUser";
-
-const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+import { client } from "@/lib/client";
 
 const NewVideoPage: FC = () => {
   const router = useRouter();
@@ -62,14 +60,15 @@ const NewVideoPage: FC = () => {
       }
 
       // Create movie record
-      const response = await axios.post(
-        `${API_URL}movies`,
+      const res = await client.api.v4.movies.$post(
         {
-          title: title.trim(),
-          description: description.trim(),
-          s3Key,
-          visibility,
-          ...(selectedAccountId && { asUserId: selectedAccountId }),
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            s3Key,
+            visibility,
+            asUserId: selectedAccountId || undefined,
+          },
         },
         {
           headers: {
@@ -78,7 +77,12 @@ const NewVideoPage: FC = () => {
         },
       );
 
-      const movieId = response.data.data.id;
+      if (!res.ok) {
+        throw new Error("Failed to create movie");
+      }
+
+      const json = await res.json();
+      const movieId = json.data.id;
       router.push(`/dashboard/videos/${movieId}/edit`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "動画の作成に失敗しました");

@@ -11,7 +11,8 @@ const AuthButton = () => {
   const router = useRouter();
   const setAuthToken = useSetAtom(AuthTokenAtom);
 
-  if (user.data?.status === "ok" && user.data.data) {
+  // biome-ignore lint/suspicious/noExplicitAny: type inference
+  if (user.data?.status === "ok" && (user.data as any).data) {
     return (
       <Button
         size={"icon"}

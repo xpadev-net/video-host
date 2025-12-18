@@ -1,12 +1,20 @@
 import useSWRInfinite from "swr/infinite";
 
 import type { v4GetMoviesRes } from "@/@types/v4Api";
-import { requests } from "@/libraries/requests";
-import { buildQueryParams } from "@/utils/buildQueryParams";
+import { client } from "@/lib/client";
 
-const fetcher = async (key: string): Promise<v4GetMoviesRes> => {
-  const res = await requests.get<v4GetMoviesRes>(key);
-  return res.data;
+// Define the Key type matching what getKey returns and fetcher expects
+type FetcherKey = {
+  query: {
+    page: string;
+    query?: string;
+    author?: string;
+  };
+};
+
+const fetcher = async (key: FetcherKey): Promise<v4GetMoviesRes> => {
+  const res = await client.api.v4.movies.$get(key);
+  return (await res.json()) as unknown as v4GetMoviesRes;
 };
 
 type Props = {
@@ -26,11 +34,14 @@ export const useMovies = (params?: Props) => {
       !previousPageData.data.pagination.hasNext
     )
       return null;
-    return `/movies?${buildQueryParams({
-      page: pageIndex + 1,
-      query: params?.query,
-      author: params?.author,
-    })}`;
+
+    return {
+      query: {
+        page: (pageIndex + 1).toString(),
+        query: params?.query,
+        author: params?.author,
+      },
+    };
   };
 
   const { data, error, size, setSize, isValidating } = useSWRInfinite<

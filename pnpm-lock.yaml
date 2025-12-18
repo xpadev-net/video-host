@@ -109,12 +109,12 @@ importers:
       '@tailwindcss/postcss':
         specifier: ^4.1.18
         version: 4.1.18
+      '@video-host/backend':
+        specifier: workspace:*
+        version: link:../backend
       '@xpadev-net/niconicomments':
         specifier: ^0.2.76
         version: 0.2.76
-      axios:
-        specifier: ^1.13.2
-        version: 1.13.2
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -127,6 +127,9 @@ importers:
       hls.js:
         specifier: ^1.6.15
         version: 1.6.15
+      hono:
+        specifier: ^4.11.1
+        version: 4.11.1
       jotai:
         specifier: ^2.16.0
         version: 2.16.0(@types/react@19.2.7)(react@19.2.3)

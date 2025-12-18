@@ -34,6 +34,7 @@ const QuerySchema = z.object({
     .transform((v) => Math.min(parseInt(v, 10), MAX_PAGE_SIZE)),
   query: z.string().optional(),
   author: z.string().optional(),
+  mine: z.string().optional(),
 });
 
 const MovieBodySchema = z.object({

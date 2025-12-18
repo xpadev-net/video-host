@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { AuthForm, AuthLayout, FormField } from "@/components/Auth";
 import { SiteName } from "@/contexts/env";
 import { useAuth } from "@/hooks/useAuth";
-import { requests } from "@/libraries/requests";
 import { postAuth } from "@/service/postAuth";
 
 const LoginPage = () => {
@@ -27,7 +26,6 @@ const LoginPage = () => {
       // Check if already authenticated
       const token = localStorage.getItem("token");
       if (token && token !== "null" && token.trim() !== "") {
-        requests.defaults.headers.Authorization = `Bearer ${token}`;
         const callback = searchParams?.get("callback");
         router.push(callback ? decodeURIComponent(callback) : "/");
         return;
@@ -41,10 +39,15 @@ const LoginPage = () => {
     startAuth();
 
     const tokenResponse = await postAuth(username, password);
-    if (tokenResponse.data.status === "ok") {
-      handleAuthSuccess(tokenResponse.data.data);
+    const body = await tokenResponse.json();
+
+    // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
+    if (tokenResponse.ok && (body as any).status === "ok") {
+      // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
+      handleAuthSuccess((body as any).data);
     } else {
-      handleAuthError(tokenResponse.data.message || "ログインに失敗しました");
+      // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
+      handleAuthError((body as any).message || "ログインに失敗しました");
     }
   };
 

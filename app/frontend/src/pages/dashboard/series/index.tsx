@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import Link from "next/link";
@@ -7,8 +6,7 @@ import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useMySeries } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
-
-const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+import { client } from "@/lib/client";
 
 const SeriesPage: FC = () => {
   const token = useAtomValue(AuthTokenAtom);
@@ -21,9 +19,19 @@ const SeriesPage: FC = () => {
 
     setDeletingId(id);
     try {
-      await axios.delete(`${API_URL}series/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await client.api.v4.series[":series"].$delete(
+        {
+          param: { series: id },
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to delete");
+      }
+
       mutate();
     } catch (_err) {
       alert("削除に失敗しました");

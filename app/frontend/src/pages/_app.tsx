@@ -12,12 +12,11 @@ import { AuthTokenAtom } from "@/atoms/Auth";
 import { App } from "@/components/App";
 import { Theme } from "@/components/Theme";
 import { useIsomorphicEffect } from "@/libraries/IsomorphicEffect";
-import { requests } from "@/libraries/requests";
 
 export default function Main({ Component, pageProps }: AppProps) {
   const router = useRouter();
-  const token = useAtomValue(AuthTokenAtom);
-  const isomorphicEffect = useIsomorphicEffect();
+  const _token = useAtomValue(AuthTokenAtom);
+  const _isomorphicEffect = useIsomorphicEffect();
   useEffect(() => {
     const handleStart = () => {
       NProgress.start();
@@ -37,11 +36,8 @@ export default function Main({ Component, pageProps }: AppProps) {
     };
   }, [router]);
 
-  isomorphicEffect(() => {
-    if (token) {
-      requests.defaults.headers.Authorization = `Bearer ${token}`;
-    }
-  }, [token]);
+  /* Removed requests.defaults.headers.Authorization assignment as requests is removed. 
+     Auth headers should be handled by client or per-request. */
 
   return (
     <Theme>

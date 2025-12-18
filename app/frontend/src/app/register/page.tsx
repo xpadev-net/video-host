@@ -52,10 +52,15 @@ const RegisterPage = () => {
       password,
       RequireSignupCode ? signupCode : "",
     );
-    if (response.data.status === "ok") {
-      handleAuthSuccess(response.data.data.token);
+    const body = await response.json();
+
+    // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
+    if (response.ok && (body as any).status === "ok") {
+      // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
+      handleAuthSuccess((body as any).data.token);
     } else {
-      handleAuthError(response.data.message || "登録に失敗しました");
+      // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
+      handleAuthError((body as any).message || "登録に失敗しました");
     }
   };
 

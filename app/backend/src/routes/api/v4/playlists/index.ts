@@ -1,5 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
-import type { User } from "@prisma/client";
+import type { Prisma, User } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { HonoApp } from "@/@types/hono";
@@ -10,6 +10,7 @@ import {
 } from "@/@types/models";
 import { filterPlaylist } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
+import { buildVisibilityFilter } from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { playlistDetailRoute } from "./[playlist]";
@@ -35,10 +36,11 @@ const QuerySchema = z.object({
     .default(DEFAULT_PAGE_SIZE.toString())
     .transform((v) => Math.min(parseInt(v, 10), MAX_PAGE_SIZE)),
   author: z.string().optional(),
-  mine: z.string().optional(), // boolean check on value "true"? Original logic: `c.req.queries("mine")?.[0] === "true"`
+  mine: z.string().optional(),
+  query: z.string().optional(),
 });
 
-const CreatePlaylistSchema = z.object({
+const PostPlaylistSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   visibility: ZVisibility.optional().default("PUBLIC"),
@@ -50,55 +52,45 @@ const app = new Hono<Env>();
 export const playlistsRoute = app
   .get("/", zValidator("query", QuerySchema), async (c) => {
     const user = c.get("user");
-    const { page, limit, author } = c.req.valid("query");
-    const mine = c.req.query("mine") === "true"; // Check "true" string
+    const { page, limit, author, query } = c.req.valid("query");
+    const mine = c.req.query("mine") === "true";
 
-    // Build where clause
-    const where: {
-      authorId?: string;
-      visibility?: "PUBLIC" | "UNLISTED" | "PRIVATE";
-      OR?: Array<{
-        visibility?: "PUBLIC" | "UNLISTED" | "PRIVATE";
-        authorId?: string;
-      }>;
-    } = {};
+    const where: Prisma.PlaylistWhereInput = buildVisibilityFilter(
+      user,
+      query,
+      author,
+    );
 
     if (mine && user) {
       where.authorId = user.id;
-    } else if (author) {
-      where.authorId = author;
-      // Non-owners can only see public playlists
-      if (!user || user.id !== author) {
-        where.visibility = "PUBLIC";
-      }
-    } else {
-      // Public playlists only for unauthenticated or non-specific requests
-      if (user) {
-        where.OR = [{ visibility: "PUBLIC" }, { authorId: user.id }];
-      } else {
-        where.visibility = "PUBLIC";
-      }
     }
 
     const totalCount = await prisma.playlist.count({ where });
 
+    const suggest = c.req.query("suggest") !== undefined;
+
     const playlists = await prisma.playlist.findMany({
       where,
-      include: {
-        author: true,
-        movies: {
-          orderBy: { order: "asc" },
-          include: {
-            movie: {
+      include: suggest
+        ? {
+            author: true,
+          }
+        : {
+            movies: {
+              orderBy: { order: "asc" },
               include: {
-                author: true,
-                variants: true,
+                movie: {
+                  include: {
+                    author: true,
+                    variants: true,
+                  },
+                },
               },
+              take: 5,
             },
+            author: true,
           },
-          take: 5,
-        },
-      },
+      distinct: suggest ? ["title"] : undefined,
       orderBy: { updatedAt: "desc" },
       take: limit,
       skip: (page - 1) * limit,
@@ -122,24 +114,29 @@ export const playlistsRoute = app
 
     return ok(c, response);
   })
-  .post("/", zValidator("json", CreatePlaylistSchema), async (c) => {
+  .post("/", zValidator("json", PostPlaylistSchema), async (c) => {
     const user = c.get("user");
     if (!user) {
       return unauthorized(c, "Unauthorized");
     }
     const { title, description, visibility, asUserId } = c.req.valid("json");
 
-    // Handle asUserId for admin proxy
     let authorId = user.id;
     if (asUserId) {
       if (user.role !== "ADMIN") {
-        return unauthorized(c, "Only admins can create as other users");
+        return unauthorized(
+          c,
+          "Only admins can create playlists for other users",
+        );
       }
       const targetUser = await prisma.user.findUnique({
         where: { id: asUserId },
       });
-      if (!targetUser || targetUser.password !== null) {
-        return badRequest(c, "Target user must be a system account");
+      if (!targetUser) {
+        return badRequest(c, "Target user not found");
+      }
+      if (targetUser.password !== null) {
+        return badRequest(c, "Can only create playlists for system accounts");
       }
       authorId = asUserId;
     }

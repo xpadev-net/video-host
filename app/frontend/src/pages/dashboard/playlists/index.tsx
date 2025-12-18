@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import Link from "next/link";
@@ -7,8 +6,7 @@ import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useMyPlaylists } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
-
-const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+import { client } from "@/lib/client";
 
 const PlaylistsPage: FC = () => {
   const token = useAtomValue(AuthTokenAtom);
@@ -20,9 +18,19 @@ const PlaylistsPage: FC = () => {
     if (!confirm("このプレイリストを削除しますか？")) return;
     setDeletingId(id);
     try {
-      await axios.delete(`${API_URL}playlists/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await client.api.v4.playlists[":playlist"].$delete(
+        {
+          param: { playlist: id },
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to delete");
+      }
+
       mutate();
     } catch {
       alert("削除に失敗しました");

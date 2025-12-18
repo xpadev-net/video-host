@@ -1,12 +1,19 @@
 import useSWRInfinite from "swr/infinite";
 
 import type { v4GetSeriesListRes } from "@/@types/v4Api";
-import { requests } from "@/libraries/requests";
-import { buildQueryParams } from "@/utils/buildQueryParams";
+import { client } from "@/lib/client";
 
-const fetcher = async (key: string): Promise<v4GetSeriesListRes> => {
-  const res = await requests.get<v4GetSeriesListRes>(key);
-  return res.data;
+type FetcherKey = {
+  query: {
+    page: string;
+    query?: string;
+    author?: string;
+  };
+};
+
+const fetcher = async (key: FetcherKey): Promise<v4GetSeriesListRes> => {
+  const res = await client.api.v4.series.$get(key);
+  return (await res.json()) as unknown as v4GetSeriesListRes;
 };
 
 type Props = {
@@ -26,11 +33,13 @@ export const useSeriesListInfinite = (params?: Props) => {
       !previousPageData.data.pagination.hasNext
     )
       return null;
-    return `/series?${buildQueryParams({
-      page: pageIndex + 1,
-      query: params?.query,
-      author: params?.author,
-    })}`;
+    return {
+      query: {
+        page: (pageIndex + 1).toString(),
+        query: params?.query,
+        author: params?.author,
+      },
+    };
   };
 
   const { data, error, size, setSize, isValidating } = useSWRInfinite<

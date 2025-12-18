@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { type FC, type FormEvent, useState } from "react";
@@ -6,8 +5,7 @@ import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useSystemAccounts } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
-
-const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+import { client } from "@/lib/client";
 
 interface SystemAccount {
   id: string;
@@ -19,7 +17,8 @@ interface SystemAccount {
 const SystemAccountsPage: FC = () => {
   const token = useAtomValue(AuthTokenAtom);
   const { data: response, isLoading: isUserLoading } = useSelf();
-  const user = response?.status === "ok" ? response.data : null;
+  // biome-ignore lint/suspicious/noExplicitAny: complex type inference
+  const user = response?.status === "ok" ? (response as any).data : null;
   const { data: accounts, mutate } = useSystemAccounts();
   const [username, setUsername] = useState("");
   const [name, setName] = useState("");
@@ -35,11 +34,15 @@ const SystemAccountsPage: FC = () => {
     setError(null);
 
     try {
-      await axios.post(
-        `${API_URL}/system-accounts`,
-        { username: username.trim(), name: name.trim() },
+      const res = await client.api.v4["system-accounts"].$post(
+        {
+          json: { username: username.trim(), name: name.trim() },
+        },
         { headers: { Authorization: `Bearer ${token}` } },
       );
+
+      if (!res.ok) throw new Error("作成に失敗しました");
+
       setUsername("");
       setName("");
       mutate();
@@ -60,9 +63,17 @@ const SystemAccountsPage: FC = () => {
 
     setDeletingId(id);
     try {
-      await axios.delete(`${API_URL}/system-accounts/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await client.api.v4["system-accounts"][":id"].$delete(
+        {
+          param: { id },
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      if (!res.ok) throw new Error("削除に失敗しました");
+
       mutate();
     } catch {
       alert("削除に失敗しました");

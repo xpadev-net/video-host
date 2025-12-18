@@ -1,6 +1,6 @@
 import type { v4GetSeriesListRes } from "@/@types/v4Api";
 import { useStickySWR } from "@/hooks/useStickySWR";
-import { requests } from "@/libraries/requests";
+import { client } from "@/lib/client";
 
 const fetcher = async (key: string): Promise<v4GetSeriesListRes> => {
   if (key.length < 2) {
@@ -20,14 +20,15 @@ const fetcher = async (key: string): Promise<v4GetSeriesListRes> => {
       },
     };
   }
-  const urlSearchParam = new URLSearchParams({
-    query: key,
-    suggest: "1",
-  }).toString();
-  const res = await requests.get<v4GetSeriesListRes>(
-    `/series?${urlSearchParam}`,
-  );
-  return res.data;
+
+  const res = await client.api.v4.series.$get({
+    query: {
+      query: key,
+      suggest: "1",
+    },
+  });
+
+  return (await res.json()) as unknown as v4GetSeriesListRes;
 };
 
 type Props = {

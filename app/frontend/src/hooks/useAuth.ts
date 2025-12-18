@@ -3,7 +3,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { AuthTokenAtom } from "@/atoms/Auth";
-import { requests } from "@/libraries/requests";
 
 export function useAuth() {
   const router = useRouter();
@@ -13,7 +12,6 @@ export function useAuth() {
   const [error, setError] = useState("");
 
   const handleAuthSuccess = (token: string) => {
-    requests.defaults.headers.Authorization = `Bearer ${token}`;
     setAuthToken(token);
     const callback = searchParams?.get("callback");
     router.push(callback ? decodeURIComponent(callback) : "/");

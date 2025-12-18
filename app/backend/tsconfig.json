@@ -4,6 +4,7 @@
     "module": "CommonJS",
     "moduleResolution": "Node",
     "strict": true,
+    "declaration": true,
     "skipLibCheck": true,
     "outDir": "dist",
     "esModuleInterop": true,

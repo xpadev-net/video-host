@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
@@ -6,8 +5,7 @@ import { type FC, type FormEvent, useEffect, useState } from "react";
 import type { FilteredMovie } from "@/@types/v4Api";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
-
-const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+import { client } from "@/lib/client";
 
 interface EncodeProgress {
   status: "queued" | "processing" | "completed" | "failed";
@@ -36,19 +34,31 @@ const EditVideoPage: FC = () => {
   );
 
   useEffect(() => {
-    if (!id || !token) return;
+    if (!id || !token || typeof id !== "string") return;
 
     const fetchMovie = async () => {
       try {
-        const res = await axios.get(`${API_URL}movies/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = res.data.data;
-        setMovie(data);
-        setTitle(data.title);
-        setDescription(data.description || "");
-        setVisibility(data.visibility);
-      } catch (_err) {
+        const res = await client.api.v4.movies[":movie"].$get(
+          {
+            param: { movie: id },
+          },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+
+        if (!res.ok) {
+          throw new Error("Failed to fetch");
+        }
+
+        const json = await res.json();
+        // biome-ignore lint/suspicious/noExplicitAny: loose typing
+        const movieData = json.data as any;
+        setMovie(movieData);
+        setTitle(movieData.title);
+        setDescription(movieData.description || "");
+        setVisibility(movieData.visibility);
+      } catch {
         setError("動画の取得に失敗しました");
       } finally {
         setIsLoading(false);
@@ -60,7 +70,7 @@ const EditVideoPage: FC = () => {
 
   // SSE for encoding progress with authentication
   useEffect(() => {
-    if (!id || !movie || !token) return;
+    if (!id || !movie || !token || typeof id !== "string") return;
 
     const variant = movie.variants?.[0];
     if (!variant || variant.status !== "PROCESSING") {
@@ -74,7 +84,13 @@ const EditVideoPage: FC = () => {
       const { EventSourcePlus } = await import("event-source-plus");
       controller = new AbortController();
 
-      const eventSource = new EventSourcePlus(`${API_URL}progress/${id}`, {
+      const url = client.api.v4.progress[":movieId"]
+        .$url({
+          param: { movieId: id },
+        })
+        .toString();
+
+      const eventSource = new EventSourcePlus(url, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -91,13 +107,22 @@ const EditVideoPage: FC = () => {
             if (data.status === "completed" || data.status === "failed") {
               controller?.abort();
               // Refresh movie data
-              axios
-                .get(`${API_URL}movies/${id}`, {
-                  headers: { Authorization: `Bearer ${token}` },
-                })
-                .then((res) => {
-                  setMovie(res.data.data);
-                  setEncodeProgress(null);
+              client.api.v4.movies[":movie"]
+                .$get(
+                  {
+                    param: { movie: id },
+                  },
+                  {
+                    headers: { Authorization: `Bearer ${token}` },
+                  },
+                )
+                .then(async (res) => {
+                  if (res.ok) {
+                    const json = await res.json();
+                    // biome-ignore lint/suspicious/noExplicitAny: loose typing
+                    setMovie(json.data as any);
+                    setEncodeProgress(null);
+                  }
                 });
             }
           } catch (_e) {
@@ -119,23 +144,30 @@ const EditVideoPage: FC = () => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!id || !title.trim()) return;
+    if (!id || !title.trim() || typeof id !== "string") return;
 
     setIsSubmitting(true);
     setError(null);
 
     try {
-      await axios.patch(
-        `${API_URL}movies/${id}`,
+      const res = await client.api.v4.movies[":movie"].$patch(
         {
-          title: title.trim(),
-          description: description.trim(),
-          visibility,
+          param: { movie: id },
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+          },
         },
         {
           headers: { Authorization: `Bearer ${token}` },
         },
       );
+
+      if (!res.ok) {
+        throw new Error("Failed to update");
+      }
+
       router.push("/dashboard/videos");
     } catch (err) {
       setError(err instanceof Error ? err.message : "更新に失敗しました");

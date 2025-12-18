@@ -1,16 +1,21 @@
-import { AxiosError, type AxiosResponse } from "axios";
-
-import type { v4DeleteAuthLogoutRes } from "@/@types/v4Api";
-import { requests } from "@/libraries/requests";
+import { AuthTokenLocalStorageKey } from "@/atoms/Auth";
+import { client } from "@/lib/client";
 
 export const deleteAuth = async () => {
-  try {
-    const res = await requests.delete<v4DeleteAuthLogoutRes>("/auth");
-    return res.data;
-  } catch (e) {
-    if (e instanceof AxiosError && e.response) {
-      return e.response as AxiosResponse<v4DeleteAuthLogoutRes, unknown>;
-    }
-    throw e;
-  }
+  const storedToken =
+    typeof window !== "undefined"
+      ? localStorage.getItem(AuthTokenLocalStorageKey)
+      : null;
+  const token = storedToken
+    ? storedToken.startsWith('"')
+      ? storedToken.slice(1, -1)
+      : storedToken
+    : "";
+
+  if (!token) return { status: "error", message: "No token found" };
+
+  const res = await client.api.v4.auth.$delete({
+    json: { token },
+  });
+  return await res.json();
 };

@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import Image from "next/image";
@@ -8,8 +7,7 @@ import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useMyMovies } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
-
-const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+import { client } from "@/lib/client";
 
 const VideosPage: FC = () => {
   const token = useAtomValue(AuthTokenAtom);
@@ -22,9 +20,19 @@ const VideosPage: FC = () => {
 
     setDeletingId(id);
     try {
-      await axios.delete(`${API_URL}movies/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await client.api.v4.movies[":movie"].$delete(
+        {
+          param: { movie: id },
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to delete");
+      }
+
       mutate();
     } catch (_err) {
       alert("削除に失敗しました");

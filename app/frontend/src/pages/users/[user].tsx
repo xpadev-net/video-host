@@ -21,9 +21,10 @@ const UserPage = () => {
     return (
       <div className={"p-6 pt-3 max-w-[1070px] mx-auto"}>
         <h1>読み込みに失敗しました</h1>
-        <span>
-          {user.code} - {user.message}
-        </span>
+        <div className="error">
+          {/* biome-ignore lint/suspicious/noExplicitAny: error message access */}
+          {user.code} - {(user as any).message}
+        </div>
       </div>
     );
   }
@@ -32,21 +33,25 @@ const UserPage = () => {
     {
       value: "series",
       label: "シリーズ",
-      content: <SeriesSearchList author={user.data.id} />,
+      // biome-ignore lint/suspicious/noExplicitAny: data access
+      content: <SeriesSearchList author={(user as any).data.id} />,
     },
     {
       value: "movies",
       label: "動画",
-      content: <MoviesSearchList author={user.data.id} />,
+      // biome-ignore lint/suspicious/noExplicitAny: data access
+      content: <MoviesSearchList author={(user as any).data.id} />,
     },
   ];
 
   return (
     <div className={"p-6 pt-3 max-w-[1070px] mx-auto"}>
       <Head>
-        <title>{`${user.data.name} - ${SiteName}`}</title>
+        {/* biome-ignore lint/suspicious/noExplicitAny: data access */}
+        <title>{`${(user as any).data.name} - ${SiteName}`}</title>
       </Head>
-      <User user={user.data} size={"4"} />
+      {/* biome-ignore lint/suspicious/noExplicitAny: data access */}
+      <User user={(user as any).data} size={"4"} />
       <TabSwitcher tabs={tabs} defaultValue="series" />
     </div>
   );

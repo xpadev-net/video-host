@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
@@ -6,8 +5,7 @@ import { type FC, type FormEvent, useEffect, useState } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { MovieManager } from "@/components/Dashboard/MovieManager";
-
-const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+import { client } from "@/lib/client";
 
 interface Movie {
   id: string;
@@ -36,17 +34,33 @@ const EditPlaylistPage: FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id || !token) return;
+    if (!id || !token || typeof id !== "string") return;
     const fetchPlaylist = async () => {
       try {
-        const res = await axios.get(`${API_URL}playlists/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = res.data.data;
+        const res = await client.api.v4.playlists[":playlist"].$get(
+          {
+            param: { playlist: id },
+          },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+
+        if (!res.ok) throw new Error("Failed to fetch");
+
+        const json = await res.json();
+        const data = json.data;
         setTitle(data.title);
         setDescription(data.description || "");
         setVisibility(data.visibility);
-        setMovies(data.movies || []);
+        // Assuming backend returns matching structure.
+        const playlistMovies: PlaylistMovie[] = (data.movies || []).map(
+          (m: unknown, index: number) => ({
+            movie: m as Movie,
+            order: index + 1,
+          }),
+        );
+        setMovies(playlistMovies);
       } catch {
         setError("プレイリストの取得に失敗しました");
       } finally {
@@ -58,17 +72,26 @@ const EditPlaylistPage: FC = () => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!id || !title.trim()) return;
+    if (!id || !title.trim() || typeof id !== "string") return;
 
     setIsSubmitting(true);
     setError(null);
 
     try {
-      await axios.patch(
-        `${API_URL}playlists/${id}`,
-        { title: title.trim(), description: description.trim(), visibility },
+      const res = await client.api.v4.playlists[":playlist"].$patch(
+        {
+          param: { playlist: id },
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+          },
+        },
         { headers: { Authorization: `Bearer ${token}` } },
       );
+
+      if (!res.ok) throw new Error("Failed to update");
+
       router.push("/dashboard/playlists");
     } catch (err) {
       setError(err instanceof Error ? err.message : "更新に失敗しました");

@@ -12,7 +12,7 @@ import { filterSeries } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
 import { seriesDetailRoute } from "@/routes/api/v4/series/[series]";
 import { buildVisibilityFilter } from "@/utils/buildVisibilityFilter";
-import { unauthorized } from "@/utils/response";
+import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 type Env = {
@@ -38,12 +38,14 @@ const QuerySchema = z.object({
   query: z.string().optional(),
   suggest: z.string().optional(), // boolean check on length? "suggest" query param usually has no value if present? or "true"? Original: `c.req.queries("suggest")?.length ?? 0) > 0`. So simply presence.
   author: z.string().optional(),
+  mine: z.string().optional(),
 });
 
 const PostSeriesSchema = z.object({
   title: z.string(),
   description: z.string(),
   visibility: ZVisibility.optional().default("PUBLIC"),
+  asUserId: z.string().optional(),
 });
 
 const app = new Hono<Env>();
@@ -117,12 +119,32 @@ export const seriesRoute = app
     if (!user) {
       return unauthorized(c, "Unauthorized");
     }
-    const { title, description, visibility } = c.req.valid("json");
+    const { title, description, visibility, asUserId } = c.req.valid("json");
+
+    let authorId = user.id;
+    if (asUserId) {
+      if (user.role !== "ADMIN") {
+        return unauthorized(c, "Only admins can create series for other users");
+      }
+      // Verify asUserId is a system account (or just allow admins to act as anyone? context implies system accounts)
+      // Reusing logic from other files or just checking existence/system nature
+      const targetUser = await prisma.user.findUnique({
+        where: { id: asUserId },
+      });
+      if (!targetUser) {
+        return badRequest(c, "Target user not found");
+      }
+      if (targetUser.password !== null) {
+        return badRequest(c, "Can only create series for system accounts");
+      }
+      authorId = asUserId;
+    }
+
     const series = await prisma.series.create({
       data: {
         title: title,
         description: description,
-        authorId: user.id,
+        authorId: authorId,
         visibility: visibility,
       },
       include: {

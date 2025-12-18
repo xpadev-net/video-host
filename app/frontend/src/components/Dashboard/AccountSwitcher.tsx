@@ -12,7 +12,8 @@ interface SystemAccount {
 
 export const AccountSwitcher: FC = () => {
   const { data: response } = useSelf();
-  const user = response?.status === "ok" ? response.data : null;
+  // biome-ignore lint/suspicious/noExplicitAny: complex type inference
+  const user = response?.status === "ok" ? (response as any).data : null;
   const isAdmin = user && "role" in user && user.role === "ADMIN";
   console.log(isAdmin);
 

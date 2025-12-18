@@ -1,11 +1,18 @@
 import type { v4GetSeriesListRes } from "@/@types/v4Api";
 import { useStickySWR } from "@/hooks/useStickySWR";
-import { requests } from "@/libraries/requests";
-import { buildQueryParams } from "@/utils/buildQueryParams";
+import { client } from "@/lib/client";
 
-const fetcher = async (key: string): Promise<v4GetSeriesListRes> => {
-  const res = await requests.get<v4GetSeriesListRes>(key);
-  return res.data;
+type FetcherKey = {
+  query: {
+    page: string;
+    query?: string;
+    author?: string;
+  };
+};
+
+const fetcher = async (key: FetcherKey): Promise<v4GetSeriesListRes> => {
+  const res = await client.api.v4.series.$get(key);
+  return (await res.json()) as unknown as v4GetSeriesListRes;
 };
 
 type Props = {
@@ -20,11 +27,13 @@ export const useSeriesList = (data?: Props) => {
   const author = data?.author || undefined;
 
   return useStickySWR(
-    `/series?${buildQueryParams({
-      page,
-      query,
-      author,
-    })}`,
+    {
+      query: {
+        page: page.toString(),
+        query,
+        author,
+      },
+    },
     fetcher,
     {},
   );

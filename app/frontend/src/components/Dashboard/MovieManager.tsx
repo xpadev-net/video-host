@@ -1,10 +1,8 @@
-import axios from "axios";
 import { useAtomValue } from "jotai";
 import { type FC, useCallback, useEffect, useState } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
-
-const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+import { client } from "@/lib/client";
 
 interface Movie {
   id: string;
@@ -43,16 +41,30 @@ export const MovieManager: FC<MovieManagerProps> = ({
     if (!token) return;
     setIsLoadingMovies(true);
     try {
-      const queryParams = selectedAccountId
-        ? `author=${selectedAccountId}&limit=100`
-        : `mine=true&limit=100`;
-      const res = await axios.get(`${API_URL}movies?${queryParams}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const allMovies = res.data.data.items || [];
+      const res = await client.api.v4.movies.$get(
+        {
+          query: {
+            limit: "100",
+            author: selectedAccountId || undefined,
+            mine: selectedAccountId ? undefined : "true",
+          },
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      if (!res.ok) throw new Error("Failed to fetch");
+      const json = await res.json();
+      const allMovies = json.data.items || [];
       // Filter out movies already in the list
       const movieIds = new Set(movies.map((m) => m.movie.id));
-      setAvailableMovies(allMovies.filter((m: Movie) => !movieIds.has(m.id)));
+      setAvailableMovies(
+        allMovies
+          .filter((m) => !movieIds.has(m.id))
+          .map((m) => ({
+            ...m,
+            thumbnailUrl: m.thumbnailUrl ?? undefined,
+          })),
+      );
     } catch {
       console.error("Failed to fetch movies");
     } finally {
@@ -68,11 +80,25 @@ export const MovieManager: FC<MovieManagerProps> = ({
     if (!selectedMovieId || !token) return;
     setIsAdding(true);
     try {
-      await axios.post(
-        `${API_URL}${entityType === "series" ? "series" : "playlists"}/${entityId}/movies`,
-        { movieId: selectedMovieId },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      const res =
+        entityType === "series"
+          ? await client.api.v4.series[":series"].movies.$post(
+              {
+                param: { series: entityId },
+                json: { movieId: selectedMovieId },
+              },
+              { headers: { Authorization: `Bearer ${token}` } },
+            )
+          : await client.api.v4.playlists[":playlist"].movies.$post(
+              {
+                param: { playlist: entityId },
+                json: { movieId: selectedMovieId },
+              },
+              { headers: { Authorization: `Bearer ${token}` } },
+            );
+
+      if (!res.ok) throw new Error("Failed to add");
+
       // Find the movie and add it to the list
       const movie = availableMovies.find((m) => m.id === selectedMovieId);
       if (movie) {
@@ -93,10 +119,23 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const handleRemoveMovie = async (movieId: string) => {
     if (!token) return;
     try {
-      await axios.delete(
-        `${API_URL}${entityType === "series" ? "series" : "playlists"}/${entityId}/movies/${movieId}`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      const res =
+        entityType === "series"
+          ? await client.api.v4.series[":series"].movies[":movie"].$delete(
+              {
+                param: { series: entityId, movie: movieId },
+              },
+              { headers: { Authorization: `Bearer ${token}` } },
+            )
+          : await client.api.v4.playlists[":playlist"].movies[":movie"].$delete(
+              {
+                param: { playlist: entityId, movie: movieId },
+              },
+              { headers: { Authorization: `Bearer ${token}` } },
+            );
+
+      if (!res.ok) throw new Error("Failed to remove");
+
       onMoviesChange(movies.filter((m) => m.movie.id !== movieId));
     } catch {
       alert("動画の削除に失敗しました");
@@ -119,20 +158,40 @@ export const MovieManager: FC<MovieManagerProps> = ({
     setDraggedIndex(index);
   };
 
-  const handleDragEnd = async () => {
-    if (draggedIndex === null || !token) return;
-
-    // Update order on server
+  const updateServerOrder = async (ids: string[]) => {
+    if (!token) return;
     try {
-      const movieIds = movies.map((m) => m.movie.id);
-      await axios.patch(
-        `${API_URL}${entityType === "series" ? "series" : "playlists"}/${entityId}/movies`,
-        { movieIds },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      const res =
+        entityType === "series"
+          ? await client.api.v4.series[":series"].movies.$patch(
+              {
+                param: { series: entityId },
+                json: {
+                  movieIds: ids,
+                },
+              },
+              { headers: { Authorization: `Bearer ${token}` } },
+            )
+          : await client.api.v4.playlists[":playlist"].movies.$patch(
+              {
+                param: { playlist: entityId },
+                json: {
+                  movieIds: ids,
+                },
+              },
+              { headers: { Authorization: `Bearer ${token}` } },
+            );
+      if (!res.ok) throw new Error("Failed to update order");
     } catch {
       alert("並び替えに失敗しました");
+      // Could revert here if needed
     }
+  };
+
+  const handleDragEnd = async () => {
+    if (draggedIndex === null || !token) return;
+    const movieIds = movies.map((m) => m.movie.id);
+    await updateServerOrder(movieIds);
     setDraggedIndex(null);
   };
 
@@ -144,18 +203,8 @@ export const MovieManager: FC<MovieManagerProps> = ({
       newMovies[index - 1],
     ];
     onMoviesChange(newMovies);
-
-    // Update order on server
-    try {
-      const movieIds = newMovies.map((m) => m.movie.id);
-      await axios.patch(
-        `${API_URL}${entityType === "series" ? "series" : "playlists"}/${entityId}/movies`,
-        { movieIds },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-    } catch {
-      alert("並び替えに失敗しました");
-    }
+    const movieIds = newMovies.map((m) => m.movie.id);
+    await updateServerOrder(movieIds);
   };
 
   const handleMoveDown = async (index: number) => {
@@ -166,18 +215,8 @@ export const MovieManager: FC<MovieManagerProps> = ({
       newMovies[index],
     ];
     onMoviesChange(newMovies);
-
-    // Update order on server
-    try {
-      const movieIds = newMovies.map((m) => m.movie.id);
-      await axios.patch(
-        `${API_URL}${entityType === "series" ? "series" : "playlists"}/${entityId}/movies`,
-        { movieIds },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-    } catch {
-      alert("並び替えに失敗しました");
-    }
+    const movieIds = newMovies.map((m) => m.movie.id);
+    await updateServerOrder(movieIds);
   };
 
   return (

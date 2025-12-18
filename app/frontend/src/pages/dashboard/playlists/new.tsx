@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
@@ -7,8 +6,7 @@ import { AuthTokenAtom } from "@/atoms/Auth";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useSelf } from "@/hooks/useUser";
-
-const API_URL = process.env.NEXT_PUBLIC_API_ENDPOINT || "";
+import { client } from "@/lib/client";
 
 const NewPlaylistPage: FC = () => {
   const router = useRouter();
@@ -32,16 +30,22 @@ const NewPlaylistPage: FC = () => {
     setError(null);
 
     try {
-      await axios.post(
-        `${API_URL}playlists`,
+      const res = await client.api.v4.playlists.$post(
         {
-          title: title.trim(),
-          description: description.trim(),
-          visibility,
-          ...(selectedAccountId && { asUserId: selectedAccountId }),
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+            asUserId: selectedAccountId || undefined,
+          },
         },
         { headers: { Authorization: `Bearer ${token}` } },
       );
+
+      if (!res.ok) {
+        throw new Error("作成に失敗しました");
+      }
+
       router.push("/dashboard/playlists");
     } catch (err) {
       setError(err instanceof Error ? err.message : "作成に失敗しました");
