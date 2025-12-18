@@ -1,6 +1,6 @@
 import { useAtom } from "jotai";
 import { useEffect } from "react";
-import { AuthTokenAtom, AuthTokenLocalStorageKey } from "@/atoms/Auth";
+import { AuthTokenAtom } from "@/atoms/Auth";
 import { useStickySWR } from "@/hooks/useStickySWR";
 import { client } from "@/lib/client";
 
@@ -12,30 +12,10 @@ const fetcher = async (key?: string) => {
       message: "not found",
     };
 
-  const storedToken =
-    typeof window !== "undefined"
-      ? localStorage.getItem(AuthTokenLocalStorageKey)
-      : null;
-  // Previously requests.ts sliced the token (likely due to JSON.stringify storage).
-  // We mimic this: `token.slice(1, -1)` if it starts/ends with quote?
-  // Let's assume the previous logic was correct for the stored format.
-  const token = storedToken
-    ? storedToken.startsWith('"')
-      ? storedToken.slice(1, -1)
-      : storedToken
-    : null;
-
-  const headers: Record<string, string> = token
-    ? { Authorization: `Bearer ${token}` }
-    : {};
-
   const res =
     key === "me"
-      ? await client.api.v4.users.me.$get(undefined, { headers })
-      : await client.api.v4.users[":user"].$get(
-          { param: { user: key } },
-          { headers },
-        );
+      ? await client.api.v4.users.me.$get()
+      : await client.api.v4.users[":user"].$get({ param: { user: key } });
 
   // Always return JSON, whether ok or not, as previous code returned error body
   return await res.json();
