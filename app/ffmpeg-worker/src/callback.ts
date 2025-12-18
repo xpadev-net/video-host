@@ -1,7 +1,7 @@
 import { client } from "./client";
 
-const SECRET = process.env.SECRET;
-if (!SECRET) {
+const CALLBACK_SECRET = process.env.CALLBACK_SECRET;
+if (!CALLBACK_SECRET) {
   throw new Error("SECRET is not defined");
 }
 
@@ -31,7 +31,7 @@ export const sendCallback = async (payload: CallbackPayload) => {
       },
       {
         headers: {
-          "X-Secret": SECRET,
+          "X-Secret": CALLBACK_SECRET,
         },
       },
     );
