@@ -9,7 +9,7 @@ printenv | grep NEXT_PUBLIC_ | while read -r ENV_LINE ; do
   ENV_VALUE=$(echo $ENV_LINE | cut -d "=" -f2)
 
   # Find all the places where our intermediate values are set and replace them using actual values.
-  find .next -type f -exec sed -i "s|_${ENV_KEY}_|${ENV_VALUE}|g" {} \;
+  # find .next -type f -exec sed -i "s|_${ENV_KEY}_|${ENV_VALUE}|g" {} \;
   find app/frontend/.next -type f -exec sed -i "s|_${ENV_KEY}_|${ENV_VALUE}|g" {} \;
 done
 
