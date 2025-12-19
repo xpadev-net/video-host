@@ -22,9 +22,10 @@ type props = {
   className?: string;
   data: FilteredMovie;
   id: string;
+  isPipMode?: boolean;
 };
 
-const DesktopPlayer = ({ className, data, id }: props) => {
+const DesktopPlayer = ({ className, data, id, isPipMode = false }: props) => {
   const setVideoAtom = useSetAtom(VideoRefAtom);
   const setWrapperAtom = useSetAtom(WrapperRefAtom);
   const { isPipEnable, isNiconicommentsEnable } =
@@ -83,10 +84,10 @@ const DesktopPlayer = ({ className, data, id }: props) => {
   return (
     <button
       className={cn(
-        className,
         "relative h-auto w-full overflow-hidden bg-black",
         state.isFullscreen && "fixed left-0 top-0 w-screen h-screen z-20000",
         isInactive && "cursor-none",
+        className,
       )}
       onMouseMove={onMouseMove}
       onClick={togglePlayerState}
@@ -122,7 +123,7 @@ const DesktopPlayer = ({ className, data, id }: props) => {
           state.isFullscreen && "max-w-[100vw] max-h-screen",
         )}
       >
-        {isNiconicommentsEnable && EnableComments && (
+        {isNiconicommentsEnable && EnableComments && !isPipMode && (
           <CommentCanvas
             key={data?.id}
             url={data?.id}
@@ -148,13 +149,8 @@ const DesktopPlayer = ({ className, data, id }: props) => {
         />
         <PlayerStatusDisplay />
       </div>
-      <Controller
-        className={`absolute z-4 left-0 w-full transition-[bottom] duration-250 ease-in-out ${
-          isInactive ? "-bottom-[100px]" : "bottom-0"
-        }`}
-        data={data}
-      />
-      <KeyboardHandler data={data} />
+      <Controller data={data} isPipMode={isPipMode} isHovering={!isInactive} />
+      {!isPipMode && <KeyboardHandler data={data} />}
       <MediaSessionHandler data={data} />
     </button>
   );

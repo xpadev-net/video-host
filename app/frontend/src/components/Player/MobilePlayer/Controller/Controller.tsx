@@ -15,10 +15,29 @@ import { Slider } from "./Slider";
 type props = {
   data: FilteredMovie;
   className?: string;
+  isPipMode?: boolean;
 };
 
-const Controller = ({ className, data }: props) => {
+const Controller = ({ className, data, isPipMode = false }: props) => {
   const state = useAtomValue(PlayerStateAtom);
+
+  if (isPipMode) {
+    return (
+      <div
+        className={cn(
+          `absolute left-0 bottom-0 w-full bg-black/70 flex flex-col text-white`,
+          className,
+        )}
+      >
+        <div className="h-8 mx-2 flex items-center justify-between">
+          <PlayPauseButton className="w-8 h-8 border-none bg-transparent cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
+          <TimeDisplay />
+        </div>
+        <Slider className="h-2 mx-2 mb-2" />
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(

@@ -1,9 +1,12 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
+import { useRouter } from "next/router";
 import { useEffect, useRef, useState } from "react";
+import { MdClose, MdOpenInFull } from "react-icons/md";
 import type { FilteredMovie } from "@/@types/v4Api";
 import { LoadingIcon } from "@/assets/LoadingIcon";
 import {
+  CurrentMovieAtom,
   PlayerConfigAtom,
   PlayerStateAtom,
   VideoRefAtom,
@@ -22,17 +25,28 @@ type props = {
   className?: string;
   data: FilteredMovie;
   id: string;
+  isPipMode?: boolean;
 };
 
-const MobilePlayer = ({ className, data, id }: props) => {
+const MobilePlayer = ({ className, data, id, isPipMode = false }: props) => {
   const { isLoading, isFullscreen } = useAtomValue(PlayerStateAtom);
   const { isNiconicommentsEnable } = useAtomValue(PlayerConfigAtom);
+  const setCurrentMovie = useSetAtom(CurrentMovieAtom);
+  const router = useRouter();
   const wrapperRef = useRef<HTMLButtonElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const setVideoAtom = useSetAtom(VideoRefAtom);
   const setWrapperAtom = useSetAtom(WrapperRefAtom);
   const [isAfk, setIsAfk] = useState(false);
   const afkTimeout = useRef<number>(-1);
+
+  const handleClosePip = () => {
+    setCurrentMovie(null);
+  };
+
+  const handleBackToMovie = () => {
+    void router.push(`/movies/${data.id}`);
+  };
 
   useEffect(() => {
     setIsAfk(false);
@@ -66,6 +80,32 @@ const MobilePlayer = ({ className, data, id }: props) => {
       type="button"
       id={id}
     >
+      {isPipMode && (
+        <>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleClosePip();
+            }}
+            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-black/90 flex items-center justify-center text-white z-10"
+            aria-label="Close PiP player"
+          >
+            <MdClose className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleBackToMovie();
+            }}
+            className="absolute top-2 left-2 w-8 h-8 rounded-full bg-black/70 hover:bg-black/90 flex items-center justify-center text-white z-10"
+            aria-label="Back to movie page"
+          >
+            <MdOpenInFull className="w-5 h-5" />
+          </button>
+        </>
+      )}
       <div
         className={cn(
           "aspect-video h-full mx-auto relative max-h-[calc(100dvh-104px)]",
@@ -88,7 +128,7 @@ const MobilePlayer = ({ className, data, id }: props) => {
             )}
           </>
         )}
-        {isNiconicommentsEnable && EnableComments && (
+        {isNiconicommentsEnable && EnableComments && !isPipMode && (
           <CommentCanvas
             key={data?.id}
             url={data?.id}
@@ -118,8 +158,9 @@ const MobilePlayer = ({ className, data, id }: props) => {
             : "opacity-100 pointer-events-auto",
         )}
         data={data}
+        isPipMode={isPipMode}
       />
-      <KeyboardHandler data={data} />
+      {!isPipMode && <KeyboardHandler data={data} />}
       <MediaSessionHandler data={data} />
     </button>
   );

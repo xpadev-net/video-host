@@ -2,6 +2,7 @@ import { useAtomValue } from "jotai";
 import { type MouseEvent, useEffect, useRef, useState } from "react";
 
 import { VideoMetadataAtom, VideoRefAtom } from "@/atoms/Player";
+import { cn } from "@/lib/utils";
 import { time2str } from "@/libraries/time";
 
 type props = {
@@ -83,7 +84,7 @@ const Slider = ({ className }: props) => {
 
   return (
     <button
-      className={`relative w-full h-4 cursor-pointer group ${className || ""}`}
+      className={cn(`relative w-full h-4 cursor-pointer group`, className)}
       ref={wrapperRef}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}

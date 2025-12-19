@@ -10,7 +10,10 @@ import type {
 } from "@/@types/Player";
 import type { FilteredMovie } from "@/@types/v4Api";
 
-const PlayerVisibleTargetAtom = atom<HTMLElement | null>(null);
+const DurablePlayerAtom = atom<{
+  target: HTMLElement | null;
+  className?: string;
+} | null>(null);
 const CurrentMovieAtom = atom<FilteredMovie | null>(null);
 
 const WrapperRefAtom = atom<HTMLButtonElement | null>(null);
@@ -59,7 +62,7 @@ const PlayerPlayPauseNotificationAtom = atom<{
 
 export {
   NiconicommentsConfigAtom,
-  PlayerVisibleTargetAtom as PlayerPortalTargetAtom,
+  DurablePlayerAtom,
   CurrentMovieAtom,
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
