@@ -6,15 +6,19 @@ import { useAtomValue } from "jotai";
 import type { AppProps } from "next/app";
 import { useRouter } from "next/router";
 import NProgress from "nprogress";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { App } from "@/components/App";
+import { PortalPlayer } from "@/components/Player/PortalPlayer";
 import { Theme } from "@/components/Theme";
 import { useIsomorphicEffect } from "@/libraries/IsomorphicEffect";
 
 export default function Main({ Component, pageProps }: AppProps) {
   const router = useRouter();
+
+  const fallbackVideoRef = useRef<HTMLDivElement>(null);
+
   const _token = useAtomValue(AuthTokenAtom);
   const _isomorphicEffect = useIsomorphicEffect();
   useEffect(() => {
@@ -43,6 +47,8 @@ export default function Main({ Component, pageProps }: AppProps) {
     <Theme>
       <App>
         <Component {...pageProps} />
+        <PortalPlayer fallback={fallbackVideoRef.current} />
+        <div ref={fallbackVideoRef} />
       </App>
     </Theme>
   );

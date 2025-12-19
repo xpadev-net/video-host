@@ -21,9 +21,10 @@ import { Controller } from "./Controller";
 type props = {
   className?: string;
   data: FilteredMovie;
+  id: string;
 };
 
-const DesktopPlayer = ({ className, data }: props) => {
+const DesktopPlayer = ({ className, data, id }: props) => {
   const setVideoAtom = useSetAtom(VideoRefAtom);
   const setWrapperAtom = useSetAtom(WrapperRefAtom);
   const { isPipEnable, isNiconicommentsEnable } =
@@ -93,6 +94,7 @@ const DesktopPlayer = ({ className, data }: props) => {
       tabIndex={0}
       aria-label={state.paused ? "Play video" : "Pause video"}
       ref={wrapperRef}
+      id={id}
     >
       {state.isLoading && data && (
         <>

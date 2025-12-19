@@ -6,7 +6,7 @@ import { Sidebar } from "@/components/App/Sidebar";
 import { useIsMobile } from "@/libraries/isMobile";
 
 type props = {
-  children: ReactElement;
+  children: ReactElement[];
 };
 
 const App = ({ children }: props) => {

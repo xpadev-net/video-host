@@ -21,9 +21,10 @@ import { cn } from "@/lib/utils";
 type props = {
   className?: string;
   data: FilteredMovie;
+  id: string;
 };
 
-const MobilePlayer = ({ className, data }: props) => {
+const MobilePlayer = ({ className, data, id }: props) => {
   const { isLoading, isFullscreen } = useAtomValue(PlayerStateAtom);
   const { isNiconicommentsEnable } = useAtomValue(PlayerConfigAtom);
   const wrapperRef = useRef<HTMLButtonElement | null>(null);
@@ -63,6 +64,7 @@ const MobilePlayer = ({ className, data }: props) => {
       onClick={toggleAfk}
       ref={wrapperRef}
       type="button"
+      id={id}
     >
       <div
         className={cn(
