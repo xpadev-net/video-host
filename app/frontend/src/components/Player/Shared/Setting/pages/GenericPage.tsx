@@ -1,4 +1,4 @@
-import { useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { type FC, type KeyboardEvent, useEffect, useRef } from "react";
 import type {
@@ -6,7 +6,7 @@ import type {
   SettingKey,
   SettingPageConfig,
 } from "@/@types/Player";
-import { PlayerSettingAtom } from "@/atoms/Player";
+import { PlayerSettingAtom, PlayerStateAtom } from "@/atoms/Player";
 import type { MenuProps } from "@/components/Player/Shared/Setting";
 import { Switch } from "@/components/Switch/Switch";
 
@@ -22,12 +22,18 @@ const GenericPage: FC<GenericPageProps> = ({
   config,
 }) => {
   const setPlayerSetting = useSetAtom(PlayerSettingAtom);
+  const state = useAtomValue(PlayerStateAtom);
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!ref.current) return;
     updateScale?.(ref.current);
   }, [updateScale]);
+
+  useEffect(() => {
+    if (!state.isSetting || !ref.current) return;
+    updateScale?.(ref.current);
+  }, [state.isSetting, updateScale]);
 
   const handleNavigation = (targetPage: string) => {
     setPlayerSetting((prev) => [...prev, targetPage as SettingKey]);
