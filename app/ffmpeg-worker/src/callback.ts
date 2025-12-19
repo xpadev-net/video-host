@@ -31,7 +31,7 @@ export const sendCallback = async (payload: CallbackPayload) => {
       },
       {
         headers: {
-          "X-Secret": CALLBACK_SECRET,
+          Authorization: `Bearer ${CALLBACK_SECRET}`,
         },
       },
     );
