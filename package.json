@@ -10,7 +10,7 @@
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
     "format": "pnpm -r format",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r --parallel typecheck",
     "prepare": "lefthook install",
     "prisma:generate": "pnpm -r prisma:generate"
   },
