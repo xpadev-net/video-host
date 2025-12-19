@@ -47,7 +47,7 @@ const MoviePage = () => {
     );
   }
   return (
-    <div className={"p-6 max-w-[1800px] mx-auto"}>
+    <div className={cn("p-6 max-w-[1800px] mx-auto", isTheatre && "pt-0")}>
       <Head>
         <title>{`${data.data.data.title} / ${data.data.data.series?.title} - ${SiteName}`}</title>
       </Head>
@@ -60,10 +60,10 @@ const MoviePage = () => {
       >
         <div
           className={cn(
-            "player-wrapper min-w-[640px] max-[1000px]:min-w-0",
+            "player-wrapper min-w-[640px] max-[1000px]:min-w-0 aspect-video",
             isTheatre &&
-              "col-span-2 -mx-6 pb-3 w-[100vw] relative left-[calc(max((100vw-1800px),0px)/-2)]",
-            isMobile && "max-[1000px]:-mx-6 max-[1000px]:pb-3",
+              "col-span-2 -mx-6 w-screen relative left-[calc(max((100vw-1800px),0px)/-2)]",
+            isMobile && "max-[1000px]:-mx-6",
             isMobile && "landscape:m-0 landscape:p-0 landscape:min-w-[500px]",
           )}
         >

@@ -61,7 +61,7 @@ const Controller = ({ className, data }: props) => {
 
   return (
     <button
-      className={`${className} relative px-3 flex flex-col-reverse select-none text-white`}
+      className={`${className} px-3 flex flex-col-reverse select-none text-white`}
       onClick={stopPropagation}
       aria-label="Video player controls"
       type="button"

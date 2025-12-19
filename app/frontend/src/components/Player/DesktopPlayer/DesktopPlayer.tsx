@@ -15,6 +15,7 @@ import { MediaSessionHandler } from "@/components/Player/Shared/MediaSessionHand
 import { PlayerStatusDisplay } from "@/components/Player/Shared/PlayerStatusDisplay";
 import { Video } from "@/components/Player/Shared/Video";
 import { EnableComments } from "@/contexts/env";
+import { cn } from "@/lib/utils";
 import { Controller } from "./Controller";
 
 type props = {
@@ -25,7 +26,7 @@ type props = {
 const DesktopPlayer = ({ className, data }: props) => {
   const setVideoAtom = useSetAtom(VideoRefAtom);
   const setWrapperAtom = useSetAtom(WrapperRefAtom);
-  const { isPipEnable, isTheatre, isNiconicommentsEnable } =
+  const { isPipEnable, isNiconicommentsEnable } =
     useAtomValue(PlayerConfigAtom);
   const wrapperRef = useRef<HTMLButtonElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -80,13 +81,12 @@ const DesktopPlayer = ({ className, data }: props) => {
 
   return (
     <button
-      className={`${className} relative h-auto w-full overflow-hidden bg-black ${
-        isTheatre && !state.isFullscreen ? "max-h-[calc(100vh-170px)]" : ""
-      } ${
-        state.isFullscreen
-          ? "fixed left-0 top-0 w-screen h-screen z-[20000]"
-          : ""
-      } ${isInactive ? "cursor-none" : ""}`}
+      className={cn(
+        className,
+        "relative h-auto w-full overflow-hidden bg-black",
+        state.isFullscreen && "fixed left-0 top-0 w-screen h-screen z-20000",
+        isInactive && "cursor-none",
+      )}
       onMouseMove={onMouseMove}
       onClick={togglePlayerState}
       type="button"
@@ -115,28 +115,30 @@ const DesktopPlayer = ({ className, data }: props) => {
         </>
       )}
       <div
-        className={`relative aspect-video h-full mx-auto ${
-          isTheatre && !state.isFullscreen ? "max-h-[calc(100vh-170px)]" : ""
-        } ${state.isFullscreen ? "max-w-[100vw] max-h-[100vh]" : ""}`}
+        className={cn(
+          "relative aspect-video h-full mx-auto",
+          state.isFullscreen && "max-w-[100vw] max-h-screen",
+        )}
       >
         {isNiconicommentsEnable && EnableComments && (
           <CommentCanvas
             key={data?.id}
             url={data?.id}
-            className="absolute w-full h-full z-[2] pointer-events-none object-contain"
+            className="absolute w-full h-full z-2 pointer-events-none object-contain"
             videoRef={videoRef.current}
             pipVideoRef={pipVideoRef.current}
           />
         )}
         <Video
-          className="absolute w-full h-full z-[1]"
+          className="absolute w-full h-full z-1"
           videoRef={videoRef}
           movie={data}
         />
         <video
-          className={`absolute w-full h-full ${
-            isPipEnable && EnableComments ? "z-[3]" : "z-[-1]"
-          }`}
+          className={cn(
+            "absolute w-full h-full",
+            isPipEnable && EnableComments ? "z-3" : "-z-1",
+          )}
           ref={pipVideoRef}
           autoPlay={true}
           muted={true}
@@ -145,7 +147,7 @@ const DesktopPlayer = ({ className, data }: props) => {
         <PlayerStatusDisplay />
       </div>
       <Controller
-        className={`absolute z-[4] left-0 w-full transition-[bottom] duration-[250ms] ease-in-out ${
+        className={`absolute z-4 left-0 w-full transition-[bottom] duration-250 ease-in-out ${
           isInactive ? "-bottom-[100px]" : "bottom-0"
         }`}
         data={data}
