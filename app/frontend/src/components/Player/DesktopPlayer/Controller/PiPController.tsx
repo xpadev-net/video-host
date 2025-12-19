@@ -27,14 +27,16 @@ const PiPController = ({ data, isHovering }: props) => {
 
   return (
     <button
-      className={`absolute top-0 left-0 w-full h-full text-white z-10 transition-opacity duration-250 ease-in-out bg-black/50`}
+      className={`absolute top-0 left-0 w-full h-full text-white z-10`}
       aria-label="Video player controls"
       type="button"
     >
       <div
         className={cn(
-          "absolute top-0 left-0 w-full rounded-full bg-black/70 hover:bg-black/90 flex items-center justify-center text-white z-10",
-          isHovering ? "opacity-100" : "opacity-0",
+          "absolute top-0 left-0 w-full h-full bg-black/70 flex items-center justify-center text-white z-0 transition-opacity duration-250 ease-in-out",
+          isHovering
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none",
         )}
       >
         <button
@@ -60,7 +62,7 @@ const PiPController = ({ data, isHovering }: props) => {
           <Maximize2 className="w-5 h-5" />
         </button>
       </div>
-      <Slider className="absolute bottom-0 left-0 w-full h-4" />
+      <Slider className="absolute bottom-0 left-0 w-full h-4 z-10" />
     </button>
   );
 };
