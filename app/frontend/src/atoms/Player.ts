@@ -8,6 +8,13 @@ import type {
   SettingKey,
   VideoMetadata,
 } from "@/@types/Player";
+import type { FilteredMovie } from "@/@types/v4Api";
+
+const DurablePlayerAtom = atom<{
+  target: HTMLElement | null;
+  className?: string;
+} | null>(null);
+const CurrentMovieAtom = atom<FilteredMovie | null>(null);
 
 const WrapperRefAtom = atom<HTMLButtonElement | null>(null);
 const VideoRefAtom = atom<HTMLVideoElement | null>(null);
@@ -55,6 +62,8 @@ const PlayerPlayPauseNotificationAtom = atom<{
 
 export {
   NiconicommentsConfigAtom,
+  DurablePlayerAtom,
+  CurrentMovieAtom,
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
   PlayerPlayPauseNotificationAtom,
