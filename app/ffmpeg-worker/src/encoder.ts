@@ -186,9 +186,14 @@ const getDuration = async (filePath: string): Promise<number> => {
   });
 };
 
+const sanitizeFilename = (name: string): string => {
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255);
+};
+
 export const getLocalPath = (s3Key: string, suffix: string): string => {
   const filename = s3Key.split("/").pop() || "video";
-  return join(TEMP_DIR, `${filename}_${Date.now()}${suffix}`);
+  const sanitized = sanitizeFilename(filename);
+  return join(TEMP_DIR, `${sanitized}_${Date.now()}${suffix}`);
 };
 
 export const cleanup = (paths: string[]): void => {
