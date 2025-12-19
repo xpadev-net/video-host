@@ -38,9 +38,7 @@ export const PortalPlayer = ({
     };
   }, [portalTarget, id]);
 
-  console.log("target", target, currentMovie);
   if (!target || !currentMovie) {
-    console.log("no target");
     return null;
   }
 
@@ -65,12 +63,6 @@ type props = {
 
 const Player = ({ data, className, id, isPipMode = false }: props) => {
   const isMobile = useIsMobile();
-  useEffect(() => {
-    console.log("Player mounted", data, className);
-    return () => {
-      console.log("Player unmounted", data, className);
-    };
-  });
 
   return (
     <div id={id}>

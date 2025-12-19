@@ -25,7 +25,9 @@ const DefaultController = ({ className, data, isHovering = false }: props) => {
       className={cn(
         `absolute left-0 top-0 w-full h-full bg-black/70 flex flex-col justify-between text-white transition-opacity duration-250 ease-in-out`,
         className,
-        isHovering ? "opacity-100" : "opacity-0 pointer-events-none",
+        isHovering
+          ? "opacity-100 pointer-events-auto"
+          : "opacity-0 pointer-events-none",
       )}
     >
       <div className="h-12 flex justify-end mx-2.5">
