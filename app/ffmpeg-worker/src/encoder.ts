@@ -1,7 +1,7 @@
 import { spawn } from "child_process";
 import { mkdirSync, existsSync, rmSync, statSync } from "fs";
 import { join, dirname } from "path";
-import { TEMP_DIR } from "./env";
+import { TEMP_DIR, FFMPEG_THREADS } from "./env";
 
 export interface EncodeResult {
   success: boolean;
@@ -69,6 +69,7 @@ export const encodeVideo = async (
   inputPath: string,
   outputPath: string,
   onProgress?: ProgressCallback,
+  abortSignal?: AbortSignal,
 ): Promise<EncodeResult> => {
   // Get input duration for progress calculation
   const inputDuration = await getInputDuration(inputPath);
@@ -90,6 +91,14 @@ export const encodeVideo = async (
       "fast",
       "-crf",
       "23",
+    ];
+
+    // Add thread limit if specified
+    if (FFMPEG_THREADS !== undefined) {
+      ffmpegArgs.push("-threads", FFMPEG_THREADS.toString());
+    }
+
+    ffmpegArgs.push(
       "-c:a",
       "aac",
       "-ac",
@@ -102,11 +111,28 @@ export const encodeVideo = async (
       "pipe:2", // Output progress to stderr
       "-y",
       outputPath,
-    ];
+    );
 
     console.log(`Starting encode: ffmpeg ${ffmpegArgs.join(" ")}`);
 
     const ffmpeg = spawn("ffmpeg", ffmpegArgs);
+
+    // Handle abort signal
+    if (abortSignal) {
+      abortSignal.addEventListener("abort", () => {
+        console.log("Encoding aborted due to timeout or cancellation");
+        if (!ffmpeg.killed) {
+          ffmpeg.kill("SIGTERM");
+          // Force kill after 5 seconds if still running
+          setTimeout(() => {
+            if (!ffmpeg.killed) {
+              console.log("Force killing FFmpeg process");
+              ffmpeg.kill("SIGKILL");
+            }
+          }, 5000);
+        }
+      });
+    }
 
     let stderr = "";
     ffmpeg.stderr.on("data", (data) => {
@@ -128,6 +154,15 @@ export const encodeVideo = async (
     });
 
     ffmpeg.on("close", (code) => {
+      // Check if aborted
+      if (abortSignal?.aborted) {
+        resolve({
+          success: false,
+          error: "Encoding aborted due to timeout",
+        });
+        return;
+      }
+
       if (code === 0 && existsSync(outputPath)) {
         // Get duration from ffprobe
         getDuration(outputPath).then((duration) => {

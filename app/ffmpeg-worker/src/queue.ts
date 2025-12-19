@@ -46,20 +46,34 @@ export const getRedisClient = async (): Promise<RedisClientType | RedisSentinelT
 };
 
 export const ENCODE_QUEUE_KEY = "video:encode:queue";
+export const RETRY_QUEUE_KEY = "video:encode:retry:queue"; // Sorted set (ZSET)
+export const MAX_RETRY_COUNT = 3;
+export const INITIAL_RETRY_DELAY_SECONDS = 10;
 
 export interface EncodeJob {
   movieId: string;
   s3Key: string;
   userId: string;
   createdAt: string;
+  retryCount?: number;
+  retryAfter?: number; // Unix timestamp in seconds
 }
 
-export const getEncodeJob = async (): Promise<EncodeJob | null> => {
+export const getEncodeJobBlocking = async (
+  timeoutSeconds: number = 5,
+): Promise<EncodeJob | null> => {
   const client = await getRedisClient();
   // Use BRPOP with timeout for blocking pop
-  const result = await client.rPop(ENCODE_QUEUE_KEY);
-  if (!result) return null;
-  return JSON.parse(result) as EncodeJob;
+  // brPop takes key and timeout as separate arguments
+  const result = await client.brPop(ENCODE_QUEUE_KEY, timeoutSeconds);
+  if (!result || !result.element) return null;
+  return JSON.parse(result.element) as EncodeJob;
+};
+
+// Keep the old function for backward compatibility, but mark as deprecated
+/** @deprecated Use getEncodeJobBlocking instead */
+export const getEncodeJob = async (): Promise<EncodeJob | null> => {
+  return getEncodeJobBlocking(5);
 };
 
 // Progress tracking
@@ -87,6 +101,73 @@ export const setEncodeProgress = async (
 export const clearEncodeProgress = async (movieId: string): Promise<void> => {
   const client = await getRedisClient();
   await client.del(`${ENCODE_PROGRESS_PREFIX}${movieId}`);
+};
+
+export const addJobToRetryQueue = async (job: EncodeJob): Promise<void> => {
+  const client = await getRedisClient();
+  const retryCount = (job.retryCount || 0) + 1;
+
+  if (retryCount > MAX_RETRY_COUNT) {
+    console.error(
+      `Job exceeded max retry count (${MAX_RETRY_COUNT}): movieId=${job.movieId}`,
+    );
+    return;
+  }
+
+  // Calculate exponential backoff: 10 * 2^retryCount seconds
+  const delaySeconds = INITIAL_RETRY_DELAY_SECONDS * Math.pow(2, retryCount - 1);
+  const retryAfter = Math.floor(Date.now() / 1000) + delaySeconds;
+
+  const jobWithRetry: EncodeJob = {
+    ...job,
+    retryCount,
+    retryAfter,
+  };
+
+  // Add to sorted set with retryAfter as score
+  await client.zAdd(RETRY_QUEUE_KEY, {
+    score: retryAfter,
+    value: JSON.stringify(jobWithRetry),
+  });
+
+  console.log(
+    `Added job to retry queue: movieId=${job.movieId}, retryCount=${retryCount}, retryAfter=${new Date(retryAfter * 1000).toISOString()}`,
+  );
+};
+
+export const processRetryQueue = async (): Promise<number> => {
+  const client = await getRedisClient();
+  const now = Math.floor(Date.now() / 1000);
+
+  // Get jobs that are ready to retry (score <= now)
+  const readyJobs = await client.zRangeByScore(RETRY_QUEUE_KEY, 0, now, {
+    LIMIT: { offset: 0, count: 10 }, // Process up to 10 jobs at a time
+  });
+
+  if (readyJobs.length === 0) {
+    return 0;
+  }
+
+  let movedCount = 0;
+  for (const jobJson of readyJobs) {
+    try {
+      const job = JSON.parse(jobJson) as EncodeJob;
+      // Remove from retry queue
+      await client.zRem(RETRY_QUEUE_KEY, jobJson);
+      // Add back to main queue
+      await client.rPush(ENCODE_QUEUE_KEY, JSON.stringify(job));
+      movedCount++;
+      console.log(
+        `Moved job from retry queue to main queue: movieId=${job.movieId}, retryCount=${job.retryCount}`,
+      );
+    } catch (error) {
+      console.error("Error processing retry queue job:", error);
+      // Remove invalid job from retry queue
+      await client.zRem(RETRY_QUEUE_KEY, jobJson);
+    }
+  }
+
+  return movedCount;
 };
 
 export const closeRedis = async (): Promise<void> => {
