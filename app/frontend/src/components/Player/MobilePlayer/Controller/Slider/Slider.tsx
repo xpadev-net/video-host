@@ -107,11 +107,11 @@ const Slider = ({ className }: props) => {
       onClick={onClick}
       type="button"
     >
-      <div className="absolute w-full h-1 bg-white/20 top-[18px] rounded-full" />
+      <div className="absolute w-full h-1 bg-white/20 top-[50%] -translate-y-1/2 rounded-full" />
       {buffered.map((item) => {
         return (
           <div
-            className="absolute h-1 bg-white/80 top-[18px] transition-all duration-[250ms] ease-in-out rounded-full"
+            className="absolute h-1 bg-white/80 top-[50%] -translate-y-1/2 transition-all duration-[250ms] ease-in-out rounded-full"
             key={item.left}
             {...item}
             style={{
@@ -122,14 +122,14 @@ const Slider = ({ className }: props) => {
         );
       })}
       <div
-        className="absolute h-1 bg-accent top-[18px] rounded-full"
+        className="absolute h-1 bg-accent top-[50%] -translate-y-1/2 rounded-full"
         style={{
           left: `0`,
           width: `${progress}%`,
         }}
       />
       <div
-        className="absolute w-3 h-3 rounded-full bg-accent bottom-5 -translate-x-1/2 translate-y-1/2 transition-[width,height] duration-[50ms] ease-in-out"
+        className="absolute w-3 h-3 rounded-full top-[50%] bg-accent -translate-x-1/2 -translate-y-1/2 transition-[width,height] duration-[50ms] ease-in-out"
         style={{
           left: `${progress}%`,
         }}

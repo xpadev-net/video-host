@@ -37,6 +37,8 @@ export const PortalPlayer = ({
       ref.current?.appendChild(player);
     };
   }, [portalTarget, id]);
+
+  console.log("target", target, currentMovie);
   if (!target || !currentMovie) {
     console.log("no target");
     return null;
@@ -70,21 +72,24 @@ const Player = ({ data, className, id, isPipMode = false }: props) => {
     };
   });
 
-  if (isMobile)
-    return (
-      <MobilePlayer
-        className={className}
-        data={data}
-        id={id}
-        isPipMode={isPipMode}
-      />
-    );
   return (
-    <DesktopPlayer
-      className={className}
-      data={data}
-      id={id}
-      isPipMode={isPipMode}
-    />
+    <div id={id}>
+      {isMobile && (
+        <MobilePlayer
+          className={className}
+          data={data}
+          id={id}
+          isPipMode={isPipMode}
+        />
+      )}
+      {!isMobile && (
+        <DesktopPlayer
+          className={className}
+          data={data}
+          id={id}
+          isPipMode={isPipMode}
+        />
+      )}
+    </div>
   );
 };

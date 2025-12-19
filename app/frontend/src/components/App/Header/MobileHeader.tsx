@@ -6,6 +6,7 @@ import { Search } from "@/components/App/Header/Search";
 import { ToggleTheme } from "@/components/App/Header/Theme";
 import { HeaderMenu } from "@/components/App/Menu";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type props = {
   className?: string;
@@ -41,9 +42,12 @@ const MobileHeader = ({ className }: props) => {
         <AuthButton />
       </div>
       <div
-        className={`absolute left-0 top-0 h-full w-full flex bg-[var(--color-background)] px-2 opacity-0 pointer-events-none z-[1] items-center ${
-          isInputActive ? "opacity-100 pointer-events-auto" : ""
-        }`}
+        className={cn(
+          `absolute left-0 top-0 h-full w-full flex bg-[var(--color-background)] px-2 z-10 items-center`,
+          isInputActive
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none",
+        )}
       >
         <Button variant="ghost" onClick={closeSearch} size={"icon"}>
           <ArrowLeft />
@@ -52,7 +56,7 @@ const MobileHeader = ({ className }: props) => {
       </div>
       {isInputActive && (
         <button
-          className="fixed z-[-1] top-0 left-0 w-screen h-screen bg-[rgba(0,0,0,0.3)]"
+          className="fixed -z-10 top-0 left-0 w-screen h-screen bg-black/30"
           onClick={closeSearch}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
