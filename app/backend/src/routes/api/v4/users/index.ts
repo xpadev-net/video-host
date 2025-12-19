@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import type { FilteredUser, PaginatedResponse } from "@/@types/models";
 import { filterUser } from "@/lib/filter";
+import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/session";
 import { meRoute } from "@/routes/api/v4/users/me";
@@ -89,10 +90,11 @@ export const usersRoute = app
       return badRequest(c, "Username already exists");
     }
 
+    const hashedPassword = await hashPassword(password);
     const user = await prisma.user.create({
       data: {
         username,
-        password,
+        password: hashedPassword,
         name: name || username,
         role: "USER",
       },
