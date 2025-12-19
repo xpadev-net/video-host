@@ -50,7 +50,7 @@ configMapGenerator:
       - redis-url=redis://redis:6379
       - redis-sentinel-hosts=
       - redis-sentinel-name=
-      - vod-base-url=http://vod/vod
+      - vod-base-url=https://vod/vod
 
   # Frontend
   - name: frontend-config
@@ -72,7 +72,7 @@ configMapGenerator:
       - s3-endpoint=
       - s3-force-path-style=false
       - backend-callback-url=http://backend:3000/api/internal/video/callback
-      - vod-base-url=http://vod/vod
+      - vod-base-url=https://vod/vod
       - poll-interval-ms=5000
 
   # VOD nginx config

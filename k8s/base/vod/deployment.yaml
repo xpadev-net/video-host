@@ -16,11 +16,26 @@ spec:
         app.kubernetes.io/name: vod
         app.kubernetes.io/component: streaming
     spec:
+      initContainers:
+        - name: generate-certs
+          image: alpine:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              apk add --no-cache openssl
+              openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+                -keyout /etc/nginx/ssl/tls.key \
+                -out /etc/nginx/ssl/tls.crt \
+                -subj "/CN=vod/O=video-host"
+          volumeMounts:
+            - name: ssl-certs
+              mountPath: /etc/nginx/ssl
       containers:
         - name: vod
           image: ghcr.io/xpadev-net/nginx-vod-module-docker:latest
           ports:
-            - containerPort: 80
+            - containerPort: 443
               protocol: TCP
           env:
             - name: VOD_INTERNAL_SECRET
@@ -33,6 +48,9 @@ spec:
               mountPath: /etc/nginx/nginx.conf
               subPath: nginx.conf
               readOnly: true
+            - name: ssl-certs
+              mountPath: /etc/nginx/ssl
+              readOnly: true
           resources:
             requests:
               memory: "256Mi"
@@ -43,16 +61,21 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: 443
+              scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: 443
+              scheme: HTTPS
             initialDelaySeconds: 10
             periodSeconds: 20
       volumes:
         - name: nginx-config
           configMap:
             name: vod-nginx-config
+        - name: ssl-certs
+          emptyDir: {}
+
