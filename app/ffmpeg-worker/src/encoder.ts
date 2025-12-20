@@ -71,8 +71,24 @@ export const encodeVideo = async (
   onProgress?: ProgressCallback,
   abortSignal?: AbortSignal,
 ): Promise<EncodeResult> => {
+  // Check if already aborted before starting (e.g., timeout during download)
+  if (abortSignal?.aborted) {
+    return {
+      success: false,
+      error: "Encoding aborted before start (timeout during download)",
+    };
+  }
+
   // Get input duration for progress calculation
   const inputDuration = await getInputDuration(inputPath);
+
+  // Check again after async operation (abort may have occurred during getInputDuration)
+  if (abortSignal?.aborted) {
+    return {
+      success: false,
+      error: "Encoding aborted before start (timeout during download)",
+    };
+  }
 
   return new Promise((resolve) => {
     // Ensure output directory exists
@@ -117,19 +133,44 @@ export const encodeVideo = async (
 
     const ffmpeg = spawn("ffmpeg", ffmpegArgs);
 
+    // Check if already aborted after spawning (race condition check)
+    if (abortSignal?.aborted) {
+      console.log("Encoding aborted immediately after spawn (timeout during download)");
+      ffmpeg.kill("SIGTERM");
+      // Force kill after short delay
+      setTimeout(() => {
+        if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
+          ffmpeg.kill("SIGKILL");
+        }
+      }, 1000);
+      resolve({
+        success: false,
+        error: "Encoding aborted before start (timeout during download)",
+      });
+      return;
+    }
+
     // Handle abort signal
     if (abortSignal) {
       abortSignal.addEventListener("abort", () => {
         console.log("Encoding aborted due to timeout or cancellation");
-        if (!ffmpeg.killed) {
+        // Check if process is still running (exitCode and signalCode are null)
+        if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
           ffmpeg.kill("SIGTERM");
           // Force kill after 5 seconds if still running
-          setTimeout(() => {
-            if (!ffmpeg.killed) {
-              console.log("Force killing FFmpeg process");
+          // Use exitCode/signalCode instead of killed, as killed becomes true
+          // immediately after kill() is called, not when the process actually exits
+          const killTimeout = setTimeout(() => {
+            // Check if process is still running (not terminated)
+            if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
+              console.log("Force killing FFmpeg process (SIGTERM ignored)");
               ffmpeg.kill("SIGKILL");
             }
           }, 5000);
+          // Clear timeout if process exits before SIGKILL
+          ffmpeg.once("close", () => {
+            clearTimeout(killTimeout);
+          });
         }
       });
     }
