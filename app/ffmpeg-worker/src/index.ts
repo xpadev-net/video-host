@@ -78,7 +78,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
     if (retryCount < 3) {
       await addJobToRetryQueue(job);
       await setEncodeProgress(job.movieId, {
-        status: "failed",
+        status: "retrying",
       });
     } else {
       await setEncodeProgress(job.movieId, {
@@ -141,7 +141,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
         );
         await addJobToRetryQueue(job);
         await setEncodeProgress(job.movieId, {
-          status: "failed",
+          status: "retrying",
         });
         // Don't send callback yet, wait for final retry
         return;
@@ -192,7 +192,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
       );
       await addJobToRetryQueue(job);
       await setEncodeProgress(job.movieId, {
-        status: "failed",
+        status: "retrying",
       });
       // Don't send callback yet, wait for final retry
     } else {

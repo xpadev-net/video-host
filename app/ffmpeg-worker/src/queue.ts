@@ -80,7 +80,7 @@ export const getEncodeJob = async (): Promise<EncodeJob | null> => {
 export const ENCODE_PROGRESS_PREFIX = "video:encode:progress:";
 
 export interface EncodeProgress {
-  status: "queued" | "processing" | "completed" | "failed";
+  status: "queued" | "processing" | "retrying" | "completed" | "failed";
   progress?: number;
   currentTime?: number;
   duration?: number;

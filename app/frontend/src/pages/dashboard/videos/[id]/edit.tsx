@@ -8,7 +8,7 @@ import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { client } from "@/lib/client";
 
 interface EncodeProgress {
-  status: "queued" | "processing" | "completed" | "failed";
+  status: "queued" | "processing" | "retrying" | "completed" | "failed";
   progress?: number;
   queuePosition?: number;
   currentTime?: number;

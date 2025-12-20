@@ -80,7 +80,7 @@ export const ENCODE_PROGRESS_PREFIX = "video:encode:progress:";
 export const ENCODE_PROCESSING_KEY = "video:encode:processing";
 
 export interface EncodeProgress {
-  status: "queued" | "processing" | "completed" | "failed";
+  status: "queued" | "processing" | "retrying" | "completed" | "failed";
   progress?: number; // 0-100 percentage
   queuePosition?: number;
   currentTime?: number;
