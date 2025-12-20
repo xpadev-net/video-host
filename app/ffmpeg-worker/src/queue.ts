@@ -135,39 +135,116 @@ export const addJobToRetryQueue = async (job: EncodeJob): Promise<void> => {
   );
 };
 
+// Lua script for atomic retry queue processing
+// This script atomically:
+// 1. Gets ready jobs (score <= now) from retry queue
+// 2. Removes them from retry queue
+// 3. Returns them for adding to main queue
+// This prevents duplicate processing when multiple workers run simultaneously
+const PROCESS_RETRY_QUEUE_SCRIPT = `
+  local retryQueueKey = KEYS[1]
+  local mainQueueKey = KEYS[2]
+  local now = tonumber(ARGV[1])
+  local limit = tonumber(ARGV[2])
+  
+  -- Get ready jobs (score <= now) from retry queue
+  local readyJobs = redis.call('ZRANGEBYSCORE', retryQueueKey, 0, now, 'LIMIT', 0, limit)
+  
+  if #readyJobs == 0 then
+    return {}
+  end
+  
+  -- Remove jobs from retry queue and add to main queue atomically
+  local movedJobs = {}
+  for i = 1, #readyJobs do
+    local jobJson = readyJobs[i]
+    -- Remove from retry queue (returns 1 if removed, 0 if not found)
+    local removed = redis.call('ZREM', retryQueueKey, jobJson)
+    if removed == 1 then
+      -- Only add to main queue if we successfully removed it
+      redis.call('RPUSH', mainQueueKey, jobJson)
+      table.insert(movedJobs, jobJson)
+    end
+  end
+  
+  return movedJobs
+`;
+
+let processRetryQueueScriptSha: string | null = null;
+
+// Helper to check if client supports script operations
+const isRedisClientType = (
+  client: RedisClientType | RedisSentinelType,
+): client is RedisClientType => {
+  return "scriptLoad" in client && "evalSha" in client;
+};
+
 export const processRetryQueue = async (): Promise<number> => {
   const client = await getRedisClient();
   const now = Math.floor(Date.now() / 1000);
+  const limit = 10; // Process up to 10 jobs at a time
 
-  // Get jobs that are ready to retry (score <= now)
-  const readyJobs = await client.zRangeByScore(RETRY_QUEUE_KEY, 0, now, {
-    LIMIT: { offset: 0, count: 10 }, // Process up to 10 jobs at a time
-  });
+  // Both RedisClientType and RedisSentinelType should support script operations
+  // but we need to ensure type safety
+  if (!isRedisClientType(client)) {
+    // For RedisSentinelType, we can still use the same methods
+    // but need to handle it properly
+    const sentinelClient = client as unknown as RedisClientType;
+    return processRetryQueueWithClient(sentinelClient, now, limit);
+  }
 
-  if (readyJobs.length === 0) {
+  return processRetryQueueWithClient(client, now, limit);
+};
+
+const processRetryQueueWithClient = async (
+  client: RedisClientType,
+  now: number,
+  limit: number,
+): Promise<number> => {
+  try {
+    // Load script if not already loaded
+    if (!processRetryQueueScriptSha) {
+      processRetryQueueScriptSha = await client.scriptLoad(
+        PROCESS_RETRY_QUEUE_SCRIPT,
+      );
+    }
+
+    // Execute the Lua script atomically
+    const movedJobs = await client.evalSha(processRetryQueueScriptSha, {
+      keys: [RETRY_QUEUE_KEY, ENCODE_QUEUE_KEY],
+      arguments: [now.toString(), limit.toString()],
+    }) as string[];
+
+    if (!movedJobs || movedJobs.length === 0) {
+      return 0;
+    }
+
+    // Log moved jobs
+    for (const jobJson of movedJobs) {
+      try {
+        const job = JSON.parse(jobJson) as EncodeJob;
+        console.log(
+          `Moved job from retry queue to main queue: movieId=${job.movieId}, retryCount=${job.retryCount}`,
+        );
+      } catch (error) {
+        console.error("Error parsing moved job:", error);
+      }
+    }
+
+    return movedJobs.length;
+  } catch (error) {
+    // If script is not found (e.g., Redis was restarted), reload it
+    if (
+      error instanceof Error &&
+      error.message.includes("NOSCRIPT")
+    ) {
+      processRetryQueueScriptSha = null;
+      // Retry once after reloading script
+      return processRetryQueueWithClient(client, now, limit);
+    }
+    console.error("Error processing retry queue:", error);
     return 0;
   }
-
-  let movedCount = 0;
-  for (const jobJson of readyJobs) {
-    try {
-      const job = JSON.parse(jobJson) as EncodeJob;
-      // Remove from retry queue
-      await client.zRem(RETRY_QUEUE_KEY, jobJson);
-      // Add back to main queue
-      await client.rPush(ENCODE_QUEUE_KEY, JSON.stringify(job));
-      movedCount++;
-      console.log(
-        `Moved job from retry queue to main queue: movieId=${job.movieId}, retryCount=${job.retryCount}`,
-      );
-    } catch (error) {
-      console.error("Error processing retry queue job:", error);
-      // Remove invalid job from retry queue
-      await client.zRem(RETRY_QUEUE_KEY, jobJson);
-    }
-  }
-
-  return movedCount;
 };
 
 export const closeRedis = async (): Promise<void> => {
