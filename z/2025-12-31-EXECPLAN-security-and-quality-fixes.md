@@ -31,7 +31,11 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
   - Final code: `c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1]`
   - Uses `\S+` to exclude trailing whitespace (code review feedback)
   - PR #8 merged into master
-- [ ] Milestone 3: S3キーのパス・トラバーサル対策
+- [x] (2025-12-31 05:20 JST) Milestone 3: S3キーのパス・トラバーサル対策
+  - Added `isValidS3Key` validation function to `app/backend/src/routes/api/v4/vod.ts`
+  - Rejects: empty keys, absolute paths (`/`), parent directory references (`..`), null bytes (`\0`)
+  - Function exported for unit testing
+  - TypeScript compilation passed
 - [ ] Milestone 4: ユニットテスト基盤の構築
 - [ ] Milestone 5: 認証・セキュリティロジックのテスト追加
 

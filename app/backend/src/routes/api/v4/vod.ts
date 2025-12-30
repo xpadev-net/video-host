@@ -6,6 +6,32 @@ import { S3_PROD_BUCKET, VOD_INTERNAL_SECRET } from "@/env";
 import { s3Client } from "@/lib/s3";
 import { unauthorized } from "@/utils/response";
 
+/**
+ * Validates an S3 key to prevent path traversal attacks.
+ * Rejects empty keys, absolute paths, parent directory references, and null byte injection.
+ * @param key - The S3 key to validate
+ * @returns true if the key is valid, false otherwise
+ */
+export const isValidS3Key = (key: string): boolean => {
+  // Reject empty keys
+  if (!key) {
+    return false;
+  }
+  // Reject absolute paths
+  if (key.startsWith("/")) {
+    return false;
+  }
+  // Reject parent directory references (path traversal)
+  if (key.includes("..")) {
+    return false;
+  }
+  // Reject null byte injection
+  if (key.includes("\0")) {
+    return false;
+  }
+  return true;
+};
+
 const app = new Hono<Env>();
 
 // VOD mapping endpoint for nginx-vod-module
@@ -25,6 +51,11 @@ export const vodRoute = app.get("/mapping/*", async (c) => {
 
   if (!s3Key) {
     return c.json({ error: "Missing s3Key" }, 400);
+  }
+
+  // Validate S3 key to prevent path traversal attacks
+  if (!isValidS3Key(s3Key)) {
+    return c.json({ error: "Invalid s3Key" }, 400);
   }
 
   // Generate presigned GET URL for the S3 object
