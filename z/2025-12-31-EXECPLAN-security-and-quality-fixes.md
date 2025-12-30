@@ -22,7 +22,10 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
 
 ## Progress
 
-- [ ] Milestone 1: 必須環境変数のバリデーション追加
+- [x] (2025-12-31 04:40 JST) Milestone 1: 必須環境変数のバリデーション追加
+  - Added `requireEnv` helper function to `app/backend/src/env.ts`
+  - Applied to JWT_SECRET, CALLBACK_SECRET, VOD_INTERNAL_SECRET
+  - Verified: production mode throws error; development mode uses defaults with warnings
 - [ ] Milestone 2: Authorizationヘッダー解析の修正
 - [ ] Milestone 3: S3キーのパス・トラバーサル対策
 - [ ] Milestone 4: ユニットテスト基盤の構築
