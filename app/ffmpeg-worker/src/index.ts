@@ -10,10 +10,10 @@ import {
 import { downloadFromTmp, uploadToProd, deleteFromTmp } from "./s3";
 import { encodeVideo, getLocalPath, cleanup } from "./encoder";
 import { sendCallback } from "./callback";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 console.log("FFmpeg Worker starting...");
 console.log(`Commit Hash: ${process.env.COMMIT_HASH || "unknown"}`);
@@ -24,7 +24,8 @@ const checkDiskSpace = async (): Promise<boolean> => {
   try {
     // Use df command to check available disk space
     // df -BG outputs in GB, -B1 outputs in bytes (more reliable)
-    const { stdout } = await execAsync(`df -B1 ${TEMP_DIR}`);
+    // Use execFile with args array to prevent shell injection
+    const { stdout } = await execFileAsync("df", ["-B1", TEMP_DIR]);
     const lines = stdout.trim().split("\n");
     if (lines.length < 2) {
       console.warn("Could not parse df output, assuming disk space is available");
@@ -41,7 +42,7 @@ const checkDiskSpace = async (): Promise<boolean> => {
 
     // Available space in bytes (3rd column when using -B1)
     const availableBytes = parseInt(parts[3], 10);
-    if (isNaN(availableBytes)) {
+    if (Number.isNaN(availableBytes)) {
       console.warn("Could not parse available disk space, assuming disk space is available");
       return true;
     }

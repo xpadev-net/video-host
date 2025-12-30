@@ -200,6 +200,7 @@ const processRetryQueueWithClient = async (
   client: RedisClientType,
   now: number,
   limit: number,
+  scriptReloadAttempted = false,
 ): Promise<number> => {
   try {
     // Load script if not already loaded
@@ -238,9 +239,15 @@ const processRetryQueueWithClient = async (
       error instanceof Error &&
       error.message.includes("NOSCRIPT")
     ) {
+      // Prevent infinite recursion by limiting reload to one attempt
+      if (scriptReloadAttempted) {
+        console.error("Failed to reload Lua script after NOSCRIPT error, giving up");
+        throw new Error("Failed to reload retry queue script after Redis restart");
+      }
+      console.log("Lua script not found (NOSCRIPT), reloading...");
       processRetryQueueScriptSha = null;
       // Retry once after reloading script
-      return processRetryQueueWithClient(client, now, limit);
+      return processRetryQueueWithClient(client, now, limit, true);
     }
     console.error("Error processing retry queue:", error);
     return 0;
