@@ -36,8 +36,16 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
   - Rejects: empty keys, absolute paths (`/`), parent directory references (`..`), null bytes (`\0`)
   - Function exported for unit testing
   - TypeScript compilation passed
-- [ ] Milestone 4: ユニットテスト基盤の構築
-- [ ] Milestone 5: 認証・セキュリティロジックのテスト追加
+- [x] (2025-12-31 05:38 JST) Milestone 4: ユニットテスト基盤の構築
+  - Added vitest ^4.0.16 and @vitest/coverage-v8 ^4.0.16 as dev dependencies
+  - Created `app/backend/vitest.config.ts` with Node environment and paths alias
+  - Added `test`, `test:watch`, `test:coverage` scripts to package.json
+  - Created `app/backend/src/__tests__/setup.ts` for test environment setup
+- [x] (2025-12-31 05:39 JST) Milestone 5: 認証・セキュリティロジックのテスト追加
+  - Exported `requireEnv` function from `app/backend/src/env.ts` for testability
+  - Created `app/backend/src/__tests__/env.test.ts` with 5 test cases
+  - Created `app/backend/src/__tests__/vod.test.ts` with 7 test cases
+  - All 12 tests passing
 
 
 ## Surprises & Discoveries
@@ -54,7 +62,24 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
 
 ## Outcomes & Retrospective
 
-(完了時に記録)
+### 2025-12-31: All Milestones Complete
+
+**成果**:
+- 全5マイルストーンが完了
+- 12のユニットテストが全てパス
+- セキュリティ脆弱性（環境変数デフォルト、Authorization解析、パストラバーサル）が修正済み
+- Vitestベースのテスト基盤が整備され、今後のテスト追加が容易に
+
+**追加ファイル**:
+- `app/backend/vitest.config.ts`
+- `app/backend/src/__tests__/setup.ts`
+- `app/backend/src/__tests__/env.test.ts`
+- `app/backend/src/__tests__/vod.test.ts`
+
+**学び**:
+- Vitestのモジュールキャッシュは`vi.resetModules()`だけでは完全にクリアされない場合がある
+- テスト対象の関数はexportしてdirect testingを可能にすることでテストが簡潔になる
+- process.envの操作はスプレッド演算子ではなく直接プロパティを設定/削除する必要がある
 
 
 ## Context and Orientation

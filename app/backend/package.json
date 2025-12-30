@@ -11,7 +11,10 @@
     "format": "biome format . --write",
     "typecheck": "tsc --noEmit --skipLibCheck --pretty --noErrorTruncation --skipDefaultLibCheck --project tsconfig.json",
     "prepare": "pnpm prisma generate || true",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.952.0",
@@ -30,7 +33,9 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.4",
+    "@vitest/coverage-v8": "^4.0.16",
     "tsc-alias": "^1.8.8",
-    "tsx": "^4.21.0"
+    "tsx": "^4.21.0",
+    "vitest": "^4.0.16"
   }
 }
