@@ -1,5 +1,25 @@
 import "dotenv/config";
 
+/**
+ * Requires an environment variable to be set.
+ * In development mode (NODE_ENV=development), allows a default value with a warning.
+ * In production mode, throws an error if the variable is not set.
+ */
+const requireEnv = (name: string, defaultForDev?: string): string => {
+  const value = process.env[name];
+  if (value) return value;
+
+  if (process.env.NODE_ENV === "development" && defaultForDev !== undefined) {
+    console.warn(`Warning: ${name} not set, using development default`);
+    return defaultForDev;
+  }
+
+  throw new Error(
+    `Required environment variable ${name} is not set. ` +
+    `Set it in your environment or use NODE_ENV=development for defaults.`,
+  );
+};
+
 export const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 // Sentinel Configuration (optional)
 export const REDIS_SENTINEL_HOSTS = process.env.REDIS_SENTINEL_HOSTS; // e.g., "host1:26379,host2:26379,host3:26379"
@@ -19,7 +39,10 @@ export const S3_FORCE_PATH_STYLE = process.env.S3_FORCE_PATH_STYLE === "true";
 export const BACKEND_CALLBACK_URL =
   process.env.BACKEND_CALLBACK_URL ||
   "http://localhost:3001/api/v4/callback/encode-complete";
-export const CALLBACK_SECRET = process.env.CALLBACK_SECRET || "callback-secret";
+export const CALLBACK_SECRET = requireEnv(
+  "CALLBACK_SECRET",
+  "dev-callback-secret",
+);
 
 // VOD streaming
 export const VOD_BASE_URL = process.env.VOD_BASE_URL || "http://localhost:3002";
