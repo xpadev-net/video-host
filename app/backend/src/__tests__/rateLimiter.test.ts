@@ -82,4 +82,11 @@ describe("authRateLimiter", () => {
     });
     expect(res.status).toBe(200);
   });
+
+  it("should use 'unknown' as fallback when no headers are present", async () => {
+    const res = await app.request("/login", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+  });
 });
