@@ -76,10 +76,23 @@ const processJob = async (job: EncodeJob): Promise<void> => {
     // Schedule retry for later
     const retryCount = job.retryCount || 0;
     if (retryCount < 3) {
-      await addJobToRetryQueue(job);
-      await setEncodeProgress(job.movieId, {
-        status: "retrying",
-      });
+      try {
+        await addJobToRetryQueue(job);
+        await setEncodeProgress(job.movieId, {
+          status: "retrying",
+        });
+      } catch (retryError) {
+        console.error(`Failed to schedule retry: movieId=${job.movieId}`, retryError);
+        // Fall through to mark as failed
+        await setEncodeProgress(job.movieId, {
+          status: "failed",
+        });
+        await sendCallback({
+          movieId: job.movieId,
+          variantId: "original",
+          status: "failed",
+        });
+      }
     } else {
       await setEncodeProgress(job.movieId, {
         status: "failed",
@@ -139,22 +152,25 @@ const processJob = async (job: EncodeJob): Promise<void> => {
         console.log(
           `Scheduling retry for job: movieId=${job.movieId}, retryCount=${retryCount + 1}`,
         );
-        await addJobToRetryQueue(job);
-        await setEncodeProgress(job.movieId, {
-          status: "retrying",
-        });
-        // Don't send callback yet, wait for final retry
-        return;
-      } else {
-        // Max retries exceeded
-        await setEncodeProgress(job.movieId, { status: "failed" });
-        await sendCallback({
-          movieId: job.movieId,
-          variantId: "original",
-          status: "failed",
-        });
-        return;
+        try {
+          await addJobToRetryQueue(job);
+          await setEncodeProgress(job.movieId, {
+            status: "retrying",
+          });
+          return;
+        } catch (retryError) {
+          console.error(`Failed to schedule retry: movieId=${job.movieId}`, retryError);
+          // Fall through to mark as failed
+        }
       }
+      // Max retries exceeded or retry scheduling failed
+      await setEncodeProgress(job.movieId, { status: "failed" });
+      await sendCallback({
+        movieId: job.movieId,
+        variantId: "original",
+        status: "failed",
+      });
+      return;
     }
 
     // Upload to prod-bucket (same key structure)
@@ -190,11 +206,25 @@ const processJob = async (job: EncodeJob): Promise<void> => {
       console.log(
         `Scheduling retry for job: movieId=${job.movieId}, retryCount=${retryCount + 1}`,
       );
-      await addJobToRetryQueue(job);
-      await setEncodeProgress(job.movieId, {
-        status: "retrying",
-      });
-      // Don't send callback yet, wait for final retry
+      try {
+        await addJobToRetryQueue(job);
+        await setEncodeProgress(job.movieId, {
+          status: "retrying",
+        });
+      } catch (retryError) {
+        console.error(`Failed to schedule retry for job: movieId=${job.movieId}`, retryError);
+        // If retry scheduling fails, mark as failed
+        try {
+          await setEncodeProgress(job.movieId, { status: "failed" });
+          await sendCallback({
+            movieId: job.movieId,
+            variantId: "original",
+            status: "failed",
+          });
+        } catch (finalError) {
+          console.error(`Failed to mark job as failed: movieId=${job.movieId}`, finalError);
+        }
+      }
     } else {
       // Max retries exceeded
       await setEncodeProgress(job.movieId, { status: "failed" });
