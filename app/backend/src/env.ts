@@ -6,7 +6,7 @@ import * as process from "node:process";
  * In development mode (NODE_ENV=development), allows a default value with a warning.
  * In production mode, throws an error if the variable is not set.
  */
-const requireEnv = (name: string, defaultForDev?: string): string => {
+export const requireEnv = (name: string, defaultForDev?: string): string => {
   const value = process.env[name];
   if (value) return value;
 
