@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import { isPasswordValid } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
+import { authRateLimiter } from "@/lib/rateLimiter";
 import { createSession } from "@/lib/session";
 import { unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
@@ -24,7 +25,7 @@ const authSchema = z.union([passwordAuthSchema, tokenAuthSchema]);
 const app = new Hono<Env>();
 
 export const authRoute = app
-  .post("/", zValidator("json", authSchema), async (c) => {
+  .post("/", authRateLimiter, zValidator("json", authSchema), async (c) => {
     const data = c.req.valid("json");
     if (data.type === "token") {
       const { token } = data;
