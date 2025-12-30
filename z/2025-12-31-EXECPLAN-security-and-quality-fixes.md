@@ -22,6 +22,8 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
 
 ## Progress
 
+### Phase 1: 完了済み（2025-12-31 初回レビュー）
+
 - [x] (2025-12-31 04:40 JST) Milestone 1: 必須環境変数のバリデーション追加
   - Added `requireEnv` helper function to `app/backend/src/env.ts`
   - Applied to JWT_SECRET, CALLBACK_SECRET, VOD_INTERNAL_SECRET
@@ -47,6 +49,22 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
   - Created `app/backend/src/__tests__/vod.test.ts` with 7 test cases
   - All 12 tests passing
 
+### Phase 2: 追加改善（2025-12-31 全体レビュー）
+
+- [ ] Milestone 6: 認証エンドポイントへのレート制限追加
+  - ブルートフォース攻撃対策として、ログイン試行回数を制限
+  - 15分間で5回までの試行を許可
+- [ ] Milestone 7: JWT暗号署名検証の追加
+  - 現在はDBチェックのみ。jwt.verify()による署名検証を追加
+  - トークン改ざんを検出可能に
+- [ ] Milestone 8: デバッグログの削除
+  - `app/backend/src/routes/api/v4/vod.ts:93` の console.log を削除
+- [ ] Milestone 9: フロントエンドAPIエラーハンドリング改善
+  - HTTPエラーステータスのチェック追加
+  - ApiErrorクラスの導入
+- [ ] Milestone 10: 認証フローの統合テスト追加
+  - ログイン成功/失敗、トークンリフレッシュ、ログアウトのテスト
+
 
 ## Surprises & Discoveries
 
@@ -57,6 +75,18 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
 
 - Decision: Vitestをテストフレームワークとして採用
   Rationale: pnpmワークスペース対応、TypeScriptネイティブサポート、高速な実行
+  Date/Author: 2025-12-31 / Claude
+
+- Decision: hono-rate-limiter + Redisストアでレート制限を実装
+  Rationale: Honoエコシステムのライブラリで統合が容易。Redisを使用することで分散環境でも正確にカウント可能
+  Date/Author: 2025-12-31 / Claude
+
+- Decision: JWT署名検証をDB検証の前に実行
+  Rationale: 不正なトークンをDBクエリ前に拒否することで、DoS攻撃への耐性を向上。DB負荷も軽減
+  Date/Author: 2025-12-31 / Claude
+
+- Decision: フロントエンドにApiErrorクラスを導入
+  Rationale: 型安全なエラーハンドリングが可能になり、ステータスコードに応じた処理を実装しやすくなる
   Date/Author: 2025-12-31 / Claude
 
 
@@ -308,6 +338,178 @@ backendアプリケーションにVitestを導入し、テスト実行環境を�
     });
 
 
+### Milestone 6: 認証エンドポイントへのレート制限追加
+
+現在、認証エンドポイント`app/backend/src/routes/api/v4/auth.ts`は無制限のログイン試行を許可しています。ブルートフォース攻撃を防ぐため、IPアドレスベースのレート制限を追加します。
+
+依存関係の追加:
+
+    cd app/backend
+    pnpm add hono-rate-limiter
+
+`app/backend/src/lib/rateLimiter.ts`を作成：
+
+    import { rateLimiter } from "hono-rate-limiter";
+
+    // 認証エンドポイント用: 15分間に5回まで
+    export const authRateLimiter = rateLimiter({
+      windowMs: 15 * 60 * 1000, // 15分
+      limit: 5,
+      standardHeaders: "draft-6",
+      keyGenerator: (c) => {
+        // X-Forwarded-For または X-Real-IP を使用（プロキシ対応）
+        return c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
+          || c.req.header("x-real-ip")
+          || "unknown";
+      },
+      message: { success: false, error: "Too many login attempts. Please try again later." },
+    });
+
+`app/backend/src/routes/api/v4/auth.ts`を修正し、POST /にレート制限を適用：
+
+    import { authRateLimiter } from "@/lib/rateLimiter";
+
+    export const authRoute = app
+      .post("/", authRateLimiter, zValidator("json", authSchema), async (c) => {
+        // 既存のロジック
+      })
+
+
+### Milestone 7: JWT暗号署名検証の追加
+
+現在の認証ミドルウェアはデータベースでトークンの存在を確認していますが、JWT署名の暗号検証を行っていません。改ざんされたトークンを検出するため、`jwt.verify()`を追加します。
+
+`app/backend/src/middleware/auth.ts`を修正：
+
+    import jwt from "jsonwebtoken";
+    import { JWT_SECRET } from "@/env";
+
+    const authMiddleware = createMiddleware<...>(async (c, next) => {
+      const url = new URL(c.req.url).pathname;
+      const authHeader = c.req.header("authorization");
+      const token = authHeader?.match(/^Bearer\s+(\S+)$/i)?.[1];
+
+      if (!token) {
+        if (isPublicEndpoint(url)) {
+          await next();
+          return;
+        }
+        return unauthorized(c, "Unauthorized");
+      }
+
+      // JWT署名検証（DBクエリの前に実行）
+      try {
+        jwt.verify(token, JWT_SECRET);
+      } catch (e) {
+        if (isPublicEndpoint(url)) {
+          await next();
+          return;
+        }
+        return unauthorized(c, "Invalid token signature");
+      }
+
+      // 既存のDB検証
+      const session = await prisma.session.findFirst({...});
+      // ...
+    });
+
+
+### Milestone 8: デバッグログの削除
+
+`app/backend/src/routes/api/v4/vod.ts`の93行目にあるconsole.logを削除します。このログは開発時のデバッグ用であり、本番環境では不要です。
+
+    // 削除する行:
+    console.log(JSON.stringify(mapping, null, 2));
+
+
+### Milestone 9: フロントエンドAPIエラーハンドリング改善
+
+現在の`app/frontend/src/libraries/request.ts`はHTTPエラーステータスをチェックしていません。エラー時に適切な例外をスローするよう改善します。
+
+`app/frontend/src/libraries/request.ts`を修正：
+
+    export class ApiError extends Error {
+      constructor(
+        public status: number,
+        public statusText: string,
+        public body?: unknown
+      ) {
+        super(`API Error: ${status} ${statusText}`);
+        this.name = "ApiError";
+      }
+    }
+
+    const request = async <T>(url: string, option: RequestInit = {}) => {
+      const storedToken = typeof window !== "undefined"
+        ? localStorage.getItem(AuthTokenLocalStorageKey)
+        : null;
+      const token = storedToken
+        ? storedToken.startsWith('"')
+          ? storedToken.slice(1, -1)
+          : storedToken
+        : null;
+
+      const headers = new Headers(option.headers);
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+
+      let req: Response;
+      try {
+        req = await fetch(`${ApiEndpoint}${url}`, {
+          ...option,
+          method: "POST",
+          mode: "cors",
+          headers,
+        });
+      } catch (e) {
+        throw new ApiError(0, "Network Error", e);
+      }
+
+      if (!req.ok) {
+        const body = await req.json().catch(() => null);
+        throw new ApiError(req.status, req.statusText, body);
+      }
+
+      return (await req.json()) as T;
+    };
+
+    export { request, ApiError };
+
+
+### Milestone 10: 認証フローの統合テスト追加
+
+`app/backend/src/__tests__/auth.test.ts`を作成し、認証フローをテスト：
+
+    import { describe, it, expect, beforeAll, afterAll } from "vitest";
+    import { Hono } from "hono";
+    import { authRoute } from "../routes/api/v4/auth";
+
+    describe("Auth Routes", () => {
+      // テスト用のモックアプリケーション
+
+      it("should return 401 for invalid credentials", async () => {
+        // 不正なユーザー名/パスワードでログイン試行
+      });
+
+      it("should return token for valid credentials", async () => {
+        // 正しい認証情報でログイン
+      });
+
+      it("should refresh token with valid existing token", async () => {
+        // 有効なトークンでリフレッシュ
+      });
+
+      it("should reject invalid token format", async () => {
+        // 不正な形式のトークンを拒否
+      });
+
+      it("should delete session on logout", async () => {
+        // ログアウト時にセッション削除
+      });
+    });
+
+
 ## Concrete Steps
 
 以下のコマンドは全て `video-host` リポジトリのルートディレクトリから実行します。
@@ -374,9 +576,72 @@ backendアプリケーションにVitestを導入し、テスト実行環境を�
     Server is running on port 3000
 
 
+### Phase 2 Steps
+
+### Step 10: レート制限パッケージのインストール
+
+    cd app/backend
+    pnpm add hono-rate-limiter
+
+### Step 11: rateLimiter.tsの作成
+
+`app/backend/src/lib/rateLimiter.ts`を作成（Milestone 6参照）
+
+### Step 12: auth.tsへのレート制限適用
+
+`app/backend/src/routes/api/v4/auth.ts`を編集し、authRateLimiterをインポートしてPOST /に適用
+
+### Step 13: auth.tsのJWT検証追加
+
+`app/backend/src/middleware/auth.ts`を編集し、jwt.verify()を追加（Milestone 7参照）
+
+### Step 14: console.logの削除
+
+`app/backend/src/routes/api/v4/vod.ts`の93行目を削除
+
+### Step 15: フロントエンドrequest.tsの改善
+
+`app/frontend/src/libraries/request.ts`を編集し、ApiErrorクラスとエラーハンドリングを追加
+
+### Step 16: auth.test.tsの作成
+
+`app/backend/src/__tests__/auth.test.ts`を作成（Milestone 10参照）
+
+### Step 17: 全テストの実行
+
+    cd app/backend
+    pnpm test
+
+期待される出力：
+
+    ✓ src/__tests__/env.test.ts (5 tests)
+    ✓ src/__tests__/vod.test.ts (7 tests)
+    ✓ src/__tests__/auth.test.ts (5 tests)
+
+    Test Files  3 passed (3)
+    Tests       17 passed (17)
+
+### Step 18: レート制限の検証
+
+    # 6回連続でログイン試行
+    for i in {1..6}; do
+      curl -s -X POST http://localhost:3000/api/v4/auth \
+        -H "Content-Type: application/json" \
+        -d '{"username":"test","password":"wrong"}' \
+        -w "\nHTTP Status: %{http_code}\n"
+    done
+
+期待される出力（6回目）：
+
+    {"success":false,"error":"Too many login attempts. Please try again later."}
+    HTTP Status: 429
+
+
 ## Validation and Acceptance
 
-### 環境変数バリデーションの検証
+### Phase 1 検証項目（完了済み）
+
+#### 環境変数バリデーションの検証
 
 1. 本番モード（NODE_ENV=production）で環境変数未設定の場合：
    - サーバーが起動せず、どの環境変数が不足しているか明示するエラーメッセージが表示される
@@ -384,7 +649,7 @@ backendアプリケーションにVitestを導入し、テスト実行環境を�
 2. 開発モード（NODE_ENV=development）で環境変数未設定の場合：
    - 警告メッセージを出力しつつ、デフォルト値で起動する
 
-### Authorizationヘッダー解析の検証
+#### Authorizationヘッダー解析の検証
 
 以下のcurlコマンドで正常系と異常系をテスト：
 
@@ -395,7 +660,7 @@ backendアプリケーションにVitestを導入し、テスト実行環境を�
     curl -H "Authorization: invalid-token" http://localhost:3000/api/v4/movies
     # 期待: 401 Unauthorized
 
-### S3キー検証の検証
+#### S3キー検証の検証
 
     # 正常系
     curl -H "X-Vod-Internal-Secret: $VOD_INTERNAL_SECRET" \
@@ -407,12 +672,57 @@ backendアプリケーションにVitestを導入し、テスト実行環境を�
       http://localhost:3000/api/v4/vod/mapping/../../../etc/passwd
     # 期待: 400 Bad Request with {"error": "Invalid s3Key"}
 
+### Phase 2 検証項目
+
+#### レート制限の検証
+
+1. 5回のログイン試行後、6回目で429エラーが返ること
+2. 15分経過後、再びログイン試行が可能になること
+3. X-RateLimit-*ヘッダーがレスポンスに含まれること
+
+検証コマンド：
+
+    for i in {1..6}; do
+      echo "Attempt $i:"
+      curl -s -X POST http://localhost:3000/api/v4/auth \
+        -H "Content-Type: application/json" \
+        -d '{"username":"test","password":"wrong"}' \
+        -w "\nStatus: %{http_code}\n\n"
+    done
+
+#### JWT署名検証の検証
+
+1. 有効なトークンでアクセスが成功すること
+2. 改ざんされたトークン（1文字変更）で401エラーが返ること
+3. 期限切れトークンで401エラーが返ること
+
+検証コマンド：
+
+    # 正常なトークン
+    curl -H "Authorization: Bearer $VALID_TOKEN" http://localhost:3000/api/v4/users/me
+    # 期待: 200 OK
+
+    # 改ざんトークン（最後の文字を変更）
+    curl -H "Authorization: Bearer ${VALID_TOKEN}x" http://localhost:3000/api/v4/users/me
+    # 期待: 401 Unauthorized with "Invalid token signature"
+
+#### デバッグログ削除の検証
+
+1. VODマッピングエンドポイントにアクセス
+2. サーバーログにJSON出力がないことを確認
+
+#### フロントエンドエラーハンドリングの検証
+
+1. 401エラー時にApiErrorがスローされること
+2. ネットワーク切断時にApiErrorがスローされること
+3. エラーのstatusプロパティでステータスコードを取得できること
+
 ### テストの検証
 
     cd app/backend
     pnpm test
 
-全テストがパスすること。
+全テストがパスすること（Phase 2完了後は17テスト以上）。
 
 
 ## Idempotence and Recovery
@@ -436,26 +746,59 @@ backendアプリケーションにVitestを導入し、テスト実行環境を�
 
 ### 追加される依存関係
 
-    vitest: ^3.2.0
-    @vitest/coverage-v8: ^3.2.0
+Phase 1:
+
+    vitest: ^4.0.16
+    @vitest/coverage-v8: ^4.0.16
+
+Phase 2:
+
+    hono-rate-limiter: ^0.4.0
 
 ### 追加される関数・型
 
 `app/backend/src/env.ts`:
 
-    const requireEnv: (name: string, defaultForDev?: string) => string
+    export const requireEnv: (name: string, defaultForDev?: string) => string
 
 `app/backend/src/routes/api/v4/vod.ts`:
 
     export const isValidS3Key: (key: string) => boolean
 
+`app/backend/src/lib/rateLimiter.ts` (Phase 2):
+
+    import type { MiddlewareHandler } from "hono";
+    export const authRateLimiter: MiddlewareHandler;
+
+`app/frontend/src/libraries/request.ts` (Phase 2):
+
+    export class ApiError extends Error {
+      status: number;
+      statusText: string;
+      body?: unknown;
+    }
+
 ### 追加されるファイル
 
+Phase 1:
+
     app/backend/vitest.config.ts
+    app/backend/src/__tests__/setup.ts
     app/backend/src/__tests__/env.test.ts
     app/backend/src/__tests__/vod.test.ts
 
+Phase 2:
+
+    app/backend/src/lib/rateLimiter.ts
+    app/backend/src/__tests__/auth.test.ts
+
 
 ---
-Revision Notes:
-- 2025-12-31: 初版作成。コードレビューで発見された5つの主要な問題（デフォルトシークレット、Authorization解析、S3キー検証、テスト欠如）に対する修正計画を策定。
+
+## Revision Notes
+
+- 2025-12-31 04:30 JST: 初版作成。コードレビューで発見された5つの主要な問題（デフォルトシークレット、Authorization解析、S3キー検証、テスト欠如）に対する修正計画を策定。
+
+- 2025-12-31 06:00 JST: Phase 1完了。全5マイルストーン実装済み、12テストがパス。
+
+- 2025-12-31 15:00 JST: 全体レビューに基づきPhase 2を追加。新たに発見された問題点（レート制限なし、JWT署名検証なし、デバッグログ残存、フロントエンドエラーハンドリング不足）に対応するマイルストーン6-10を追加。Decision Logに新しい決定事項を記録。
