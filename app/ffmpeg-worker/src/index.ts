@@ -112,7 +112,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
   try {
     // Download from tmp-bucket
     console.log(`Downloading from tmp-bucket: ${job.s3Key}`);
-    await downloadFromTmp(job.s3Key, inputPath);
+    await downloadFromTmp(job.s3Key, inputPath, abortController.signal);
 
     // Encode video with progress callback and abort signal
     console.log(`Encoding video to: ${outputPath}`);
@@ -159,7 +159,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
 
     // Upload to prod-bucket (same key structure)
     console.log(`Uploading to prod-bucket: ${job.s3Key}`);
-    await uploadToProd(job.s3Key, outputPath);
+    await uploadToProd(job.s3Key, outputPath, "video/mp4", abortController.signal);
 
     // Delete from tmp-bucket
     console.log(`Deleting from tmp-bucket: ${job.s3Key}`);

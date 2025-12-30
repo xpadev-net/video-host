@@ -43,30 +43,63 @@ export const s3Client = new S3Client(s3Config);
 export const downloadFromTmp = async (
   s3Key: string,
   localPath: string,
+  abortSignal?: AbortSignal,
 ): Promise<void> => {
+  // Check if already aborted before starting
+  if (abortSignal?.aborted) {
+    throw new Error("Download aborted before start");
+  }
+
   const command = new GetObjectCommand({
     Bucket: S3_TMP_BUCKET,
     Key: s3Key,
   });
 
-  const response = await s3Client.send(command);
+  const response = await s3Client.send(command, { abortSignal });
   if (!response.Body) {
     throw new Error("Empty response body");
   }
 
   const writeStream = createWriteStream(localPath);
-  await pipeline(response.Body as Readable, writeStream);
+  const body = response.Body as Readable;
+
+  // Handle abort during streaming
+  if (abortSignal) {
+    const abortHandler = () => {
+      body.destroy(new Error("Download aborted due to timeout"));
+      writeStream.destroy(new Error("Download aborted due to timeout"));
+    };
+    abortSignal.addEventListener("abort", abortHandler, { once: true });
+    try {
+      await pipeline(body, writeStream);
+    } finally {
+      abortSignal.removeEventListener("abort", abortHandler);
+    }
+  } else {
+    await pipeline(body, writeStream);
+  }
 };
 
 export const uploadToProd = async (
   s3Key: string,
   localPath: string,
   contentType = "video/mp4",
+  abortSignal?: AbortSignal,
 ): Promise<void> => {
+  // Check if already aborted before starting
+  if (abortSignal?.aborted) {
+    throw new Error("Upload aborted before start");
+  }
+
   const maxRetries = 3;
   let lastError: Error | undefined;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    // Check abort signal between retries
+    if (abortSignal?.aborted) {
+      throw new Error("Upload aborted due to timeout");
+    }
+
     try {
       const readStream = createReadStream(localPath);
       const command = new PutObjectCommand({
@@ -76,9 +109,14 @@ export const uploadToProd = async (
         ContentType: contentType,
       });
 
-      await s3Client.send(command);
+      await s3Client.send(command, { abortSignal });
       return; // Success
     } catch (error) {
+      // If aborted, don't retry
+      if (abortSignal?.aborted) {
+        throw new Error("Upload aborted due to timeout");
+      }
+
       lastError = error as Error;
       const isRetryable =
         error instanceof Error &&
