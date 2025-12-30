@@ -51,12 +51,9 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
 
 ### Phase 2: 追加改善（2025-12-31 全体レビュー）
 
-- [x] (2025-12-31 05:57 JST) Milestone 6: 認証エンドポイントへのレート制限追加
-  - Added hono-rate-limiter ^0.5.3 dependency
-  - Created `app/backend/src/lib/rateLimiter.ts` with IP-based rate limiting (5 req/15min)
-  - Applied authRateLimiter to POST `/` in `app/backend/src/routes/api/v4/auth.ts`
-  - Created 5 unit tests in `app/backend/src/__tests__/rateLimiter.test.ts`
-  - All 17 tests passing
+- [ ] Milestone 6: 認証エンドポイントへのレート制限追加
+  - ブルートフォース攻撃対策として、ログイン試行回数を制限
+  - 15分間で5回までの試行を許可
 - [ ] Milestone 7: JWT暗号署名検証の追加
   - 現在はDBチェックのみ。jwt.verify()による署名検証を追加
   - トークン改ざんを検出可能に
@@ -90,6 +87,10 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
 
 - Decision: フロントエンドにApiErrorクラスを導入
   Rationale: 型安全なエラーハンドリングが可能になり、ステータスコードに応じた処理を実装しやすくなる
+  Date/Author: 2025-12-31 / Claude
+
+- Decision: レート制限にRedisStoreを採用（In-Memoryから変更）
+  Rationale: コードレビューでの指摘により、複数インスタンス間での整合性と再起動時の永続性を確保するため。既存のRedisインフラを活用。
   Date/Author: 2025-12-31 / Claude
 
 
@@ -742,16 +743,7 @@ backendアプリケーションにVitestを導入し、テスト実行環境を�
 
 ## Artifacts and Notes
 
-### Milestone 6: Rate Limiter Implementation (2025-12-31 05:57 JST)
-
-Test output:
-
-    ✓ src/__tests__/env.test.ts (5 tests) 4ms
-    ✓ src/__tests__/rateLimiter.test.ts (5 tests) 16ms
-    ✓ src/__tests__/vod.test.ts (7 tests) 2ms
-    
-    Test Files  3 passed (3)
-    Tests       17 passed (17)
+（実装中に生成されたログや出力をここに記録）
 
 
 ## Interfaces and Dependencies
@@ -802,7 +794,6 @@ Phase 1:
 Phase 2:
 
     app/backend/src/lib/rateLimiter.ts
-    app/backend/src/__tests__/rateLimiter.test.ts
     app/backend/src/__tests__/auth.test.ts
 
 
@@ -815,5 +806,3 @@ Phase 2:
 - 2025-12-31 06:00 JST: Phase 1完了。全5マイルストーン実装済み、12テストがパス。
 
 - 2025-12-31 15:00 JST: 全体レビューに基づきPhase 2を追加。新たに発見された問題点（レート制限なし、JWT署名検証なし、デバッグログ残存、フロントエンドエラーハンドリング不足）に対応するマイルストーン6-10を追加。Decision Logに新しい決定事項を記録。
-
-- 2025-12-31 05:57 JST: Milestone 6完了。hono-rate-limiter ^0.5.3を追加し、`app/backend/src/lib/rateLimiter.ts`を作成。authRateLimiterをPOST /authに適用。5つのユニットテストを追加し、全17テストがパス。
