@@ -13,23 +13,28 @@ import { unauthorized } from "@/utils/response";
  * @returns true if the key is valid, false otherwise
  */
 export const isValidS3Key = (key: string): boolean => {
-  // Reject empty keys
-  if (!key) {
+  try {
+    const decoded = decodeURIComponent(key);
+    // Reject empty keys
+    if (!decoded) {
+      return false;
+    }
+    // Reject absolute paths
+    if (decoded.startsWith("/")) {
+      return false;
+    }
+    // Reject parent directory references (path traversal)
+    if (decoded.includes("..")) {
+      return false;
+    }
+    // Reject null byte injection
+    if (decoded.includes("\0")) {
+      return false;
+    }
+    return true;
+  } catch {
     return false;
   }
-  // Reject absolute paths
-  if (key.startsWith("/")) {
-    return false;
-  }
-  // Reject parent directory references (path traversal)
-  if (key.includes("..")) {
-    return false;
-  }
-  // Reject null byte injection
-  if (key.includes("\0")) {
-    return false;
-  }
-  return true;
 };
 
 const app = new Hono<Env>();
