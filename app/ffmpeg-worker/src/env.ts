@@ -30,3 +30,14 @@ export const POLL_INTERVAL_MS = parseInt(
   10,
 );
 export const TEMP_DIR = process.env.TEMP_DIR || "/tmp/ffmpeg-worker";
+export const MIN_DISK_SPACE_GB = parseInt(
+  process.env.MIN_DISK_SPACE_GB || "1",
+  10,
+);
+export const JOB_TIMEOUT_SECONDS = parseInt(
+  process.env.JOB_TIMEOUT_SECONDS || "7200",
+  10,
+);
+export const FFMPEG_THREADS = process.env.FFMPEG_THREADS
+  ? parseInt(process.env.FFMPEG_THREADS, 10)
+  : undefined; // undefined means use default (all available CPUs)

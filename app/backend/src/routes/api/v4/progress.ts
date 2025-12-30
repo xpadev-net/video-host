@@ -34,7 +34,8 @@ export const progressRoute = app.get("/:movieId", async (c) => {
           lastData = data;
         }
 
-        // Stop streaming if completed or failed
+        // Stop streaming only if completed or finally failed (not retrying)
+        // Continue streaming for queued, processing, and retrying statuses
         if (progress.status === "completed" || progress.status === "failed") {
           break;
         }

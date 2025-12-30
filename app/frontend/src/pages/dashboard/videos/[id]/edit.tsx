@@ -8,7 +8,7 @@ import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { client } from "@/lib/client";
 
 interface EncodeProgress {
-  status: "queued" | "processing" | "completed" | "failed";
+  status: "queued" | "processing" | "retrying" | "completed" | "failed";
   progress?: number;
   queuePosition?: number;
   currentTime?: number;
@@ -204,7 +204,7 @@ const EditVideoPage: FC = () => {
 
         {/* Encoding Progress Display */}
         {isEncoding && (
-          <div className="encoding-progress">
+          <div className="encoding-progress" aria-live="polite">
             <div className="progress-header">
               <span className="progress-status">
                 {encodeProgress?.status === "queued" && (
@@ -217,6 +217,9 @@ const EditVideoPage: FC = () => {
                 )}
                 {encodeProgress?.status === "processing" && (
                   <>🔄 エンコード中 ({encodeProgress.progress ?? 0}%)</>
+                )}
+                {encodeProgress?.status === "retrying" && (
+                  <>🔄 リトライ中... しばらくお待ちください</>
                 )}
                 {!encodeProgress && "🔄 エンコード中..."}
               </span>

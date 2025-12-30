@@ -1,7 +1,7 @@
 import { spawn } from "child_process";
 import { mkdirSync, existsSync, rmSync, statSync } from "fs";
 import { join, dirname } from "path";
-import { TEMP_DIR } from "./env";
+import { TEMP_DIR, FFMPEG_THREADS } from "./env";
 
 export interface EncodeResult {
   success: boolean;
@@ -69,9 +69,26 @@ export const encodeVideo = async (
   inputPath: string,
   outputPath: string,
   onProgress?: ProgressCallback,
+  abortSignal?: AbortSignal,
 ): Promise<EncodeResult> => {
+  // Check if already aborted before starting (e.g., timeout during download)
+  if (abortSignal?.aborted) {
+    return {
+      success: false,
+      error: "Encoding aborted before start (timeout during download)",
+    };
+  }
+
   // Get input duration for progress calculation
   const inputDuration = await getInputDuration(inputPath);
+
+  // Check again after async operation (abort may have occurred during getInputDuration)
+  if (abortSignal?.aborted) {
+    return {
+      success: false,
+      error: "Encoding aborted before start (timeout during download)",
+    };
+  }
 
   return new Promise((resolve) => {
     // Ensure output directory exists
@@ -90,6 +107,14 @@ export const encodeVideo = async (
       "fast",
       "-crf",
       "23",
+    ];
+
+    // Add thread limit if specified
+    if (FFMPEG_THREADS !== undefined) {
+      ffmpegArgs.push("-threads", FFMPEG_THREADS.toString());
+    }
+
+    ffmpegArgs.push(
       "-c:a",
       "aac",
       "-ac",
@@ -102,11 +127,53 @@ export const encodeVideo = async (
       "pipe:2", // Output progress to stderr
       "-y",
       outputPath,
-    ];
+    );
 
     console.log(`Starting encode: ffmpeg ${ffmpegArgs.join(" ")}`);
 
     const ffmpeg = spawn("ffmpeg", ffmpegArgs);
+
+    // Check if already aborted after spawning (race condition check)
+    if (abortSignal?.aborted) {
+      console.log("Encoding aborted immediately after spawn (timeout during download)");
+      ffmpeg.kill("SIGTERM");
+      // Force kill after short delay
+      setTimeout(() => {
+        if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
+          ffmpeg.kill("SIGKILL");
+        }
+      }, 1000);
+      resolve({
+        success: false,
+        error: "Encoding aborted before start (timeout during download)",
+      });
+      return;
+    }
+
+    // Handle abort signal
+    if (abortSignal) {
+      abortSignal.addEventListener("abort", () => {
+        console.log("Encoding aborted due to timeout or cancellation");
+        // Check if process is still running (exitCode and signalCode are null)
+        if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
+          ffmpeg.kill("SIGTERM");
+          // Force kill after 5 seconds if still running
+          // Use exitCode/signalCode instead of killed, as killed becomes true
+          // immediately after kill() is called, not when the process actually exits
+          const killTimeout = setTimeout(() => {
+            // Check if process is still running (not terminated)
+            if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
+              console.log("Force killing FFmpeg process (SIGTERM ignored)");
+              ffmpeg.kill("SIGKILL");
+            }
+          }, 5000);
+          // Clear timeout if process exits before SIGKILL
+          ffmpeg.once("close", () => {
+            clearTimeout(killTimeout);
+          });
+        }
+      });
+    }
 
     let stderr = "";
     ffmpeg.stderr.on("data", (data) => {
@@ -128,6 +195,15 @@ export const encodeVideo = async (
     });
 
     ffmpeg.on("close", (code) => {
+      // Check if aborted
+      if (abortSignal?.aborted) {
+        resolve({
+          success: false,
+          error: "Encoding aborted due to timeout",
+        });
+        return;
+      }
+
       if (code === 0 && existsSync(outputPath)) {
         // Get duration from ffprobe
         getDuration(outputPath).then((duration) => {

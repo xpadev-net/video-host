@@ -106,6 +106,24 @@ spec:
                   name: ffmpeg-worker-config
                   key: poll-interval-ms
                   optional: true
+            - name: MIN_DISK_SPACE_GB
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: min-disk-space-gb
+                  optional: true
+            - name: JOB_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: job-timeout-seconds
+                  optional: true
+            - name: FFMPEG_THREADS
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: ffmpeg-threads
+                  optional: true
             - name: TEMP_DIR
               value: /tmp/ffmpeg-worker
           volumeMounts:
