@@ -1,9 +1,5 @@
 import { client } from "./client";
-
-const CALLBACK_SECRET = process.env.CALLBACK_SECRET;
-if (!CALLBACK_SECRET) {
-  throw new Error("SECRET is not defined");
-}
+import { CALLBACK_SECRET } from "./env";
 
 export interface CallbackPayload {
   movieId: string;
