@@ -26,7 +26,11 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
   - Added `requireEnv` helper function to `app/backend/src/env.ts`
   - Applied to JWT_SECRET, CALLBACK_SECRET, VOD_INTERNAL_SECRET
   - Verified: production mode throws error; development mode uses defaults with warnings
-- [ ] Milestone 2: Authorizationヘッダー解析の修正
+- [x] (2025-12-31 05:15 JST) Milestone 2: Authorizationヘッダー解析の修正
+  - Changed `c.req.header().authorization?.replace("Bearer ", "")` to regex-based parsing
+  - Final code: `c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1]`
+  - Uses `\S+` to exclude trailing whitespace (code review feedback)
+  - PR #8 merged into master
 - [ ] Milestone 3: S3キーのパス・トラバーサル対策
 - [ ] Milestone 4: ユニットテスト基盤の構築
 - [ ] Milestone 5: 認証・セキュリティロジックのテスト追加
