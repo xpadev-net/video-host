@@ -93,6 +93,10 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
   Rationale: コードレビューでの指摘により、複数インスタンス間での整合性と再起動時の永続性を確保するため。既存のRedisインフラを活用。
   Date/Author: 2025-12-31 / Claude
 
+- Decision: レート制限初期化エラー時はFail-Open（リクエスト許可）とする
+  Rationale: Redis障害時に全認証リクエストが500エラーになるのを防ぐため。可用性を優先。
+  Date/Author: 2025-12-31 / Claude
+
 
 ## Outcomes & Retrospective
 

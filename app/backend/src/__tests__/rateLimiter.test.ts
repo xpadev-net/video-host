@@ -83,10 +83,53 @@ describe("authRateLimiter", () => {
     expect(res.status).toBe(200);
   });
 
-  it("should use 'unknown' as fallback when no headers are present", async () => {
+  it("should share bucket for 'unknown' IP when no headers are present", async () => {
+    // Make 5 requests (should all succeed)
+    for (let i = 0; i < 5; i++) {
+      const res = await app.request("/login", {
+        method: "POST",
+      });
+      expect(res.status).toBe(200);
+    }
+
+    // 6th request should be blocked
     const res = await app.request("/login", {
       method: "POST",
     });
+    expect(res.status).toBe(429);
+    const json = await res.json();
+    expect(json.error).toContain("Too many login attempts");
+  });
+
+  it("should fail-open (allow request) if Redis initialization fails", async () => {
+    vi.resetModules();
+    // Mock failure for this specific test
+    vi.doMock("@/lib/redis", () => ({
+      getRedisClient: vi
+        .fn()
+        .mockRejectedValue(new Error("Redis connection failed")),
+    }));
+
+    // Re-import to pickup new mock
+    const rateLimiterModule = await import("../lib/rateLimiter");
+    const authRateLimiterWithFail = rateLimiterModule.authRateLimiter;
+
+    const appWithError = new Hono();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    appWithError.post("/login", authRateLimiterWithFail, (c) =>
+      c.json({ success: true }),
+    );
+
+    const res = await appWithError.request("/login", {
+      method: "POST",
+    });
+
     expect(res.status).toBe(200);
+    expect(spy).toHaveBeenCalledWith(
+      "Rate limiter initialization failed:",
+      expect.any(Error),
+    );
+    spy.mockRestore();
   });
 });

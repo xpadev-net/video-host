@@ -42,8 +42,15 @@ async function getMiddleware(): Promise<MiddlewareHandler> {
  * Rate limiter for authentication endpoints.
  * Limits to 5 requests per 15 minutes per IP address to prevent brute-force attacks.
  * Uses Redis for storage to support distributed deployments.
+ * Fail-safe: allows requests if Redis is unreachable.
  */
 export const authRateLimiter: MiddlewareHandler = async (c, next) => {
-  const handler = await getMiddleware();
-  return handler(c, next);
+  try {
+    const handler = await getMiddleware();
+    return handler(c, next);
+  } catch (error) {
+    console.error("Rate limiter initialization failed:", error);
+    // Fail-safe: allow request but log error
+    return next();
+  }
 };
