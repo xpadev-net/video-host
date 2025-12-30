@@ -18,7 +18,8 @@ const authMiddleware = createMiddleware<{
   };
 }>(async (c, next) => {
   const url = new URL(c.req.url).pathname;
-  const token = c.req.header().authorization?.replace("Bearer ", "");
+  const authHeader = c.req.header("authorization");
+  const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
   if (!token) {
     if (isPublicEndpoint(url)) {
       await next();
