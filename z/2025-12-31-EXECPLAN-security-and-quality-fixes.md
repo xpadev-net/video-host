@@ -51,9 +51,12 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
 
 ### Phase 2: 追加改善（2025-12-31 全体レビュー）
 
-- [ ] Milestone 6: 認証エンドポイントへのレート制限追加
-  - ブルートフォース攻撃対策として、ログイン試行回数を制限
-  - 15分間で5回までの試行を許可
+- [x] (2025-12-31 06:30 JST) Milestone 6: 認証エンドポイントへのレート制限追加
+  - Added hono-rate-limiter ^0.5.3 (RedisStore)
+  - Created `app/backend/src/lib/rateLimiter.ts` with Redis-based rate limiting (5 req/15min)
+  - Implemented lazy initialization and fail-open policy for robustness
+  - Created `app/backend/src/__tests__/rateLimiter.test.ts` with 6 unit tests (mocked Redis)
+  - Verified: 18/18 tests passed
 - [ ] Milestone 7: JWT暗号署名検証の追加
   - 現在はDBチェックのみ。jwt.verify()による署名検証を追加
   - トークン改ざんを検出可能に
@@ -747,7 +750,16 @@ backendアプリケーションにVitestを導入し、テスト実行環境を�
 
 ## Artifacts and Notes
 
-（実装中に生成されたログや出力をここに記録）
+### Milestone 6: Rate Limiter Implementation (2025-12-31 06:30 JST)
+
+Test output:
+
+    ✓ src/__tests__/env.test.ts (5 tests) 3ms
+    ✓ src/__tests__/rateLimiter.test.ts (6 tests) 41ms
+    ✓ src/__tests__/vod.test.ts (7 tests) 2ms
+    
+    Test Files  3 passed (3)
+    Tests       18 passed (18)
 
 
 ## Interfaces and Dependencies
@@ -810,3 +822,5 @@ Phase 2:
 - 2025-12-31 06:00 JST: Phase 1完了。全5マイルストーン実装済み、12テストがパス。
 
 - 2025-12-31 15:00 JST: 全体レビューに基づきPhase 2を追加。新たに発見された問題点（レート制限なし、JWT署名検証なし、デバッグログ残存、フロントエンドエラーハンドリング不足）に対応するマイルストーン6-10を追加。Decision Logに新しい決定事項を記録。
+
+- 2025-12-31 06:30 JST: Milestone 6完了。コードレビュー指摘に対応し、In-MemoryからRedisStore（Fail-Open対応）に変更。テストケースを追加し、全18テストパスを確認。
