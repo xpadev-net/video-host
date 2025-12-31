@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        task: [lint, format, typecheck]
+        task: [lint, format, typecheck, test]
     
     steps:
       - name: Checkout repository
