@@ -90,8 +90,6 @@ export const vodRoute = app.get("/mapping/*", async (c) => {
       },
     ],
   };
-  console.log(JSON.stringify(mapping, null, 2));
-
   // Return raw JSON for nginx-vod-module compatibility
   return c.json(mapping);
 });
