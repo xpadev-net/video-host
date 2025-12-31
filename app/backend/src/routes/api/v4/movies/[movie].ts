@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { deleteProdFile, deleteTmpFile } from "@/lib/s3";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
+import { isSystemAccount } from "@/utils/systemAccountCache";
 
 const MoviePatchSchema = z.object({
   title: z.string().optional(),
@@ -186,10 +187,3 @@ export const movieRoute = app
 
     return ok(c, { success: true });
   });
-
-const isSystemAccount = async (userId: string): Promise<boolean> => {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-  });
-  return user?.password === null;
-};

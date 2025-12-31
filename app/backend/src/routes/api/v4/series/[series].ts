@@ -12,6 +12,7 @@ import { filterMovie, filterSeries } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
+import { isSystemAccount } from "@/utils/systemAccountCache";
 
 const app = new Hono<Env>();
 
@@ -458,11 +459,4 @@ export const seriesDetailRoute = app
 
 export const registerSeriesRoute = (app: HonoApp) => {
   app.route("/", seriesDetailRoute);
-};
-
-const isSystemAccount = async (userId: string): Promise<boolean> => {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-  });
-  return user?.password === null;
 };

@@ -94,22 +94,24 @@ export const systemAccountsRoute = app
       return badRequest(c, "Cannot delete a regular user account");
     }
 
-    // Delete associated data
-    await prisma.session.deleteMany({ where: { userId: id } });
-    await prisma.movieOnPlaylist.deleteMany({
-      where: {
-        playlist: { authorId: id },
-      },
-    });
-    await prisma.playlist.deleteMany({ where: { authorId: id } });
-    await prisma.movieVariant.deleteMany({
-      where: {
-        movie: { authorId: id },
-      },
-    });
-    await prisma.movie.deleteMany({ where: { authorId: id } });
-    await prisma.series.deleteMany({ where: { authorId: id } });
-    await prisma.user.delete({ where: { id } });
+    // Delete associated data in a transaction to ensure atomicity
+    await prisma.$transaction([
+      prisma.session.deleteMany({ where: { userId: id } }),
+      prisma.movieOnPlaylist.deleteMany({
+        where: {
+          playlist: { authorId: id },
+        },
+      }),
+      prisma.playlist.deleteMany({ where: { authorId: id } }),
+      prisma.movieVariant.deleteMany({
+        where: {
+          movie: { authorId: id },
+        },
+      }),
+      prisma.movie.deleteMany({ where: { authorId: id } }),
+      prisma.series.deleteMany({ where: { authorId: id } }),
+      prisma.user.delete({ where: { id } }),
+    ]);
 
     return ok(c, { success: true });
   });
