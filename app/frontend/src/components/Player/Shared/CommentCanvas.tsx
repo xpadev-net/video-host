@@ -2,13 +2,11 @@ import NiconiComments from "@xpadev-net/niconicomments";
 import { useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
 
-import type { CommentResponse } from "@/@types/api";
 import {
   NiconicommentsConfigAtom,
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
 } from "@/atoms/Player";
-import { request } from "@/libraries/request";
 
 type props = {
   url?: string;
@@ -44,14 +42,12 @@ const CommentCanvas = ({ url, videoRef, pipVideoRef, className }: props) => {
     void (async () => {
       if (!canvasRef.current || !url) return;
       niconicommentsRef.current = null;
-      const res = await request<CommentResponse>(`/comments/${url}/`);
-      if (res.status !== "success") return;
       const video = (playerConfig.isPipEnable && videoRef) || undefined;
       niconicommentsRef.current = new NiconiComments(
         canvasRef.current,
         [
           {
-            comments: res.data.comments,
+            comments: [],
             id: "0",
             fork: "main",
             commentCount: 0,

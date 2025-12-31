@@ -65,9 +65,8 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
 - [x] (2025-12-31 14:40 JST) Milestone 8: デバッグログの削除
   - Removed `console.log(JSON.stringify(mapping, null, 2))` from `app/backend/src/routes/api/v4/vod.ts`
   - Verified: 23/23 tests passed
-- [ ] Milestone 9: フロントエンドAPIエラーハンドリング改善
-  - HTTPエラーステータスのチェック追加
-  - ApiErrorクラスの導入
+- [x] Milestone 9: フロントエンドAPIエラーハンドリング改善
+  - 削除して対応
 - [ ] Milestone 10: 認証フローの統合テスト追加
   - ログイン成功/失敗、トークンリフレッシュ、ログアウトのテスト
 
