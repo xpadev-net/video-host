@@ -62,8 +62,9 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
   - Returns "Invalid token signature" error for tampered/invalid tokens
   - Created `app/backend/src/__tests__/jwt.test.ts` with 5 test cases
   - Verified: 23/23 tests passed
-- [ ] Milestone 8: デバッグログの削除
-  - `app/backend/src/routes/api/v4/vod.ts:93` の console.log を削除
+- [x] (2025-12-31 14:40 JST) Milestone 8: デバッグログの削除
+  - Removed `console.log(JSON.stringify(mapping, null, 2))` from `app/backend/src/routes/api/v4/vod.ts`
+  - Verified: 23/23 tests passed
 - [ ] Milestone 9: フロントエンドAPIエラーハンドリング改善
   - HTTPエラーステータスのチェック追加
   - ApiErrorクラスの導入
