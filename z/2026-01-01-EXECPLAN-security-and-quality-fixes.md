@@ -16,11 +16,14 @@ Observable outcomes:
 
 ## Progress
 
-- [ ] Milestone 1: Critical Security Fixes
-  - [ ] Remove hardcoded PASSWORD_SALT default value
-  - [ ] Remove hardcoded JWT_SECRET default value
-  - [ ] Increase PASSWORD_HASH_ROUNDS to 12
-  - [ ] Update env.test.ts to verify strict validation
+- [x] Milestone 1: Critical Security Fixes (2026-01-01 08:03Z)
+  - [x] Removed hardcoded PASSWORD_SALT default value - now requires explicit value in production
+  - [x] Removed hardcoded JWT_SECRET default value - now requires explicit value in production  
+  - [x] Increased PASSWORD_HASH_ROUNDS minimum to 12 (was 10)
+  - [x] Implemented comprehensive Zod-based environment validation schema
+  - [x] Updated env.test.ts with 16 test cases (was 5)
+  - [x] Updated setup.ts with PASSWORD_SALT for test initialization
+  - [x] All 40 backend tests pass
 - [ ] Milestone 2: Backend Code Quality
   - [ ] Add input validation for user registration (password requirements)
   - [ ] Implement transaction handling for cascade deletes
@@ -40,7 +43,13 @@ Observable outcomes:
 
 ## Surprises & Discoveries
 
-(To be populated during implementation)
+- Observation: The vitest test setup file (`setup.ts`) runs before all tests and sets environment variables. This means `vi.resetModules()` cannot fully reset the env.ts module after it has been imported during setup.
+  Evidence: Tests that tried to dynamically reimport env.ts with different NODE_ENV values saw stale cached values.
+  Resolution: Rewrote tests to validate the Zod schema directly by parsing mock environment objects instead of attempting module reload.
+
+- Observation: Zod's `.default()` after `.transform()` requires the transformed type, not the input type.
+  Evidence: TypeScript errors when using `.default("false")` after `.transform((val) => val === "true")`.
+  Resolution: Changed to `.default(false)` to match the boolean output type.
 
 ## Decision Log
 
@@ -52,9 +61,28 @@ Observable outcomes:
   Rationale: Zod provides schema-level validation, better error messages, and type inference. It allows validating relationships between variables (e.g., S3 credentials required when S3_ENABLED=true).
   Date/Author: 2026-01-01 / Claude Code
 
+- Decision: Export EnvSchema and DEV_DEFAULTS for testing 
+  Rationale: Allows tests to validate the schema directly without needing to reload the module, which is problematic with vitest's setup file approach.
+  Date/Author: 2026-01-01 / Claude Code
+
 ## Outcomes & Retrospective
 
-(To be populated upon completion)
+### Milestone 1 Complete
+
+The environment configuration has been significantly hardened:
+
+1. **Security-sensitive variables** (JWT_SECRET, PASSWORD_SALT, CALLBACK_SECRET, VOD_INTERNAL_SECRET) now require explicit values in production mode - no hardcoded defaults.
+
+2. **Development defaults** are only allowed when NODE_ENV=development, with console warnings to alert developers.
+
+3. **PASSWORD_HASH_ROUNDS** now has a minimum of 12 (increased from 10), enforced by schema validation.
+
+4. **Production protection** against accidental use of development defaults - the refinement rejects known dev default values.
+
+5. **Test coverage** increased from 5 to 16 tests for environment validation, covering all security requirements.
+
+Validation command: `cd app/backend && pnpm test` shows 40 tests passing.
+
 
 ## Context and Orientation
 
