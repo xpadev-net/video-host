@@ -57,9 +57,11 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
   - Implemented lazy initialization and fail-open policy for robustness
   - Created `app/backend/src/__tests__/rateLimiter.test.ts` with 6 unit tests (mocked Redis)
   - Verified: 18/18 tests passed
-- [ ] Milestone 7: JWT暗号署名検証の追加
-  - 現在はDBチェックのみ。jwt.verify()による署名検証を追加
-  - トークン改ざんを検出可能に
+- [x] (2025-12-31 14:32 JST) Milestone 7: JWT暗号署名検証の追加
+  - Added `jwt.verify()` before DB query in `app/backend/src/middleware/auth.ts`
+  - Returns "Invalid token signature" error for tampered/invalid tokens
+  - Created `app/backend/src/__tests__/jwt.test.ts` with 5 test cases
+  - Verified: 23/23 tests passed
 - [ ] Milestone 8: デバッグログの削除
   - `app/backend/src/routes/api/v4/vod.ts:93` の console.log を削除
 - [ ] Milestone 9: フロントエンドAPIエラーハンドリング改善

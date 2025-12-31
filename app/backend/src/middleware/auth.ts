@@ -1,6 +1,7 @@
 import { createMiddleware } from "hono/factory";
+import jwt from "jsonwebtoken";
 import type { HonoApp } from "@/@types/hono";
-import { PUBLIC_ENDPOINTS } from "@/env";
+import { JWT_SECRET, PUBLIC_ENDPOINTS } from "@/env";
 import { prisma } from "@/lib/prisma";
 import { unauthorized } from "@/utils/response";
 
@@ -27,6 +28,18 @@ const authMiddleware = createMiddleware<{
     }
     return unauthorized(c, "Unauthorized");
   }
+
+  // JWT signature verification (before DB query to reject invalid tokens early)
+  try {
+    jwt.verify(token, JWT_SECRET);
+  } catch {
+    if (isPublicEndpoint(url)) {
+      await next();
+      return;
+    }
+    return unauthorized(c, "Invalid token signature");
+  }
+
   const session = await prisma.session.findFirst({
     where: {
       token,
