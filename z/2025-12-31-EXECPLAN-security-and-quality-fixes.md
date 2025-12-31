@@ -67,8 +67,10 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
   - Verified: 23/23 tests passed
 - [x] Milestone 9: フロントエンドAPIエラーハンドリング改善
   - 削除して対応
-- [ ] Milestone 10: 認証フローの統合テスト追加
-  - ログイン成功/失敗、トークンリフレッシュ、ログアウトのテスト
+- [x] (2025-12-31 15:18 JST) Milestone 10: 認証フローの統合テスト追加
+  - Created `app/backend/src/__tests__/auth.test.ts` with 6 integration tests
+  - Tests cover: login success/failure, token refresh, expired token rejection, logout
+  - Verified: 29/29 tests passed
 
 
 ## Surprises & Discoveries
