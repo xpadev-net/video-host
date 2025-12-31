@@ -47,6 +47,9 @@ importers:
       hono:
         specifier: ^4.11.1
         version: 4.11.1
+      hono-rate-limiter:
+        specifier: ^0.5.3
+        version: 0.5.3(hono@4.11.1)
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3
@@ -2340,6 +2343,15 @@ packages:
 
   hls.js@1.6.15:
     resolution: {integrity: sha512-E3a5VwgXimGHwpRGV+WxRTKeSp2DW5DI5MWv34ulL3t5UNmyJWCQ1KmLEHbYzcfThfXG8amBL+fCYPneGHC4VA==}
+
+  hono-rate-limiter@0.5.3:
+    resolution: {integrity: sha512-M0DxbVMpPELEzLi0AJg1XyBHLGJXz7GySjsPoK+gc5YeeBsdGDGe+2RvVuCAv8ydINiwlbxqYMNxUEyYfRji/A==}
+    peerDependencies:
+      hono: ^4.10.8
+      unstorage: ^1.17.3
+    peerDependenciesMeta:
+      unstorage:
+        optional: true
 
   hono@4.11.1:
     resolution: {integrity: sha512-KsFcH0xxHes0J4zaQgWbYwmz3UPOOskdqZmItstUG93+Wk1ePBLkLGwbP9zlmh1BFUiL8Qp+Xfu9P7feJWpGNg==}
@@ -5447,6 +5459,10 @@ snapshots:
   has-flag@4.0.0: {}
 
   hls.js@1.6.15: {}
+
+  hono-rate-limiter@0.5.3(hono@4.11.1):
+    dependencies:
+      hono: 4.11.1
 
   hono@4.11.1: {}
 
