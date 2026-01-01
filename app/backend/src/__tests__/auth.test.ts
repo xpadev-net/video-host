@@ -203,21 +203,11 @@ describe("Auth Routes", () => {
 
   describe("Edge Cases - Input Validation", () => {
     it("should reject login with empty username", async () => {
-      const _res = await app.request("/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "password",
-          username: "",
-          password: "somepassword",
-        }),
-      });
-
       // Empty username will still pass Zod validation (z.string() allows empty)
       // but won't match any user in the database
       mockPrisma.user.findFirst.mockResolvedValue(null);
 
-      const res2 = await app.request("/auth", {
+      const res = await app.request("/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -227,8 +217,8 @@ describe("Auth Routes", () => {
         }),
       });
 
-      expect(res2.status).toBe(401);
-      const json = await res2.json();
+      expect(res.status).toBe(401);
+      const json = await res.json();
       expect(json.message).toBe("Invalid username or password");
     });
 
@@ -385,19 +375,10 @@ describe("Auth Routes", () => {
     });
 
     it("should reject empty token string", async () => {
-      const _res = await app.request("/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "token",
-          token: "",
-        }),
-      });
-
       // Empty token will find no session
       mockPrisma.session.findFirst.mockResolvedValue(null);
 
-      const res2 = await app.request("/auth", {
+      const res = await app.request("/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -406,8 +387,8 @@ describe("Auth Routes", () => {
         }),
       });
 
-      expect(res2.status).toBe(401);
-      const json = await res2.json();
+      expect(res.status).toBe(401);
+      const json = await res.json();
       expect(json.message).toBe("Invalid token");
     });
 
