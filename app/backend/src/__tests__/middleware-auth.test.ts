@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import jwt from "jsonwebtoken";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Env, HonoApp } from "@/@types/hono";
 import { JWT_SECRET } from "../env";
 
 // Mock Prisma before imports
@@ -30,7 +31,6 @@ describe("Auth Middleware", () => {
     id: "user-123",
     username: "testuser",
     name: "Test User",
-    email: "test@example.com",
     role: "USER" as const,
     avatarUrl: null,
     password: "hashed-password",
@@ -49,7 +49,7 @@ describe("Auth Middleware", () => {
     user: testUser,
   };
 
-  let app: Hono;
+  let app: HonoApp;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -57,7 +57,7 @@ describe("Auth Middleware", () => {
 
     // Re-import auth middleware and create test app
     const { handleAuth } = await import("../middleware/auth");
-    app = new Hono();
+    app = new Hono<Env>();
 
     // Apply auth middleware
     handleAuth(app);
@@ -99,26 +99,22 @@ describe("Auth Middleware", () => {
       expect(json.message).toBe("Unauthorized");
     });
 
-    it("should reject request with malformed Authorization header (extra spaces)", async () => {
+    it("should reject request with extra spaces in Authorization header when session not found", async () => {
       const token = jwt.sign({ userId: "user-123" }, JWT_SECRET);
-
-      const _res = await app.request("/api/v4/users", {
-        headers: {
-          Authorization: `Bearer  ${token}`, // Two spaces
-        },
-      });
-
-      // This should actually work because the regex allows for extra whitespace
-      // Let's verify what actually happens
       mockPrisma.session.findFirst.mockResolvedValue(null);
 
-      const res2 = await app.request("/api/v4/users", {
+      const res = await app.request("/api/v4/users", {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer  ${token}`, // Two spaces after Bearer
         },
       });
 
-      expect(res2.status).toBe(401); // Should fail because session doesn't exist
+      // The regex /^Bearer\s+(\S+)$/i allows multiple whitespace characters
+      // but should still fail because no session exists
+      expect(res.status).toBe(401);
+      const json = await res.json();
+      expect(json.status).toBe("error");
+      expect(json.message).toBe("Unauthorized");
     });
 
     it("should reject request with empty Authorization header", async () => {
@@ -269,7 +265,7 @@ describe("Auth Middleware", () => {
         where: {
           token,
           expiredAt: {
-            gt: expect.any(Date),
+            gte: expect.any(Date),
           },
         },
         include: {

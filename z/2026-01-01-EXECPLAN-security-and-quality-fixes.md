@@ -6,7 +6,7 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
 
 ## Purpose / Big Picture
 
-After completing this plan, the video-host application will be production-ready with hardened security, improved code quality, and comprehensive test coverage. Currently, the application has several critical security vulnerabilities (hardcoded secrets, weak password hashing) and insufficient test coverage (28 tests covering only 5 modules). Upon completion, users will be able to deploy the application to production with confidence that authentication is secure, secrets are properly managed, and the codebase follows best practices.
+After completing this plan, the video-host application will be production-ready with hardened security, improved code quality, and comprehensive test coverage. Currently, the application has several critical security vulnerabilities (hardcoded secrets, weak password hashing) and insufficient test coverage (40 tests covering only 5 modules). Upon completion, users will be able to deploy the application to production with confidence that authentication is secure, secrets are properly managed, and the codebase follows best practices.
 
 Observable outcomes:
 - Running `pnpm test` in the backend will execute 70+ tests with all passing
@@ -110,7 +110,7 @@ The authentication and authorization systems now have comprehensive test coverag
    - Edge cases: empty queries, null users, special characters
    - Prisma query structure validation
 
-4. **Test coverage improvement**: From 28 tests (5 files) to 93 tests (7 files), adding 65 new tests.
+4. **Test coverage improvement**: From 40 tests (5 files) to 93 tests (7 files), adding 53 new tests.
 
 All tests pass successfully. The authentication system is now thoroughly validated against security vulnerabilities, edge cases, and authorization rules.
 
