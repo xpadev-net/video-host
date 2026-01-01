@@ -6,7 +6,7 @@ This document must be maintained in accordance with `.agent/PLANS.md`.
 
 ## Purpose / Big Picture
 
-After completing this plan, the video-host application will be production-ready with hardened security, improved code quality, and comprehensive test coverage. Currently, the application has several critical security vulnerabilities (hardcoded secrets, weak password hashing) and insufficient test coverage (28 tests covering only 5 modules). Upon completion, users will be able to deploy the application to production with confidence that authentication is secure, secrets are properly managed, and the codebase follows best practices.
+After completing this plan, the video-host application will be production-ready with hardened security, improved code quality, and comprehensive test coverage. Currently, the application has several critical security vulnerabilities (hardcoded secrets, weak password hashing) and insufficient test coverage (40 tests covering only 5 modules). Upon completion, users will be able to deploy the application to production with confidence that authentication is secure, secrets are properly managed, and the codebase follows best practices.
 
 Observable outcomes:
 - Running `pnpm test` in the backend will execute 70+ tests with all passing
@@ -18,7 +18,7 @@ Observable outcomes:
 
 - [x] Milestone 1: Critical Security Fixes (2026-01-01 08:03Z)
   - [x] Removed hardcoded PASSWORD_SALT default value - now requires explicit value in production
-  - [x] Removed hardcoded JWT_SECRET default value - now requires explicit value in production  
+  - [x] Removed hardcoded JWT_SECRET default value - now requires explicit value in production
   - [x] Increased PASSWORD_HASH_ROUNDS minimum to 12 (was 10)
   - [x] Implemented comprehensive Zod-based environment validation schema
   - [x] Updated env.test.ts with 16 test cases (was 5)
@@ -28,10 +28,11 @@ Observable outcomes:
   - [ ] Add input validation for user registration (password requirements)
   - [ ] Implement transaction handling for cascade deletes
   - [ ] Fix N+1 query in isSystemAccount
-- [ ] Milestone 3: Authentication Tests
-  - [ ] Create middleware-auth.test.ts with 10+ test cases
-  - [ ] Add edge case tests to auth.test.ts
-  - [ ] Create authorization.test.ts for permission checks
+- [x] Milestone 3: Authentication Tests (2026-01-01 02:00Z)
+  - [x] Created middleware-auth.test.ts with 16 comprehensive test cases
+  - [x] Added 12 edge case tests to auth.test.ts (empty inputs, system accounts, token boundaries, case sensitivity)
+  - [x] Created authorization.test.ts with 24 test cases for visibility filtering
+  - [x] All 93 backend tests pass (up from 40)
 - [ ] Milestone 4: Frontend Type Safety
   - [ ] Replace any types in login/page.tsx
   - [ ] Replace any types in register/page.tsx
@@ -82,6 +83,38 @@ The environment configuration has been significantly hardened:
 5. **Test coverage** increased from 5 to 16 tests for environment validation, covering all security requirements.
 
 Validation command: `cd app/backend && pnpm test` shows 40 tests passing.
+
+### Milestone 3 Complete
+
+The authentication and authorization systems now have comprehensive test coverage:
+
+1. **Middleware authentication tests** (middleware-auth.test.ts - 16 tests):
+   - Tests for missing, malformed, and invalid Authorization headers
+   - JWT signature validation with wrong secrets and modified tokens
+   - Session validation including expired sessions and missing sessions
+   - Successful authentication flow with user context setting
+   - Public endpoint access (callback and VOD endpoints) with and without tokens
+
+2. **Edge case tests** (auth.test.ts - added 12 new tests):
+   - Input validation: empty username/password, malformed JSON, missing fields
+   - Extreme inputs: very long username/password strings
+   - System accounts: null password handling
+   - Token edge conditions: far future expiry, empty tokens, boundary testing
+   - Username case sensitivity
+
+3. **Authorization tests** (authorization.test.ts - 24 tests):
+   - Visibility filtering for unauthenticated users (PUBLIC only)
+   - Regular user access (PUBLIC + own content)
+   - Admin user access (all content)
+   - Query and author filtering combinations
+   - Edge cases: empty queries, null users, special characters
+   - Prisma query structure validation
+
+4. **Test coverage improvement**: From 40 tests (5 files) to 93 tests (7 files), adding 53 new tests.
+
+All tests pass successfully. The authentication system is now thoroughly validated against security vulnerabilities, edge cases, and authorization rules.
+
+Validation command: `cd app/backend && pnpm test` shows 93 tests passing across 7 test files.
 
 
 ## Context and Orientation
