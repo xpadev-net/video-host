@@ -44,7 +44,7 @@ const authMiddleware = createMiddleware<{
     where: {
       token,
       expiredAt: {
-        gt: new Date(),
+        gte: new Date(),
       },
     },
     include: {
