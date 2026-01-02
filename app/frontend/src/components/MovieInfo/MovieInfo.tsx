@@ -1,10 +1,9 @@
+import type { FormattedMovie } from "@video-host/backend";
 import Link from "next/link";
-
-import type { FilteredMovie } from "@/@types/v4Api";
 import { User } from "@/components/User/User";
 
 type props = {
-  data: FilteredMovie;
+  data: FormattedMovie;
   className?: string;
 };
 

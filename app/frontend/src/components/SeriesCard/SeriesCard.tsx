@@ -1,12 +1,11 @@
+import type { FormattedSeries } from "@video-host/backend";
 import Link from "next/link";
 import type { FC } from "react";
-
-import type { FilteredSeries } from "@/@types/v4Api";
 import { Thumbnail } from "@/components/Thumbnail";
 import { User } from "@/components/User/User";
 
 type SeriesCardProps = {
-  series: FilteredSeries;
+  series: FormattedSeries;
 };
 
 export const SeriesCard: FC<SeriesCardProps> = ({ series }) => {

@@ -1,8 +1,8 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import { type FC, type FormEvent, useEffect, useState } from "react";
-import type { FilteredMovie } from "@/@types/v4Api";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { client } from "@/lib/client";
@@ -20,7 +20,7 @@ const EditVideoPage: FC = () => {
   const { id } = router.query;
   const token = useAtomValue(AuthTokenAtom);
 
-  const [movie, setMovie] = useState<FilteredMovie | null>(null);
+  const [movie, setMovie] = useState<FormattedMovie | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<

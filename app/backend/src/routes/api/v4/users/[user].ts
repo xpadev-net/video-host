@@ -10,7 +10,7 @@ const app = new Hono<Env>();
 export const userRoute = app.get("/:user", async (c) => {
   const userId = c.req.param("user");
   if (!userId) {
-    return badRequest(c, "No user provided");
+    badRequest("No user provided");
   }
   const user = await prisma.user.findUnique({
     where: {
@@ -18,7 +18,7 @@ export const userRoute = app.get("/:user", async (c) => {
     },
   });
   if (!user) {
-    return notFound(c, "User not found");
+    notFound("User not found");
   }
   return ok(c, filterUser(user));
 });

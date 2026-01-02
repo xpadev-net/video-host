@@ -103,7 +103,7 @@ export const usersRoute = app
     });
 
     if (existing) {
-      return badRequest(c, "Username already exists");
+      badRequest("Username already exists");
     }
 
     const hashedPassword = await hashPassword(password);

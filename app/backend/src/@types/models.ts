@@ -17,6 +17,10 @@ export type FilteredSeries = {
   moviesPagination?: PaginationMeta;
 };
 
+export type FormattedSeries = Omit<FilteredSeries, "movies"> & {
+  movies?: FormattedMovie[];
+};
+
 export type FilteredMovie = {
   id: string;
   title: string;
@@ -30,10 +34,15 @@ export type FilteredMovie = {
   createdAt: Date;
 };
 
+export type FormattedMovie = Omit<FilteredMovie, "createdAt" | "series"> & {
+  createdAt: string;
+  series?: FormattedSeries | null;
+};
+
 export type FilteredMovieVariant = {
   variantId: string;
   contentUrl: string;
-  status?: "PROCESSING" | "READY" | "FAILED";
+  status: "PROCESSING" | "READY" | "FAILED";
 };
 
 export type FilteredPlaylist = {
@@ -65,86 +74,4 @@ export type PaginationMeta = {
 export type PaginatedResponse<T> = {
   items: T[];
   pagination: PaginationMeta;
-};
-
-// Compatibility types matching the reference format (v4Api.ts)
-export type v4GetMoviesRes =
-  | {
-      status: "ok";
-      code: 200;
-      data: PaginatedResponse<FilteredMovie>;
-    }
-  | v4ErrorRes;
-
-export type v4GetSeriesListRes =
-  | {
-      status: "ok";
-      code: 200;
-      data: PaginatedResponse<FilteredSeries>;
-    }
-  | v4ErrorRes;
-
-export type v4GetSeriesMoviesRes =
-  | {
-      status: "ok";
-      code: 200;
-      data: PaginatedResponse<FilteredMovie>;
-    }
-  | v4ErrorRes;
-
-export type v4GetMovieRes =
-  | {
-      status: "ok";
-      code: 200;
-      data: FilteredMovie & { isOwner: boolean };
-    }
-  | v4ErrorRes;
-
-export type v4GetSeriesRes =
-  | {
-      status: "ok";
-      code: 200;
-      data: FilteredSeries;
-    }
-  | v4ErrorRes;
-
-export type v4GetUserRes =
-  | {
-      status: "ok";
-      code: 200;
-      data: FilteredUser;
-    }
-  | v4ErrorRes;
-
-export type v4PostAuthLoginRes =
-  | {
-      status: "ok";
-      code: 200;
-      data: string;
-    }
-  | v4ErrorRes;
-
-export type v4PostUsersRes =
-  | {
-      status: "ok";
-      code: 200;
-      data: {
-        user: FilteredUser;
-        token: string;
-      };
-    }
-  | v4ErrorRes;
-
-export type v4DeleteAuthLogoutRes =
-  | {
-      status: "ok";
-      code: 200;
-      data: null;
-    }
-  | v4ErrorRes;
-
-export type v4ErrorRes = {
-  status: "error";
-  code: 400 | 401 | 403 | 404;
-  message: string;
 };

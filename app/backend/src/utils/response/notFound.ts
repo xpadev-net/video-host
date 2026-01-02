@@ -1,12 +1,7 @@
-import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 
-export const notFound = (c: Context, message: string) => {
-  return c.json(
-    {
-      status: "error",
-      code: 404,
-      message,
-    },
-    404,
-  );
+export const notFound: (message: string) => never = (
+  message: string,
+): never => {
+  throw new HTTPException(404, { message });
 };

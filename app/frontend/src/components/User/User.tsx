@@ -1,8 +1,7 @@
 import { Avatar, Flex } from "@radix-ui/themes";
+import type { FilteredUser } from "@video-host/backend";
 import Link from "next/link";
 import type { FC } from "react";
-
-import type { FilteredUser } from "@/@types/v4Api";
 
 type Props = {
   user: FilteredUser;

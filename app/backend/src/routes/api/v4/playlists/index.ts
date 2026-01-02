@@ -111,26 +111,23 @@ export const playlistsRoute = app
   .post("/", zValidator("json", PostPlaylistSchema), async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
     const { title, description, visibility, asUserId } = c.req.valid("json");
 
     let authorId = user.id;
     if (asUserId) {
       if (user.role !== "ADMIN") {
-        return unauthorized(
-          c,
-          "Only admins can create playlists for other users",
-        );
+        return unauthorized("Only admins can create playlists for other users");
       }
       const targetUser = await prisma.user.findUnique({
         where: { id: asUserId },
       });
       if (!targetUser) {
-        return badRequest(c, "Target user not found");
+        badRequest("Target user not found");
       }
       if (targetUser.password !== null) {
-        return badRequest(c, "Can only create playlists for system accounts");
+        badRequest("Can only create playlists for system accounts");
       }
       authorId = asUserId;
     }

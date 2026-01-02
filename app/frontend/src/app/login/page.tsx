@@ -38,16 +38,16 @@ const LoginPage = () => {
     e.preventDefault();
     startAuth();
 
-    const tokenResponse = await postAuth(username, password);
-    const body = await tokenResponse.json();
+    try {
+      const body = await postAuth(username, password);
 
-    // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
-    if (tokenResponse.ok && (body as any).status === "ok") {
-      // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
-      handleAuthSuccess((body as any).data);
-    } else {
-      // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
-      handleAuthError((body as any).message || "ログインに失敗しました");
+      if (body.status === "ok") {
+        handleAuthSuccess(body.data);
+      } else {
+        handleAuthError("ログインに失敗しました");
+      }
+    } catch {
+      handleAuthError("ネットワークエラーが発生しました");
     }
   };
 

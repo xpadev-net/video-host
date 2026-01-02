@@ -17,7 +17,7 @@ export const systemAccountsRoute = app
   .get("/", async (c) => {
     const user = c.get("user");
     if (!user || user.role !== "ADMIN") {
-      return unauthorized(c, "Admin access required");
+      unauthorized("Admin access required");
     }
 
     const systemAccounts = await prisma.user.findMany({
@@ -41,7 +41,7 @@ export const systemAccountsRoute = app
   .post("/", zValidator("json", CreateSystemAccountSchema), async (c) => {
     const user = c.get("user");
     if (!user || user.role !== "ADMIN") {
-      return unauthorized(c, "Admin access required");
+      unauthorized("Admin access required");
     }
 
     const { username, name } = c.req.valid("json");
@@ -51,7 +51,7 @@ export const systemAccountsRoute = app
       where: { username },
     });
     if (existing) {
-      return badRequest(c, "Username already exists");
+      badRequest("Username already exists");
     }
 
     const systemAccount = await prisma.user.create({
@@ -74,12 +74,12 @@ export const systemAccountsRoute = app
   .delete("/:id", async (c) => {
     const user = c.get("user");
     if (!user || user.role !== "ADMIN") {
-      return unauthorized(c, "Admin access required");
+      unauthorized("Admin access required");
     }
 
     const id = c.req.param("id");
     if (!id) {
-      return badRequest(c, "No id provided");
+      badRequest("No id provided");
     }
 
     const systemAccount = await prisma.user.findUnique({
@@ -87,11 +87,11 @@ export const systemAccountsRoute = app
     });
 
     if (!systemAccount) {
-      return badRequest(c, "System account not found");
+      badRequest("System account not found");
     }
 
     if (systemAccount.password !== null) {
-      return badRequest(c, "Cannot delete a regular user account");
+      badRequest("Cannot delete a regular user account");
     }
 
     // Delete associated data in a transaction to ensure atomicity

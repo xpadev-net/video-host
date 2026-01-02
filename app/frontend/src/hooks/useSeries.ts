@@ -1,19 +1,17 @@
-import type { v4GetSeriesRes } from "@/@types/v4Api";
+import type { InferResponseType } from "hono";
 import { useStickySWR } from "@/hooks/useStickySWR";
-
 import { client } from "@/lib/client";
 
-const fetcher = async (key?: string): Promise<v4GetSeriesRes> => {
-  if (!key)
-    return Promise.resolve({
-      status: "error" as const,
-      code: 404,
-      message: "not found",
-    });
+const seriesApiClient = client.api.v4.series[":series"].$get;
+type SeriesApiType = typeof seriesApiClient;
+export type SeriesResponse = InferResponseType<SeriesApiType>;
+
+const fetcher = async (key?: string): Promise<SeriesResponse> => {
+  if (!key) throw new Error("no series");
   const res = await client.api.v4.series[":series"].$get({
     param: { series: key },
   });
-  return (await res.json()) as v4GetSeriesRes;
+  return (await res.json()) as SeriesResponse;
 };
 
 export const useSeries = (query?: string) => {

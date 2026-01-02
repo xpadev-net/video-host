@@ -38,7 +38,7 @@ export const authRoute = app
         },
       });
       if (!session) {
-        return unauthorized(c, "Invalid token");
+        unauthorized("Invalid token");
       }
       const newToken = await createSession(session.userId);
       return ok(c, newToken);
@@ -53,10 +53,10 @@ export const authRoute = app
       },
     });
     if (!user || !user.password) {
-      return unauthorized(c, "Invalid username or password");
+      unauthorized("Invalid username or password");
     }
     if (!(await isPasswordValid(password, user.password))) {
-      return unauthorized(c, "Invalid username or password");
+      unauthorized("Invalid username or password");
     }
     const token = await createSession(user.id);
     return ok(c, token);
@@ -64,7 +64,7 @@ export const authRoute = app
   .delete("/", zValidator("json", tokenAuthSchema), async (c) => {
     const token = c.req.valid("json").token;
     if (!token) {
-      return unauthorized(c, "Not logged in");
+      unauthorized("Not logged in");
     }
     await prisma.session.deleteMany({
       where: {

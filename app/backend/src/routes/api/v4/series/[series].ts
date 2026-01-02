@@ -3,12 +3,12 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import {
-  type FilteredMovie,
-  type FilteredSeries,
+  type FormattedMovie,
   type PaginatedResponse,
   ZVisibility,
 } from "@/@types/models";
 import { filterMovie, filterSeries } from "@/lib/filter";
+import { formatMovie, formatSeries } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
@@ -37,7 +37,7 @@ export const seriesDetailRoute = app
   .get("/:series", async (c) => {
     const seriesId = c.req.param("series");
     if (!seriesId) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     // Check if client requests paginated movies
@@ -78,13 +78,13 @@ export const seriesDetailRoute = app
     });
 
     if (!series) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     if (series.visibility === "PRIVATE") {
       const user = c.get("user");
       if (!user || (user.id !== series.authorId && user.role !== "ADMIN")) {
-        return notFound(c, "Series not found");
+        notFound("Series not found");
       }
     }
 
@@ -94,25 +94,17 @@ export const seriesDetailRoute = app
         where: { seriesId: seriesId },
       });
 
-      const filteredSeries = filterSeries(series) as FilteredSeries & {
-        moviesPagination?: {
-          page: number;
-          limit: number;
-          totalCount: number;
-          totalPages: number;
-          hasNext: boolean;
-          hasPrev: boolean;
-        };
-      };
-
       const totalPages = Math.ceil(totalMoviesCount / moviesLimit);
-      filteredSeries.moviesPagination = {
-        page: moviesPage,
-        limit: moviesLimit,
-        totalCount: totalMoviesCount,
-        totalPages,
-        hasNext: moviesPage < totalPages,
-        hasPrev: moviesPage > 1,
+      const filteredSeries = {
+        ...formatSeries(filterSeries(series)),
+        moviesPagination: {
+          page: moviesPage,
+          limit: moviesLimit,
+          totalCount: totalMoviesCount,
+          totalPages,
+          hasNext: moviesPage < totalPages,
+          hasPrev: moviesPage > 1,
+        },
       };
 
       return ok(c, filteredSeries);
@@ -123,18 +115,18 @@ export const seriesDetailRoute = app
   .patch("/:series", zValidator("json", SeriesPatchSchema), async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
     const param = c.req.param("series");
     if (!param) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     const existingSeries = await prisma.series.findUnique({
       where: { id: param },
     });
     if (!existingSeries) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     // Check ownership: owner or admin (for system accounts)
@@ -143,7 +135,7 @@ export const seriesDetailRoute = app
       user.role === "ADMIN" && (await isSystemAccount(existingSeries.authorId));
 
     if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to edit this series");
+      unauthorized("Not authorized to edit this series");
     }
 
     const { title, description, visibility } = c.req.valid("json");
@@ -174,18 +166,18 @@ export const seriesDetailRoute = app
   .delete("/:series", async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
     const param = c.req.param("series");
     if (!param) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     const series = await prisma.series.findUnique({
       where: { id: param },
     });
     if (!series) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     // Check ownership: owner or admin (for system accounts)
@@ -194,7 +186,7 @@ export const seriesDetailRoute = app
       user.role === "ADMIN" && (await isSystemAccount(series.authorId));
 
     if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to delete this series");
+      unauthorized("Not authorized to delete this series");
     }
 
     // Unlink movies from series (don't delete them)
@@ -213,7 +205,7 @@ export const seriesDetailRoute = app
   .get("/:series/movies", async (c) => {
     const seriesId = c.req.param("series");
     if (!seriesId) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     const page = parseInt(c.req.queries("page")?.[0] || "1", 10);
@@ -231,13 +223,13 @@ export const seriesDetailRoute = app
     });
 
     if (!series) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     if (series.visibility === "PRIVATE") {
       const user = c.get("user");
       if (!user || (user.id !== series.authorId && user.role !== "ADMIN")) {
-        return notFound(c, "Series not found");
+        notFound("Series not found");
       }
     }
 
@@ -273,8 +265,8 @@ export const seriesDetailRoute = app
     const hasNext = page < totalPages;
     const hasPrev = page > 1;
 
-    const response: PaginatedResponse<FilteredMovie> = {
-      items: movies.map(filterMovie),
+    const response: PaginatedResponse<FormattedMovie> = {
+      items: movies.map((v) => formatMovie(filterMovie(v))),
       pagination: {
         page,
         limit,
@@ -290,19 +282,19 @@ export const seriesDetailRoute = app
   .post("/:series/movies", zValidator("json", AddMovieSchema), async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
 
     const seriesId = c.req.param("series");
     if (!seriesId) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     const series = await prisma.series.findUnique({
       where: { id: seriesId },
     });
     if (!series) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     const isOwner = series.authorId === user.id;
@@ -310,7 +302,7 @@ export const seriesDetailRoute = app
       user.role === "ADMIN" && (await isSystemAccount(series.authorId));
 
     if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to edit this series");
+      unauthorized("Not authorized to edit this series");
     }
 
     const { movieId } = c.req.valid("json");
@@ -320,12 +312,12 @@ export const seriesDetailRoute = app
       where: { id: movieId },
     });
     if (!movie) {
-      return notFound(c, "Movie not found");
+      notFound("Movie not found");
     }
 
     // Check if movie is already in this series
     if (movie.seriesId === seriesId) {
-      return badRequest(c, "Movie is already in this series");
+      badRequest("Movie is already in this series");
     }
 
     // Get max order
@@ -356,7 +348,7 @@ export const seriesDetailRoute = app
     });
 
     if (!updatedSeries) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     return ok(c, filterSeries(updatedSeries));
@@ -364,20 +356,20 @@ export const seriesDetailRoute = app
   .delete("/:series/movies/:movie", async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
 
     const seriesId = c.req.param("series");
     const movieId = c.req.param("movie");
     if (!seriesId || !movieId) {
-      return notFound(c, "Not found");
+      notFound("Not found");
     }
 
     const series = await prisma.series.findUnique({
       where: { id: seriesId },
     });
     if (!series) {
-      return notFound(c, "Series not found");
+      notFound("Series not found");
     }
 
     const isOwner = series.authorId === user.id;
@@ -385,7 +377,7 @@ export const seriesDetailRoute = app
       user.role === "ADMIN" && (await isSystemAccount(series.authorId));
 
     if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to edit this series");
+      unauthorized("Not authorized to edit this series");
     }
 
     // Remove movie from series (don't delete the movie)
@@ -402,19 +394,19 @@ export const seriesDetailRoute = app
     async (c) => {
       const user = c.get("user");
       if (!user) {
-        return unauthorized(c, "Unauthorized");
+        unauthorized("Unauthorized");
       }
 
       const seriesId = c.req.param("series");
       if (!seriesId) {
-        return notFound(c, "Series not found");
+        notFound("Series not found");
       }
 
       const series = await prisma.series.findUnique({
         where: { id: seriesId },
       });
       if (!series) {
-        return notFound(c, "Series not found");
+        notFound("Series not found");
       }
 
       const isOwner = series.authorId === user.id;
@@ -422,7 +414,7 @@ export const seriesDetailRoute = app
         user.role === "ADMIN" && (await isSystemAccount(series.authorId));
 
       if (!isOwner && !isAdminForSystemAccount) {
-        return unauthorized(c, "Not authorized to edit this series");
+        unauthorized("Not authorized to edit this series");
       }
 
       const { movieIds } = c.req.valid("json");
@@ -450,7 +442,7 @@ export const seriesDetailRoute = app
       });
 
       if (!updatedSeries) {
-        return notFound(c, "Series not found");
+        notFound("Series not found");
       }
 
       return ok(c, filterSeries(updatedSeries));

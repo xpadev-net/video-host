@@ -1,7 +1,6 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue, useSetAtom } from "jotai";
 import { type MouseEvent, useState } from "react";
-
-import type { FilteredMovie } from "@/@types/v4Api";
 import { VideoMetadataAtom, VideoRefAtom } from "@/atoms/Player";
 import { TimeDisplay } from "@/components/Player/DesktopPlayer/Controller/TimeDisplay";
 import { AutoPlayButton } from "@/components/Player/Shared/Controller/AutoPlayButton";
@@ -17,7 +16,7 @@ import { VolumeIcon } from "./VolumeIcon";
 import { VolumeSlider } from "./VolumeSlider";
 
 type props = {
-  data: FilteredMovie;
+  data: FormattedMovie;
   isHovering: boolean;
 };
 

@@ -13,7 +13,7 @@ export const meRoute = app
   .get("/me", async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
     return ok(c, filterUser(user));
   })
@@ -29,11 +29,11 @@ export const meRoute = app
     async (c) => {
       const user = c.get("user");
       if (!user) {
-        return unauthorized(c, "Unauthorized");
+        unauthorized("Unauthorized");
       }
       const data = c.req.valid("json");
       if (!data) {
-        return badRequest(c, "Invalid data");
+        badRequest("Invalid data");
       }
       const updatedUser = await prisma.user.update({
         where: {

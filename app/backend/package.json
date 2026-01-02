@@ -1,7 +1,7 @@
 {
   "name": "@video-host/backend",
   "version": "0.0.36",
-  "types": "./dist/routes/index.d.ts",
+  "types": "./dist/types.d.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc && tsc-alias",

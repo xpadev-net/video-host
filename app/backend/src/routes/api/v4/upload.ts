@@ -19,7 +19,7 @@ export const uploadRoute = app.post(
   async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
 
     const { filename, contentType } = c.req.valid("json");

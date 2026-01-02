@@ -1,20 +1,19 @@
+import type { FormattedMovie } from "@video-host/backend";
 import type { Options } from "@xpadev-net/niconicomments";
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
-
 import type {
   PlayerConfig,
   PlayerState,
   SettingKey,
   VideoMetadata,
 } from "@/@types/Player";
-import type { FilteredMovie } from "@/@types/v4Api";
 
 const DurablePlayerAtom = atom<{
   target: HTMLElement | null;
   className?: string;
 } | null>(null);
-const CurrentMovieAtom = atom<FilteredMovie | null>(null);
+const CurrentMovieAtom = atom<FormattedMovie | null>(null);
 
 const WrapperRefAtom = atom<HTMLButtonElement | null>(null);
 const VideoRefAtom = atom<HTMLVideoElement | null>(null);

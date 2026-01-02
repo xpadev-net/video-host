@@ -11,13 +11,9 @@ import { query2str } from "@/utils/query2str";
 const SeriesPage = () => {
   const router = useRouter();
   const query = router.query.series;
-  const { data } = useSeries(query2str(query));
-  if (!data) {
+  const { data, error } = useSeries(query2str(query));
+  if (!data || error) {
     return <SeriesPageSkeleton />;
-  }
-  if (data.code === 401) {
-    void router.push(`/login?callback=${encodeURIComponent(router.asPath)}`);
-    return null;
   }
   if (data.status !== "ok") {
     return (

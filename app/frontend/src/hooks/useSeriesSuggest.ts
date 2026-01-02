@@ -1,8 +1,11 @@
-import type { v4GetSeriesListRes } from "@/@types/v4Api";
+import type { InferResponseType } from "hono";
 import { useStickySWR } from "@/hooks/useStickySWR";
 import { client } from "@/lib/client";
 
-const fetcher = async (key: string): Promise<v4GetSeriesListRes> => {
+type SeriesListApiType = typeof client.api.v4.series.$get;
+type SeriesListResponse = InferResponseType<SeriesListApiType>;
+
+const fetcher = async (key: string): Promise<SeriesListResponse> => {
   if (key.length < 2) {
     return {
       status: "ok",
@@ -28,7 +31,7 @@ const fetcher = async (key: string): Promise<v4GetSeriesListRes> => {
     },
   });
 
-  return (await res.json()) as unknown as v4GetSeriesListRes;
+  return await res.json();
 };
 
 type Props = {

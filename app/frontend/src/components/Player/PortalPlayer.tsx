@@ -1,7 +1,7 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/router";
 import { useEffect, useId, useRef } from "react";
-import type { FilteredMovie } from "@/@types/v4Api";
 import { CurrentMovieAtom, DurablePlayerAtom } from "@/atoms/Player";
 import { useIsMobile } from "@/libraries/isMobile";
 import { DesktopPlayer } from "./DesktopPlayer";
@@ -55,7 +55,7 @@ export const PortalPlayer = ({
 };
 
 type props = {
-  data: FilteredMovie;
+  data: FormattedMovie;
   className?: string;
   id: string;
   isPipMode?: boolean;

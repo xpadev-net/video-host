@@ -2,9 +2,10 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env } from "@/@types/hono";
-import type { FilteredMovie, PaginatedResponse } from "@/@types/models";
+import type { FormattedMovie, PaginatedResponse } from "@/@types/models";
 import { ZVisibility } from "@/@types/models";
 import { filterMovie } from "@/lib/filter";
+import { formatMovie } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import { addEncodeJob, setEncodeProgress } from "@/lib/redis";
 import { movieRoute } from "@/routes/api/v4/movies/[movie]";
@@ -74,8 +75,8 @@ export const moviesRoute = app
     const hasNext = page < totalPages;
     const hasPrev = page > 1;
 
-    const response: PaginatedResponse<FilteredMovie> = {
-      items: movies.map(filterMovie),
+    const response: PaginatedResponse<FormattedMovie> = {
+      items: movies.map((v) => formatMovie(filterMovie(v))),
       pagination: {
         page,
         limit,
@@ -91,27 +92,27 @@ export const moviesRoute = app
   .post("/", zValidator("json", MovieBodySchema), async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
     const data = c.req.valid("json");
     // The zValidator already handles invalid data, so this check is technically redundant
     // but kept for consistency if the schema was more complex or had custom refinements.
     if (!data) {
-      return badRequest(c, "Invalid data");
+      badRequest("Invalid data");
     }
 
     // Handle asUserId for admin proxy
     let authorId = user.id;
     if (data.asUserId) {
       if (user.role !== "ADMIN") {
-        return unauthorized(c, "Only admins can post as other users");
+        unauthorized("Only admins can post as other users");
       }
       // Verify target user is a system account (password is null)
       const targetUser = await prisma.user.findUnique({
         where: { id: data.asUserId },
       });
       if (!targetUser || targetUser.password !== null) {
-        return badRequest(c, "Target user must be a system account");
+        badRequest("Target user must be a system account");
       }
       authorId = data.asUserId;
     }
@@ -174,6 +175,6 @@ export const moviesRoute = app
         },
       });
     }
-    return ok(c, filterMovie(movie));
+    return ok(c, formatMovie(filterMovie(movie)));
   })
   .route("/", movieRoute);

@@ -1,15 +1,14 @@
+import type { FormattedMovie } from "@video-host/backend";
 import Link from "next/link";
 import { useState } from "react";
 import { MdKeyboardArrowDown, MdKeyboardArrowUp } from "react-icons/md";
-
-import type { FilteredMovie } from "@/@types/v4Api";
 import { SeriesList } from "@/components/MovieList/SeriesList";
 import { findNext } from "@/components/Player/utils/findPrevNext";
 import { cn } from "@/lib/utils";
 import { visibility2str } from "@/utils/visibility2str";
 
 type props = {
-  data: FilteredMovie;
+  data: FormattedMovie;
   className?: string;
   maxHeight?: number;
 };

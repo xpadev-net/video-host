@@ -27,7 +27,7 @@ export const callbackRoute = app.post(
     const authHeader = c.req.header("Authorization");
     const expectedAuth = `Bearer ${CALLBACK_SECRET}`;
     if (authHeader !== expectedAuth) {
-      return unauthorized(c, "Invalid callback secret");
+      unauthorized("Invalid callback secret");
     }
 
     const {
@@ -46,7 +46,7 @@ export const callbackRoute = app.post(
     });
 
     if (!movie) {
-      return badRequest(c, "Movie not found");
+      badRequest("Movie not found");
     }
 
     // Find the variant to update (by variantId or the first PROCESSING one)
@@ -55,7 +55,7 @@ export const callbackRoute = app.post(
       : movie.variants.find((v) => v.status === "PROCESSING");
 
     if (!targetVariant) {
-      return badRequest(c, "No matching variant found");
+      badRequest("No matching variant found");
     }
 
     if (status === "success") {

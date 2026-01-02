@@ -46,21 +46,21 @@ const RegisterPage = () => {
       return;
     }
 
-    const response = await postUsers(
-      username,
-      name,
-      password,
-      RequireSignupCode ? signupCode : "",
-    );
-    const body = await response.json();
+    try {
+      const body = await postUsers(
+        username,
+        name,
+        password,
+        RequireSignupCode ? signupCode : "",
+      );
 
-    // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
-    if (response.ok && (body as any).status === "ok") {
-      // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
-      handleAuthSuccess((body as any).data.token);
-    } else {
-      // biome-ignore lint/suspicious/noExplicitAny: complex type narrowing
-      handleAuthError((body as any).message || "登録に失敗しました");
+      if (body.status === "ok") {
+        handleAuthSuccess(body.data.token);
+      } else {
+        handleAuthError("登録に失敗しました");
+      }
+    } catch {
+      handleAuthError("ネットワークエラーが発生しました");
     }
   };
 

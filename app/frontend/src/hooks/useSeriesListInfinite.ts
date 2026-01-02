@@ -1,6 +1,5 @@
+import type { InferResponseType } from "hono";
 import useSWRInfinite from "swr/infinite";
-
-import type { v4GetSeriesListRes } from "@/@types/v4Api";
 import { client } from "@/lib/client";
 
 type FetcherKey = {
@@ -11,9 +10,12 @@ type FetcherKey = {
   };
 };
 
-const fetcher = async (key: FetcherKey): Promise<v4GetSeriesListRes> => {
+type SeriesListApiType = typeof client.api.v4.series.$get;
+export type SeriesListResponse = InferResponseType<SeriesListApiType>;
+
+const fetcher = async (key: FetcherKey): Promise<SeriesListResponse> => {
   const res = await client.api.v4.series.$get(key);
-  return (await res.json()) as unknown as v4GetSeriesListRes;
+  return (await res.json()) as unknown as SeriesListResponse;
 };
 
 type Props = {
@@ -24,7 +26,7 @@ type Props = {
 export const useSeriesListInfinite = (params?: Props) => {
   const getKey = (
     pageIndex: number,
-    previousPageData: v4GetSeriesListRes | null,
+    previousPageData: SeriesListResponse | null,
   ) => {
     // データが空配列ならこれ以上取得しない
     if (
@@ -43,7 +45,7 @@ export const useSeriesListInfinite = (params?: Props) => {
   };
 
   const { data, error, size, setSize, isValidating } = useSWRInfinite<
-    v4GetSeriesListRes,
+    SeriesListResponse,
     unknown
   >(getKey, fetcher);
 

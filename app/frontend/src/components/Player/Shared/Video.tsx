@@ -1,3 +1,4 @@
+import type { FormattedMovie } from "@video-host/backend";
 import Hls from "hls.js";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useRouter } from "next/router";
@@ -8,8 +9,6 @@ import {
   useRef,
   useState,
 } from "react";
-
-import type { FilteredMovie } from "@/@types/v4Api";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import {
   PlayerConfigAtom,
@@ -23,7 +22,7 @@ import { findNext } from "@/components/Player/utils/findPrevNext";
 
 type props = {
   className?: string;
-  movie?: FilteredMovie;
+  movie?: FormattedMovie;
   videoRef: RefObject<HTMLVideoElement | null>;
 };
 

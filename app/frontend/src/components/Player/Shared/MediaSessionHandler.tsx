@@ -1,13 +1,12 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/router";
 import { type FC, useEffect, useMemo } from "react";
-
-import type { FilteredMovie } from "@/@types/v4Api";
 import { VideoRefAtom } from "@/atoms/Player";
 import { findNext, findPrev } from "@/components/Player/utils/findPrevNext";
 
 type Props = {
-  data: FilteredMovie;
+  data: FormattedMovie;
 };
 
 const MediaSessionHandler: FC<Props> = ({ data }) => {

@@ -1,14 +1,14 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useSetAtom } from "jotai";
 import { Maximize2, X } from "lucide-react";
 import { useRouter } from "next/router";
-import type { FilteredMovie } from "@/@types/v4Api";
 import { CurrentMovieAtom } from "@/atoms/Player";
 import { cn } from "@/lib/utils";
 import { PlayPauseButton } from "../../Shared/Controller/PlayPauseButton";
 import { Slider } from "./Slider";
 
 type props = {
-  data: FilteredMovie;
+  data: FormattedMovie;
   className?: string;
   isPipMode?: boolean;
   isHovering?: boolean;
