@@ -102,13 +102,13 @@ export const systemAccountsRoute = app
           playlist: { authorId: id },
         },
       }),
-      prisma.playlist.deleteMany({ where: { authorId: id } }),
       prisma.movieVariant.deleteMany({
         where: {
           movie: { authorId: id },
         },
       }),
       prisma.movie.deleteMany({ where: { authorId: id } }),
+      prisma.playlist.deleteMany({ where: { authorId: id } }),
       prisma.series.deleteMany({ where: { authorId: id } }),
       prisma.user.delete({ where: { id } }),
     ]);
