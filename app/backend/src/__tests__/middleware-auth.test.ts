@@ -3,7 +3,14 @@ import { Hono } from "hono";
 import jwt from "jsonwebtoken";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env, HonoApp } from "@/@types/hono";
-import { JWT_SECRET } from "../env";
+
+const TEST_JWT_SECRET = "test-jwt-secret";
+
+// Mock env module before other imports
+vi.mock("@/env", () => ({
+  JWT_SECRET: "test-jwt-secret",
+  PUBLIC_ENDPOINTS: [],
+}));
 
 // Mock Prisma before imports
 const mockPrisma = {
@@ -57,7 +64,30 @@ describe("Auth Middleware", () => {
 
     // Re-import auth middleware and create test app
     const { handleAuth } = await import("../middleware/auth");
+    const { HTTPException } = await import("hono/http-exception");
     app = new Hono<Env>();
+
+    // Add error handler for HTTPException
+    app.onError((err, c) => {
+      if (err instanceof HTTPException) {
+        return c.json(
+          {
+            status: "error",
+            code: err.status,
+            message: err.message,
+          },
+          err.status,
+        );
+      }
+      return c.json(
+        {
+          status: "error",
+          code: 500,
+          message: "Internal Server Error",
+        },
+        500,
+      );
+    });
 
     // Apply auth middleware
     handleAuth(app);
@@ -85,7 +115,7 @@ describe("Auth Middleware", () => {
     });
 
     it("should reject request with malformed Authorization header (missing Bearer)", async () => {
-      const token = jwt.sign({ userId: "user-123" }, JWT_SECRET);
+      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
 
       const res = await app.request("/api/v4/users", {
         headers: {
@@ -100,7 +130,7 @@ describe("Auth Middleware", () => {
     });
 
     it("should reject request with extra spaces in Authorization header when session not found", async () => {
-      const token = jwt.sign({ userId: "user-123" }, JWT_SECRET);
+      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
       mockPrisma.session.findFirst.mockResolvedValue(null);
 
       const res = await app.request("/api/v4/users", {
@@ -161,7 +191,7 @@ describe("Auth Middleware", () => {
     });
 
     it("should reject token with modified signature", async () => {
-      const token = jwt.sign({ userId: "user-123" }, JWT_SECRET);
+      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
       const modifiedToken = `${token.slice(0, -5)}XXXXX`;
 
       const res = await app.request("/api/v4/users", {
@@ -179,7 +209,7 @@ describe("Auth Middleware", () => {
 
   describe("Session validation", () => {
     it("should reject valid JWT token with no matching session in database", async () => {
-      const token = jwt.sign({ userId: "user-123" }, JWT_SECRET);
+      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
       mockPrisma.session.findFirst.mockResolvedValue(null);
 
       const res = await app.request("/api/v4/users", {
@@ -195,7 +225,7 @@ describe("Auth Middleware", () => {
     });
 
     it("should reject valid JWT token with expired session in database", async () => {
-      const token = jwt.sign({ userId: "user-123" }, JWT_SECRET);
+      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
       const _expiredSession = {
         ...testSession,
         expiredAt: new Date(Date.now() - 1000), // Expired 1 second ago
@@ -217,7 +247,7 @@ describe("Auth Middleware", () => {
 
   describe("Successful authentication", () => {
     it("should accept valid token with matching active session", async () => {
-      const token = jwt.sign({ userId: "user-123" }, JWT_SECRET);
+      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
       mockPrisma.session.findFirst.mockResolvedValue(testSession);
 
       const res = await app.request("/api/v4/users", {
@@ -235,7 +265,7 @@ describe("Auth Middleware", () => {
     });
 
     it("should set user context from session data", async () => {
-      const token = jwt.sign({ userId: "user-123" }, JWT_SECRET);
+      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
       mockPrisma.session.findFirst.mockResolvedValue(testSession);
 
       const res = await app.request("/api/v4/users", {
@@ -252,7 +282,7 @@ describe("Auth Middleware", () => {
     });
 
     it("should verify session token matches Authorization header", async () => {
-      const token = jwt.sign({ userId: "user-123" }, JWT_SECRET);
+      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
       mockPrisma.session.findFirst.mockResolvedValue(testSession);
 
       await app.request("/api/v4/users", {
