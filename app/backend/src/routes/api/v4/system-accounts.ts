@@ -99,7 +99,7 @@ export const systemAccountsRoute = app
       prisma.session.deleteMany({ where: { userId: id } }),
       prisma.movieOnPlaylist.deleteMany({
         where: {
-          playlist: { authorId: id },
+          OR: [{ playlist: { authorId: id } }, { movie: { authorId: id } }],
         },
       }),
       prisma.movieVariant.deleteMany({
