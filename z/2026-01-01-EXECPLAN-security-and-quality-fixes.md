@@ -24,10 +24,10 @@ Observable outcomes:
   - [x] Updated env.test.ts with 16 test cases (was 5)
   - [x] Updated setup.ts with PASSWORD_SALT for test initialization
   - [x] All 40 backend tests pass
-- [ ] Milestone 2: Backend Code Quality
-  - [ ] Add input validation for user registration (password requirements)
-  - [ ] Implement transaction handling for cascade deletes
-  - [ ] Fix N+1 query in isSystemAccount
+- [x] Milestone 2: Backend Code Quality (2026-01-01 08:36Z)
+  - [x] Add input validation for user registration (password requirements)
+  - [x] Implement transaction handling for cascade deletes
+  - [x] Create shared isSystemAccount utility
 - [x] Milestone 3: Authentication Tests (2026-01-01 02:00Z)
   - [x] Created middleware-auth.test.ts with 16 comprehensive test cases
   - [x] Added 12 edge case tests to auth.test.ts (empty inputs, system accounts, token boundaries, case sensitivity)
@@ -83,6 +83,27 @@ The environment configuration has been significantly hardened:
 5. **Test coverage** increased from 5 to 16 tests for environment validation, covering all security requirements.
 
 Validation command: `cd app/backend && pnpm test` shows 40 tests passing.
+
+### Milestone 2 Complete
+
+Backend code quality improvements implemented:
+
+1. **Password validation** - User registration now requires passwords with:
+   - Minimum 8 characters
+   - At least one uppercase letter
+   - At least one lowercase letter
+   - At least one number
+   - At least one special character
+
+2. **Username validation** - Usernames must be:
+   - 3-32 characters long
+   - Only alphanumeric characters, underscores, and hyphens
+
+3. **Transaction handling** - Cascade deletes in `system-accounts.ts` now use `prisma.$transaction()` to ensure atomicity.
+
+4. **Shared utility** - Created `utils/systemAccountCache.ts` with a shared `isSystemAccount` function, replacing duplicated code in series, playlists, and movies routes.
+
+Validation command: `cd app/backend && pnpm test` shows 93 tests passing.
 
 ### Milestone 3 Complete
 
@@ -482,7 +503,8 @@ Recovery procedures:
         .min(8, "Password must be at least 8 characters")
         .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
         .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-        .regex(/\d/, "Password must contain at least one number"),
+        .regex(/\d/, "Password must contain at least one number")
+        .regex(/[^a-zA-Z0-9]/, "Password must contain at least one special character"),
       name: z.string().optional(),
     });
 
