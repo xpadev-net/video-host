@@ -1,9 +1,9 @@
-import type { FilteredMovie } from "@/@types/v4Api";
+import type { FormattedMovie } from "@video-host/backend";
 import { DefaultController } from "./DefaultController";
 import { PiPController } from "./PiPController";
 
 type props = {
-  data: FilteredMovie;
+  data: FormattedMovie;
   isHovering: boolean;
   isPipMode?: boolean;
 };

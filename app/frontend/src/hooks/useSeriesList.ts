@@ -1,4 +1,4 @@
-import type { v4GetSeriesListRes } from "@/@types/v4Api";
+import type { SeriesListResponse } from "@/@types/api";
 import { useStickySWR } from "@/hooks/useStickySWR";
 import { client } from "@/lib/client";
 
@@ -10,9 +10,9 @@ type FetcherKey = {
   };
 };
 
-const fetcher = async (key: FetcherKey): Promise<v4GetSeriesListRes> => {
+const fetcher = async (key: FetcherKey): Promise<SeriesListResponse> => {
   const res = await client.api.v4.series.$get(key);
-  return (await res.json()) as unknown as v4GetSeriesListRes;
+  return res.json();
 };
 
 type Props = {

@@ -111,14 +111,14 @@ export const seriesRoute = app
   .post("/", zValidator("json", PostSeriesSchema), async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
     const { title, description, visibility, asUserId } = c.req.valid("json");
 
     let authorId = user.id;
     if (asUserId) {
       if (user.role !== "ADMIN") {
-        return unauthorized(c, "Only admins can create series for other users");
+        unauthorized("Only admins can create series for other users");
       }
       // Verify asUserId is a system account (or just allow admins to act as anyone? context implies system accounts)
       // Reusing logic from other files or just checking existence/system nature
@@ -126,10 +126,10 @@ export const seriesRoute = app
         where: { id: asUserId },
       });
       if (!targetUser) {
-        return badRequest(c, "Target user not found");
+        badRequest("Target user not found");
       }
       if (targetUser.password !== null) {
-        return badRequest(c, "Can only create series for system accounts");
+        badRequest("Can only create series for system accounts");
       }
       authorId = asUserId;
     }

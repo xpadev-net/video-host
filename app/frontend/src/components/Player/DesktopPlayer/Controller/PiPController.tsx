@@ -1,13 +1,13 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useSetAtom } from "jotai";
 import { Maximize2, X } from "lucide-react";
 import { useRouter } from "next/router";
-import type { FilteredMovie } from "@/@types/v4Api";
 import { CurrentMovieAtom, VideoMetadataAtom } from "@/atoms/Player";
 import { cn } from "@/lib/utils";
 import { Slider } from "./Slider";
 
 type props = {
-  data: FilteredMovie;
+  data: FormattedMovie;
   isHovering: boolean;
 };
 

@@ -1,6 +1,5 @@
+import type { InferResponseType } from "hono";
 import useSWRInfinite from "swr/infinite";
-
-import type { v4GetMoviesRes } from "@/@types/v4Api";
 import { client } from "@/lib/client";
 
 // Define the Key type matching what getKey returns and fetcher expects
@@ -12,9 +11,12 @@ type FetcherKey = {
   };
 };
 
-const fetcher = async (key: FetcherKey): Promise<v4GetMoviesRes> => {
+type MoviesResponseType = typeof client.api.v4.movies.$get;
+export type MoviesResponse = InferResponseType<MoviesResponseType>;
+
+const fetcher = async (key: FetcherKey) => {
   const res = await client.api.v4.movies.$get(key);
-  return (await res.json()) as unknown as v4GetMoviesRes;
+  return await res.json();
 };
 
 type Props = {
@@ -25,7 +27,7 @@ type Props = {
 export const useMovies = (params?: Props) => {
   const getKey = (
     pageIndex: number,
-    previousPageData: v4GetMoviesRes | null,
+    previousPageData: MoviesResponse | null,
   ) => {
     // データが空配列ならこれ以上取得しない
     if (
@@ -45,7 +47,7 @@ export const useMovies = (params?: Props) => {
   };
 
   const { data, error, size, setSize, isValidating } = useSWRInfinite<
-    v4GetMoviesRes,
+    MoviesResponse,
     unknown
   >(getKey, fetcher);
 

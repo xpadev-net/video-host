@@ -1,10 +1,9 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useEffect, useMemo, useRef } from "react";
-
-import type { FilteredMovie } from "@/@types/v4Api";
 import { MovieCard } from "@/components/Movie";
 
 export type props = {
-  movies: FilteredMovie[];
+  movies: FormattedMovie[];
   type: "row" | "column" | "minColumn";
   active?: string;
   className?: string;

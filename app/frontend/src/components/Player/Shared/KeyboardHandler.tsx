@@ -1,8 +1,7 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useRouter } from "next/router";
 import { type FC, useEffect } from "react";
-
-import type { FilteredMovie } from "@/@types/v4Api";
 import {
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
@@ -16,7 +15,7 @@ import { findNext, findPrev } from "@/components/Player/utils/findPrevNext";
 const rates = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 4];
 
 type Props = {
-  data: FilteredMovie;
+  data: FormattedMovie;
 };
 
 const KeyboardHandler: FC<Props> = ({ data }) => {

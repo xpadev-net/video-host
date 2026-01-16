@@ -1,6 +1,6 @@
-import type { FilteredMovie } from "@/@types/v4Api";
+import type { FormattedMovie } from "@video-host/backend";
 
-export const findNext = (data: FilteredMovie) => {
+export const findNext = (data: FormattedMovie) => {
   if (!data?.series) return undefined;
   const currentIndex = data.series.movies?.findIndex(
     (episode) => episode.id === data.id,
@@ -9,7 +9,7 @@ export const findNext = (data: FilteredMovie) => {
   return data.series.movies?.[currentIndex + 1];
 };
 
-export const findPrev = (data: FilteredMovie) => {
+export const findPrev = (data: FormattedMovie) => {
   if (!data?.series) return undefined;
   const currentIndex = data.series.movies?.findIndex(
     (episode) => episode.id === data.id,

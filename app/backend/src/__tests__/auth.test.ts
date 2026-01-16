@@ -59,7 +59,31 @@ describe("Auth Routes", () => {
 
     // Re-import authRoute after mocks are applied
     const { authRoute } = await import("../routes/api/v4/auth");
+    const { HTTPException } = await import("hono/http-exception");
     app = new Hono();
+
+    // Add error handler for HTTPException
+    app.onError((err, c) => {
+      if (err instanceof HTTPException) {
+        return c.json(
+          {
+            status: "error",
+            code: err.status,
+            message: err.message,
+          },
+          err.status,
+        );
+      }
+      return c.json(
+        {
+          status: "error",
+          code: 500,
+          message: "Internal Server Error",
+        },
+        500,
+      );
+    });
+
     app.route("/auth", authRoute);
 
     // Hash the test password

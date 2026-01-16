@@ -1,10 +1,10 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useSetAtom } from "jotai";
 import { useEffect, useRef } from "react";
-import type { FilteredMovie } from "@/@types/v4Api";
 import { CurrentMovieAtom, DurablePlayerAtom } from "@/atoms/Player";
 
 type props = {
-  data: FilteredMovie;
+  data: FormattedMovie;
   className?: string;
 };
 

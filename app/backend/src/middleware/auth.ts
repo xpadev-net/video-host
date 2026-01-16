@@ -26,7 +26,7 @@ const authMiddleware = createMiddleware<{
       await next();
       return;
     }
-    return unauthorized(c, "Unauthorized");
+    unauthorized("Unauthorized");
   }
 
   // JWT signature verification (before DB query to reject invalid tokens early)
@@ -37,7 +37,7 @@ const authMiddleware = createMiddleware<{
       await next();
       return;
     }
-    return unauthorized(c, "Invalid token signature");
+    unauthorized("Invalid token signature");
   }
 
   const session = await prisma.session.findFirst({
@@ -56,7 +56,7 @@ const authMiddleware = createMiddleware<{
       await next();
       return;
     }
-    return unauthorized(c, "Unauthorized");
+    unauthorized("Unauthorized");
   }
   c.set("user", session.user);
   await next();

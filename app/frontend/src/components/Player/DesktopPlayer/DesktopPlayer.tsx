@@ -1,7 +1,7 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import type { FilteredMovie } from "@/@types/v4Api";
 import { LoadingIcon } from "@/assets/LoadingIcon";
 import {
   PlayerConfigAtom,
@@ -20,7 +20,7 @@ import { Controller } from "./Controller";
 
 type props = {
   className?: string;
-  data: FilteredMovie;
+  data: FormattedMovie;
   id: string;
   isPipMode?: boolean;
 };

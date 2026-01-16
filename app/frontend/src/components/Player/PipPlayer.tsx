@@ -1,7 +1,7 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useRouter } from "next/router";
 import { type RefObject, useEffect, useRef } from "react";
-import type { FilteredMovie } from "@/@types/v4Api";
 import { CurrentMovieAtom, DurablePlayerAtom } from "@/atoms/Player";
 import { useIsMobile } from "@/libraries/isMobile";
 
@@ -50,7 +50,7 @@ const DesktopPipPlayer = ({
   currentMovie,
 }: {
   playerPortalTargetRef: RefObject<HTMLDivElement | null>;
-  currentMovie: FilteredMovie;
+  currentMovie: FormattedMovie;
 }) => {
   return (
     <div
@@ -76,7 +76,7 @@ const MobilePipPlayer = ({
   currentMovie,
 }: {
   playerPortalTargetRef: RefObject<HTMLDivElement | null>;
-  currentMovie: FilteredMovie;
+  currentMovie: FormattedMovie;
 }) => {
   return (
     <div

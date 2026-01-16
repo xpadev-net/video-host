@@ -1,10 +1,9 @@
+import type { FormattedSeries } from "@video-host/backend";
 import type { ComponentProps, FC } from "react";
-
-import type { FilteredSeries } from "@/@types/v4Api";
 import { MovieList } from "@/components/MovieList/MovieList";
 
 type Props = Omit<ComponentProps<typeof MovieList>, "movies"> & {
-  series: FilteredSeries;
+  series: FormattedSeries;
 };
 
 export const SeriesList: FC<Props> = ({ series, ...props }) => {

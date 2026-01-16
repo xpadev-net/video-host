@@ -1,6 +1,5 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
-
-import type { FilteredMovie } from "@/@types/v4Api";
 import { PlayerStateAtom } from "@/atoms/Player";
 import { TimeDisplay } from "@/components/Player/MobilePlayer/Controller/TimeDisplay";
 import { AutoPlayButton } from "@/components/Player/Shared/Controller/AutoPlayButton";
@@ -13,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { Slider } from "./Slider";
 
 type props = {
-  data: FilteredMovie;
+  data: FormattedMovie;
   className?: string;
   isHovering?: boolean;
 };

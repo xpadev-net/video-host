@@ -6,7 +6,7 @@ export const ok = <T>(c: Context, data: T) => {
       status: "ok",
       code: 200,
       data,
-    },
+    } as const,
     200,
   );
 };

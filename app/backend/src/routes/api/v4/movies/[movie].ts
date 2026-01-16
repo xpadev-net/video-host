@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Env } from "@/@types/hono";
 import { ZVisibility } from "@/@types/models";
 import { filterMovie } from "@/lib/filter";
+import { formatMovie } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import { deleteProdFile, deleteTmpFile } from "@/lib/s3";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
@@ -24,7 +25,7 @@ export const movieRoute = app
   .get("/:movie", async (c) => {
     const param = c.req.param("movie");
     if (!param) {
-      return badRequest(c, "No movie provided");
+      badRequest("No movie provided");
     }
     const movie = await prisma.movie.findUnique({
       where: {
@@ -55,36 +56,36 @@ export const movieRoute = app
       },
     });
     if (!movie) {
-      return notFound(c, "Movie not found");
+      notFound("Movie not found");
     }
 
     if (movie.visibility === "PRIVATE") {
       const user = c.get("user");
       if (!user || (user.id !== movie.authorId && user.role !== "ADMIN")) {
-        return notFound(c, "Movie not found");
+        notFound("Movie not found");
       }
     }
 
     return ok(c, {
-      ...filterMovie(movie),
+      ...formatMovie(filterMovie(movie)),
       isOwner: c.get("user")?.id === movie.authorId,
     });
   })
   .patch("/:movie", zValidator("json", MoviePatchSchema), async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
     const param = c.req.param("movie");
     if (!param) {
-      return badRequest(c, "No movie provided");
+      badRequest("No movie provided");
     }
 
     const existingMovie = await prisma.movie.findUnique({
       where: { id: param },
     });
     if (!existingMovie) {
-      return notFound(c, "Movie not found");
+      notFound("Movie not found");
     }
 
     // Check ownership: owner or admin (for system accounts)
@@ -93,7 +94,7 @@ export const movieRoute = app
       user.role === "ADMIN" && (await isSystemAccount(existingMovie.authorId));
 
     if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to edit this movie");
+      unauthorized("Not authorized to edit this movie");
     }
 
     const { title, description, seriesId, visibility, order } =
@@ -134,11 +135,11 @@ export const movieRoute = app
   .delete("/:movie", async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
     const param = c.req.param("movie");
     if (!param) {
-      return badRequest(c, "No movie provided");
+      badRequest("No movie provided");
     }
 
     const movie = await prisma.movie.findUnique({
@@ -146,7 +147,7 @@ export const movieRoute = app
       include: { variants: true },
     });
     if (!movie) {
-      return notFound(c, "Movie not found");
+      notFound("Movie not found");
     }
 
     // Check ownership: owner or admin (for system accounts)
@@ -155,7 +156,7 @@ export const movieRoute = app
       user.role === "ADMIN" && (await isSystemAccount(movie.authorId));
 
     if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to delete this movie");
+      unauthorized("Not authorized to delete this movie");
     }
 
     // Try to delete S3 files (don't fail if this errors)

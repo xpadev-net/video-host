@@ -1,12 +1,11 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
-
-import type { FilteredMovie } from "@/@types/v4Api";
 import { watchedHistoryAtom } from "@/atoms/WatchedHistory";
 import { ImageWithFallback } from "@/components/ImageWithFallback";
 import { time2str } from "@/libraries/time";
 
 export type ThumbnailProps = {
-  movie?: FilteredMovie;
+  movie?: FormattedMovie;
   hideMetadata?: boolean;
 };
 

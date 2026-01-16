@@ -1,4 +1,4 @@
-import type { Visibility } from "@/@types/v4Api";
+import type { Visibility } from "@video-host/backend";
 
 export const visibility2str = (input: Visibility): string => {
   switch (input) {

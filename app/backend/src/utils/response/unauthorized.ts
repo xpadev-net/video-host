@@ -1,12 +1,7 @@
-import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 
-export const unauthorized = (c: Context, message: string) => {
-  return c.json(
-    {
-      status: "error",
-      code: 401,
-      message,
-    },
-    401,
-  );
+export const unauthorized: (message: string) => never = (
+  message: string,
+): never => {
+  throw new HTTPException(401, { message });
 };

@@ -29,7 +29,7 @@ export const playlistDetailRoute = app
   .get("/:playlist", async (c) => {
     const playlistId = c.req.param("playlist");
     if (!playlistId) {
-      return notFound(c, "Playlist not found");
+      notFound("Playlist not found");
     }
 
     const playlist = await prisma.playlist.findUnique({
@@ -53,13 +53,13 @@ export const playlistDetailRoute = app
     });
 
     if (!playlist) {
-      return notFound(c, "Playlist not found");
+      notFound("Playlist not found");
     }
 
     if (playlist.visibility === "PRIVATE") {
       const user = c.get("user");
       if (!user || user.id !== playlist.authorId) {
-        return notFound(c, "Playlist not found");
+        notFound("Playlist not found");
       }
     }
 
@@ -71,18 +71,18 @@ export const playlistDetailRoute = app
   .patch("/:playlist", zValidator("json", PlaylistPatchSchema), async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
     const param = c.req.param("playlist");
     if (!param) {
-      return notFound(c, "Playlist not found");
+      notFound("Playlist not found");
     }
 
     const existingPlaylist = await prisma.playlist.findUnique({
       where: { id: param },
     });
     if (!existingPlaylist) {
-      return notFound(c, "Playlist not found");
+      notFound("Playlist not found");
     }
 
     const isOwner = existingPlaylist.authorId === user.id;
@@ -91,7 +91,7 @@ export const playlistDetailRoute = app
       (await isSystemAccount(existingPlaylist.authorId));
 
     if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to edit this playlist");
+      unauthorized("Not authorized to edit this playlist");
     }
 
     const { title, description, visibility } = c.req.valid("json");
@@ -124,18 +124,18 @@ export const playlistDetailRoute = app
   .delete("/:playlist", async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
     const param = c.req.param("playlist");
     if (!param) {
-      return notFound(c, "Playlist not found");
+      notFound("Playlist not found");
     }
 
     const playlist = await prisma.playlist.findUnique({
       where: { id: param },
     });
     if (!playlist) {
-      return notFound(c, "Playlist not found");
+      notFound("Playlist not found");
     }
 
     const isOwner = playlist.authorId === user.id;
@@ -143,7 +143,7 @@ export const playlistDetailRoute = app
       user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
 
     if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to delete this playlist");
+      unauthorized("Not authorized to delete this playlist");
     }
 
     await prisma.movieOnPlaylist.deleteMany({
@@ -159,19 +159,19 @@ export const playlistDetailRoute = app
   .post("/:playlist/movies", zValidator("json", AddMovieSchema), async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
 
     const playlistId = c.req.param("playlist");
     if (!playlistId) {
-      return notFound(c, "Playlist not found");
+      notFound("Playlist not found");
     }
 
     const playlist = await prisma.playlist.findUnique({
       where: { id: playlistId },
     });
     if (!playlist) {
-      return notFound(c, "Playlist not found");
+      notFound("Playlist not found");
     }
 
     const isOwner = playlist.authorId === user.id;
@@ -179,7 +179,7 @@ export const playlistDetailRoute = app
       user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
 
     if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to edit this playlist");
+      unauthorized("Not authorized to edit this playlist");
     }
 
     const { movieId } = c.req.valid("json");
@@ -188,7 +188,7 @@ export const playlistDetailRoute = app
       where: { id: movieId },
     });
     if (!movie) {
-      return notFound(c, "Movie not found");
+      notFound("Movie not found");
     }
 
     const existingEntry = await prisma.movieOnPlaylist.findFirst({
@@ -199,7 +199,7 @@ export const playlistDetailRoute = app
     });
 
     if (existingEntry) {
-      return badRequest(c, "Movie is already in this playlist");
+      badRequest("Movie is already in this playlist");
     }
 
     const maxOrder = await prisma.movieOnPlaylist.aggregate({
@@ -234,7 +234,7 @@ export const playlistDetailRoute = app
     });
 
     if (!updatedPlaylist) {
-      return notFound(c, "Playlist not found");
+      notFound("Playlist not found");
     }
 
     return ok(c, filterPlaylist(updatedPlaylist));
@@ -242,20 +242,20 @@ export const playlistDetailRoute = app
   .delete("/:playlist/movies/:movie", async (c) => {
     const user = c.get("user");
     if (!user) {
-      return unauthorized(c, "Unauthorized");
+      unauthorized("Unauthorized");
     }
 
     const playlistId = c.req.param("playlist");
     const movieId = c.req.param("movie");
     if (!playlistId || !movieId) {
-      return notFound(c, "Not found");
+      notFound("Not found");
     }
 
     const playlist = await prisma.playlist.findUnique({
       where: { id: playlistId },
     });
     if (!playlist) {
-      return notFound(c, "Playlist not found");
+      notFound("Playlist not found");
     }
 
     const isOwner = playlist.authorId === user.id;
@@ -263,7 +263,7 @@ export const playlistDetailRoute = app
       user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
 
     if (!isOwner && !isAdminForSystemAccount) {
-      return unauthorized(c, "Not authorized to edit this playlist");
+      unauthorized("Not authorized to edit this playlist");
     }
 
     await prisma.movieOnPlaylist.deleteMany({
@@ -281,19 +281,19 @@ export const playlistDetailRoute = app
     async (c) => {
       const user = c.get("user");
       if (!user) {
-        return unauthorized(c, "Unauthorized");
+        unauthorized("Unauthorized");
       }
 
       const playlistId = c.req.param("playlist");
       if (!playlistId) {
-        return notFound(c, "Playlist not found");
+        notFound("Playlist not found");
       }
 
       const playlist = await prisma.playlist.findUnique({
         where: { id: playlistId },
       });
       if (!playlist) {
-        return notFound(c, "Playlist not found");
+        notFound("Playlist not found");
       }
 
       const isOwner = playlist.authorId === user.id;
@@ -301,7 +301,7 @@ export const playlistDetailRoute = app
         user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
 
       if (!isOwner && !isAdminForSystemAccount) {
-        return unauthorized(c, "Not authorized to edit this playlist");
+        unauthorized("Not authorized to edit this playlist");
       }
 
       const { movieIds } = c.req.valid("json");
@@ -337,7 +337,7 @@ export const playlistDetailRoute = app
       });
 
       if (!updatedPlaylist) {
-        return notFound(c, "Playlist not found");
+        notFound("Playlist not found");
       }
 
       return ok(c, filterPlaylist(updatedPlaylist));

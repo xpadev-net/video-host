@@ -1,12 +1,11 @@
+import type { FormattedMovie } from "@video-host/backend";
 import Link from "next/link";
 import { type ForwardedRef, forwardRef } from "react";
-
-import type { FilteredMovie } from "@/@types/v4Api";
 import { Thumbnail } from "@/components/Thumbnail";
 import { User } from "@/components/User/User";
 
 export type props = {
-  movie: FilteredMovie;
+  movie: FormattedMovie;
   type: "row" | "column" | "minColumn";
   index?: number | "active";
   showSeries?: boolean;

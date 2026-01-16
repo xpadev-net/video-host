@@ -46,7 +46,7 @@ export const vodRoute = app.get("/mapping/*", async (c) => {
   // Verify internal secret from nginx
   const internalSecret = c.req.header("X-Vod-Internal-Secret");
   if (internalSecret !== VOD_INTERNAL_SECRET) {
-    return unauthorized(c, "Invalid internal secret");
+    unauthorized("Invalid internal secret");
   }
 
   // Extract the s3Key from the path
