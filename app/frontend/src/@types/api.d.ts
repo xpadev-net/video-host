@@ -1,3 +1,5 @@
+import type { InferResponseType } from "hono";
+
 type authenticationError = {
   status: "fail";
   code: "401";
@@ -49,3 +51,7 @@ type authFail = {
 };
 
 export type authResponse = authSuccess | authFail;
+
+export type SeriesListApiType =
+  typeof import("@/lib/client").client.api.v4.series.$get;
+export type SeriesListResponse = InferResponseType<SeriesListApiType>;

@@ -1,5 +1,5 @@
-import type { InferResponseType } from "hono";
 import useSWRInfinite from "swr/infinite";
+import type { SeriesListResponse } from "@/@types/api";
 import { client } from "@/lib/client";
 
 type FetcherKey = {
@@ -10,12 +10,11 @@ type FetcherKey = {
   };
 };
 
-type SeriesListApiType = typeof client.api.v4.series.$get;
-export type SeriesListResponse = InferResponseType<SeriesListApiType>;
+export type { SeriesListResponse } from "@/@types/api";
 
 const fetcher = async (key: FetcherKey): Promise<SeriesListResponse> => {
   const res = await client.api.v4.series.$get(key);
-  return (await res.json()) as unknown as SeriesListResponse;
+  return res.json();
 };
 
 type Props = {

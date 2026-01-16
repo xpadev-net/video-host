@@ -1,9 +1,6 @@
-import type { InferResponseType } from "hono";
+import type { SeriesListResponse } from "@/@types/api";
 import { useStickySWR } from "@/hooks/useStickySWR";
 import { client } from "@/lib/client";
-
-type SeriesListApiType = typeof client.api.v4.series.$get;
-type SeriesListResponse = InferResponseType<SeriesListApiType>;
 
 const fetcher = async (key: string): Promise<SeriesListResponse> => {
   if (key.length < 2) {

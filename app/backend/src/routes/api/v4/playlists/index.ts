@@ -118,7 +118,7 @@ export const playlistsRoute = app
     let authorId = user.id;
     if (asUserId) {
       if (user.role !== "ADMIN") {
-        return unauthorized("Only admins can create playlists for other users");
+        unauthorized("Only admins can create playlists for other users");
       }
       const targetUser = await prisma.user.findUnique({
         where: { id: asUserId },
