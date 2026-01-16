@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AuthForm, AuthLayout, FormField } from "@/components/Auth";
@@ -10,7 +10,6 @@ import { postAuth } from "@/service/postAuth";
 
 const LoginPage = () => {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { loading, error, startAuth, handleAuthSuccess, handleAuthError } =
     useAuth();
 
@@ -26,13 +25,15 @@ const LoginPage = () => {
       // Check if already authenticated
       const token = localStorage.getItem("token");
       if (token && token !== "null" && token.trim() !== "") {
-        const callback = searchParams?.get("callback");
+        const callback = new URLSearchParams(window.location.search).get(
+          "callback",
+        );
         router.push(callback ? decodeURIComponent(callback) : "/");
         return;
       }
       setInitialLoading(false);
     })();
-  }, [router, searchParams]);
+  }, [router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
