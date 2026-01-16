@@ -4,6 +4,25 @@ import { useState } from "react";
 
 import { AuthTokenAtom } from "@/atoms/Auth";
 
+export const getSafeCallback = (callback: string | null) => {
+  if (!callback) {
+    return null;
+  }
+  try {
+    const decoded = decodeURIComponent(callback);
+    if (
+      decoded.startsWith("/") &&
+      !decoded.startsWith("//") &&
+      !decoded.includes("://")
+    ) {
+      return decoded;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
 export function useAuth() {
   const router = useRouter();
   const setAuthToken = useSetAtom(AuthTokenAtom);
@@ -12,10 +31,10 @@ export function useAuth() {
 
   const handleAuthSuccess = (token: string) => {
     setAuthToken(token);
-    const callback = new URLSearchParams(window.location.search).get(
-      "callback",
+    const callback = getSafeCallback(
+      new URLSearchParams(window.location.search).get("callback"),
     );
-    router.push(callback ? decodeURIComponent(callback) : "/");
+    router.push(callback ?? "/");
   };
 
   const handleAuthError = (message?: string) => {
