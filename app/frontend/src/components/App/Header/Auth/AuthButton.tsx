@@ -1,6 +1,6 @@
 import { useSetAtom } from "jotai";
 import { LogIn, LogOut } from "lucide-react";
-import { useRouter } from "next/router";
+import { usePathname, useRouter } from "next/navigation";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { Button } from "@/components/ui/button";
 import { useSelf } from "@/hooks/useUser";
@@ -9,6 +9,7 @@ import { deleteAuth } from "@/service/deleteAuth";
 const AuthButton = () => {
   const user = useSelf();
   const router = useRouter();
+  const pathname = usePathname();
   const setAuthToken = useSetAtom(AuthTokenAtom);
 
   // biome-ignore lint/suspicious/noExplicitAny: type inference
@@ -33,7 +34,8 @@ const AuthButton = () => {
     <Button
       variant={"ghost"}
       onClick={() => {
-        void router.push("/login");
+        const callback = encodeURIComponent(pathname);
+        void router.push(`/login?callback=${callback}`);
       }}
       size={"icon"}
       className="cursor-pointer"
