@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { AuthForm, AuthLayout, FormField } from "@/components/Auth";
 import { SiteName } from "@/contexts/env";
-import { useAuth } from "@/hooks/useAuth";
+import { getSafeCallback, useAuth } from "@/hooks/useAuth";
 import { postAuth } from "@/service/postAuth";
 
 const LoginPage = () => {
@@ -26,8 +26,8 @@ const LoginPage = () => {
       // Check if already authenticated
       const token = localStorage.getItem("token");
       if (token && token !== "null" && token.trim() !== "") {
-        const callback = searchParams?.get("callback");
-        router.push(callback ? decodeURIComponent(callback) : "/");
+        const callback = getSafeCallback(searchParams?.get("callback") ?? null);
+        router.push(callback ?? "/");
         return;
       }
       setInitialLoading(false);
