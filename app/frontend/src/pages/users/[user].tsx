@@ -7,51 +7,48 @@ import { type TabItem, TabSwitcher } from "@/components/TabSwitcher";
 import { User } from "@/components/User/User";
 import { SiteName } from "@/contexts/env";
 import { useUser } from "@/hooks/useUser";
+import { isOkUserResponse } from "@/utils/userResponse";
 
 const UserPage = () => {
   const router = useRouter();
   const query = router.query.user;
-  const { data: user, isLoading } = useUser(query as string);
+  const { data: response, isLoading } = useUser(query as string);
 
-  if (isLoading || !user) {
+  if (isLoading || !response) {
     return null;
   }
 
-  if (user.status !== "ok") {
+  if (!isOkUserResponse(response)) {
     return (
       <div className={"p-6 pt-3 max-w-[1070px] mx-auto"}>
         <h1>読み込みに失敗しました</h1>
         <div className="error">
-          {/* biome-ignore lint/suspicious/noExplicitAny: error message access */}
-          {user.code} - {(user as any).message}
+          {response.code} - {response.message}
         </div>
       </div>
     );
   }
 
+  const user = response.data;
   const tabs: TabItem[] = [
     {
       value: "series",
       label: "シリーズ",
-      // biome-ignore lint/suspicious/noExplicitAny: data access
-      content: <SeriesSearchList author={(user as any).data.id} />,
+      content: <SeriesSearchList author={user.id} />,
     },
     {
       value: "movies",
       label: "動画",
-      // biome-ignore lint/suspicious/noExplicitAny: data access
-      content: <MoviesSearchList author={(user as any).data.id} />,
+      content: <MoviesSearchList author={user.id} />,
     },
   ];
 
   return (
     <div className={"p-6 pt-3 max-w-[1070px] mx-auto"}>
       <Head>
-        {/* biome-ignore lint/suspicious/noExplicitAny: data access */}
-        <title>{`${(user as any).data.name} - ${SiteName}`}</title>
+        <title>{`${user.name} - ${SiteName}`}</title>
       </Head>
-      {/* biome-ignore lint/suspicious/noExplicitAny: data access */}
-      <User user={(user as any).data} size={"4"} />
+      <User user={user} size={"4"} />
       <TabSwitcher tabs={tabs} defaultValue="series" />
     </div>
   );

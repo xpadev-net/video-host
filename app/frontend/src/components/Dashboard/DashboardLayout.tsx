@@ -2,6 +2,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import type { FC, ReactNode } from "react";
 import { useSelf } from "@/hooks/useUser";
+import { getUserData } from "@/utils/userResponse";
 import { AccountSwitcher } from "./AccountSwitcher";
 
 interface DashboardLayoutProps {
@@ -26,10 +27,8 @@ const adminNavItems = [
 export const DashboardLayout: FC<DashboardLayoutProps> = ({ children }) => {
   const router = useRouter();
   const { data: response } = useSelf();
-  const user =
-    // biome-ignore lint/suspicious/noExplicitAny: complex type inference
-    response?.status === "ok" ? (response as any).data : null;
-  const isAdmin = user && "role" in user && user.role === "ADMIN";
+  const user = getUserData(response);
+  const isAdmin = user?.role === "ADMIN";
 
   return (
     <div className="dashboard-layout">

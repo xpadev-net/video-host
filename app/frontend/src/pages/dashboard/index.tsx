@@ -3,11 +3,11 @@ import Link from "next/link";
 import type { FC } from "react";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useSelf } from "@/hooks/useUser";
+import { getUserData } from "@/utils/userResponse";
 
 const DashboardPage: FC = () => {
   const { data: response, isLoading } = useSelf();
-  // biome-ignore lint/suspicious/noExplicitAny: complex type inference
-  const user = response?.status === "ok" ? (response as any).data : null;
+  const user = getUserData(response);
 
   if (isLoading) {
     return (

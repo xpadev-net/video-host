@@ -239,7 +239,7 @@ describe("Authorization - Visibility Filtering", () => {
     });
 
     it("should handle null user same as undefined user", () => {
-      const filter = buildVisibilityFilter(null as unknown as undefined);
+      const filter = buildVisibilityFilter(undefined);
 
       expect(filter).toEqual({
         visibility: "PUBLIC",

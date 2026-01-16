@@ -6,6 +6,7 @@ import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useSystemAccounts } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
+import { getUserData } from "@/utils/userResponse";
 
 interface SystemAccount {
   id: string;
@@ -17,8 +18,7 @@ interface SystemAccount {
 const SystemAccountsPage: FC = () => {
   const token = useAtomValue(AuthTokenAtom);
   const { data: response, isLoading: isUserLoading } = useSelf();
-  // biome-ignore lint/suspicious/noExplicitAny: complex type inference
-  const user = response?.status === "ok" ? (response as any).data : null;
+  const user = getUserData(response);
   const { data: accounts, mutate } = useSystemAccounts();
   const [username, setUsername] = useState("");
   const [name, setName] = useState("");

@@ -1,4 +1,5 @@
 import type { FormattedMovie } from "@video-host/backend";
+import type { InferResponseType } from "hono";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
@@ -14,6 +15,10 @@ interface EncodeProgress {
   currentTime?: number;
   duration?: number;
 }
+
+type MovieResponse = InferResponseType<
+  typeof client.api.v4.movies[":movie"].$get
+>;
 
 const EditVideoPage: FC = () => {
   const router = useRouter();
@@ -51,9 +56,11 @@ const EditVideoPage: FC = () => {
           throw new Error("Failed to fetch");
         }
 
-        const json = await res.json();
-        // biome-ignore lint/suspicious/noExplicitAny: loose typing
-        const movieData = json.data as any;
+        const json: MovieResponse = await res.json();
+        if (json.status !== "ok") {
+          throw new Error(json.message || "Failed to fetch");
+        }
+        const movieData = json.data;
         setMovie(movieData);
         setTitle(movieData.title);
         setDescription(movieData.description || "");
@@ -118,10 +125,11 @@ const EditVideoPage: FC = () => {
                 )
                 .then(async (res) => {
                   if (res.ok) {
-                    const json = await res.json();
-                    // biome-ignore lint/suspicious/noExplicitAny: loose typing
-                    setMovie(json.data as any);
-                    setEncodeProgress(null);
+                    const json: MovieResponse = await res.json();
+                    if (json.status === "ok") {
+                      setMovie(json.data);
+                      setEncodeProgress(null);
+                    }
                   }
                 });
             }

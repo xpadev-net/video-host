@@ -5,15 +5,16 @@ import { AuthTokenAtom } from "@/atoms/Auth";
 import { Button } from "@/components/ui/button";
 import { useSelf } from "@/hooks/useUser";
 import { deleteAuth } from "@/service/deleteAuth";
+import { getUserData } from "@/utils/userResponse";
 
 const AuthButton = () => {
-  const user = useSelf();
+  const { data: response } = useSelf();
   const router = useRouter();
   const pathname = usePathname();
   const setAuthToken = useSetAtom(AuthTokenAtom);
+  const user = getUserData(response);
 
-  // biome-ignore lint/suspicious/noExplicitAny: type inference
-  if (user.data?.status === "ok" && (user.data as any).data) {
+  if (user) {
     return (
       <Button
         size={"icon"}

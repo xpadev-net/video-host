@@ -3,6 +3,7 @@ import { type FC, useEffect } from "react";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { useSystemAccounts } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
+import { getUserData } from "@/utils/userResponse";
 
 interface SystemAccount {
   id: string;
@@ -12,9 +13,8 @@ interface SystemAccount {
 
 export const AccountSwitcher: FC = () => {
   const { data: response } = useSelf();
-  // biome-ignore lint/suspicious/noExplicitAny: complex type inference
-  const user = response?.status === "ok" ? (response as any).data : null;
-  const isAdmin = user && "role" in user && user.role === "ADMIN";
+  const user = getUserData(response);
+  const isAdmin = user?.role === "ADMIN";
   console.log(isAdmin);
 
   const { data: accounts } = useSystemAccounts();
