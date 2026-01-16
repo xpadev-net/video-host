@@ -34,7 +34,7 @@ const AuthButton = () => {
     <Button
       variant={"ghost"}
       onClick={() => {
-        const callback = encodeURIComponent(pathname);
+        const callback = encodeURIComponent(pathname || "/");
         void router.push(`/login?callback=${callback}`);
       }}
       size={"icon"}
