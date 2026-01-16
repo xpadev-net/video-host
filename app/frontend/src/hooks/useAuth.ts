@@ -1,19 +1,20 @@
 import { useSetAtom } from "jotai";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AuthTokenAtom } from "@/atoms/Auth";
 
 export function useAuth() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const setAuthToken = useSetAtom(AuthTokenAtom);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleAuthSuccess = (token: string) => {
     setAuthToken(token);
-    const callback = searchParams?.get("callback");
+    const callback = new URLSearchParams(window.location.search).get(
+      "callback",
+    );
     router.push(callback ? decodeURIComponent(callback) : "/");
   };
 
