@@ -17,7 +17,7 @@ interface EncodeProgress {
 }
 
 type MovieResponse = InferResponseType<
-  typeof client.api.v4.movies[":movie"].$get
+  (typeof client.api.v4.movies)[":movie"]["$get"]
 >;
 
 const EditVideoPage: FC = () => {
@@ -57,9 +57,6 @@ const EditVideoPage: FC = () => {
         }
 
         const json: MovieResponse = await res.json();
-        if (json.status !== "ok") {
-          throw new Error(json.message || "Failed to fetch");
-        }
         const movieData = json.data;
         setMovie(movieData);
         setTitle(movieData.title);

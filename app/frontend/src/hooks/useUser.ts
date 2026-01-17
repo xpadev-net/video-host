@@ -5,11 +5,20 @@ import { AuthTokenAtom } from "@/atoms/Auth";
 import { useStickySWR } from "@/hooks/useStickySWR";
 import { client } from "@/lib/client";
 
-type UserApiType = typeof client.api.v4.users[":user"].$get;
-export type UserResponse = InferResponseType<UserApiType>;
+type UserApiType = (typeof client.api.v4.users)[":user"]["$get"];
+type UserOkResponse = InferResponseType<UserApiType>;
 
 type MeApiType = typeof client.api.v4.users.me.$get;
-export type MeResponse = InferResponseType<MeApiType>;
+type MeOkResponse = InferResponseType<MeApiType>;
+
+export type ErrorResponse = {
+  status: "error";
+  code: number;
+  message: string;
+};
+
+export type UserResponse = UserOkResponse | ErrorResponse;
+export type MeResponse = MeOkResponse | ErrorResponse;
 
 const fetchUser = async (key?: string): Promise<UserResponse> => {
   if (!key) {
@@ -33,11 +42,11 @@ const fetchSelf = async (): Promise<MeResponse> => {
 };
 
 export const useUser = (query?: string) => {
-  return useStickySWR<UserResponse>(query, fetchUser, {});
+  return useStickySWR(query, fetchUser, {});
 };
 
 export const useSelf = () => {
-  const swr = useStickySWR<MeResponse>("me", fetchSelf, {});
+  const swr = useStickySWR("me", fetchSelf, {});
   const [token, setToken] = useAtom(AuthTokenAtom);
   useEffect(() => {
     void swr.mutate();
