@@ -106,10 +106,7 @@ const Video = ({ className, videoRef, movie }: props) => {
 
   const loadVideo = useCallback(
     (video: HTMLVideoElement, url: string) => {
-      if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = url;
-        video.crossOrigin = "use-credentials";
-      } else if (Hls.isSupported()) {
+      if (Hls.isSupported()) {
         const hls = new Hls({
           xhrSetup: (xhr, url) => {
             xhr.open("GET", url);
