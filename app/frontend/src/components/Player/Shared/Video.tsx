@@ -107,6 +107,10 @@ const Video = ({ className, videoRef, movie }: props) => {
   const loadVideo = useCallback(
     (video: HTMLVideoElement, url: string) => {
       if (Hls.isSupported()) {
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
         const hls = new Hls({
           xhrSetup: (xhr, url) => {
             xhr.open("GET", url);
