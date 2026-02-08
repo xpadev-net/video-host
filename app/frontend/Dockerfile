@@ -38,6 +38,7 @@ COPY --from=builder /app/app/frontend/.next/standalone ./
 COPY --from=builder /app/app/frontend/public ./app/frontend/public
 COPY --from=builder /app/app/frontend/.next/static ./app/frontend/.next/static
 COPY --from=builder /app/app/frontend/start.sh ./
+COPY app/frontend/next.config.js ./app/frontend/next.config.js
 
 COPY app/frontend/docker/.env.placeholder ./.env
 COPY app/frontend/docker/env-replacer.sh ./
