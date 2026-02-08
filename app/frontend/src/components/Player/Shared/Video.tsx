@@ -106,10 +106,11 @@ const Video = ({ className, videoRef, movie }: props) => {
 
   const loadVideo = useCallback(
     (video: HTMLVideoElement, url: string) => {
-      if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = url;
-        video.crossOrigin = "use-credentials";
-      } else if (Hls.isSupported()) {
+      if (Hls.isSupported()) {
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
         const hls = new Hls({
           xhrSetup: (xhr, url) => {
             xhr.open("GET", url);
@@ -124,6 +125,7 @@ const Video = ({ className, videoRef, movie }: props) => {
         hls.attachMedia(video);
         hlsRef.current = hls;
         video.crossOrigin = "anonymous";
+        video.disableRemotePlayback = true;
       } else {
         console.error(
           "This is an old browser that does not support MSE https://developer.mozilla.org/en-US/docs/Web/API/Media_Source_Extensions_API",
