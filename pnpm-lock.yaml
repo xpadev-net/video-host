@@ -28,10 +28,10 @@ importers:
         version: 3.952.0
       '@hono/node-server':
         specifier: ^1.19.7
-        version: 1.19.7(hono@4.11.7)
+        version: 1.19.7(hono@4.12.4)
       '@hono/zod-validator':
         specifier: ^0.7.5
-        version: 0.7.5(hono@4.11.7)(zod@4.2.1)
+        version: 0.7.5(hono@4.12.4)(zod@4.2.1)
       '@prisma/client':
         specifier: 6.19.0
         version: 6.19.0(prisma@6.19.1(typescript@5.9.3))(typescript@5.9.3)
@@ -45,11 +45,11 @@ importers:
         specifier: ^17.2.3
         version: 17.2.3
       hono:
-        specifier: ^4.11.7
-        version: 4.11.7
+        specifier: ^4.12.4
+        version: 4.12.4
       hono-rate-limiter:
         specifier: ^0.5.3
-        version: 0.5.3(hono@4.11.7)
+        version: 0.5.3(hono@4.12.4)
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3
@@ -91,8 +91,8 @@ importers:
         specifier: ^17.2.3
         version: 17.2.3
       hono:
-        specifier: ^4.11.7
-        version: 4.11.7
+        specifier: ^4.12.4
+        version: 4.12.4
       redis:
         specifier: ^5.10.0
         version: 5.10.0
@@ -140,8 +140,8 @@ importers:
         specifier: ^1.6.15
         version: 1.6.15
       hono:
-        specifier: ^4.11.7
-        version: 4.11.7
+        specifier: ^4.12.4
+        version: 4.12.4
       jotai:
         specifier: ^2.16.0
         version: 2.16.0(@types/react@19.2.7)(react@19.2.3)
@@ -2357,8 +2357,8 @@ packages:
       unstorage:
         optional: true
 
-  hono@4.11.7:
-    resolution: {integrity: sha512-l7qMiNee7t82bH3SeyUCt9UF15EVmaBvsppY2zQtrbIhl/yzBTny+YUxsVjSjQ6gaqaeVtZmGocom8TzBlA4Yw==}
+  hono@4.12.4:
+    resolution: {integrity: sha512-ooiZW1Xy8rQ4oELQ++otI2T9DsKpV0M6c6cO6JGx4RTfav9poFFLlet9UMXHZnoM1yG0HWGlQLswBGX3RZmHtg==}
     engines: {node: '>=16.9.0'}
 
   html-escaper@2.0.2:
@@ -3674,13 +3674,13 @@ snapshots:
 
   '@floating-ui/utils@0.2.10': {}
 
-  '@hono/node-server@1.19.7(hono@4.11.7)':
+  '@hono/node-server@1.19.7(hono@4.12.4)':
     dependencies:
-      hono: 4.11.7
+      hono: 4.12.4
 
-  '@hono/zod-validator@0.7.5(hono@4.11.7)(zod@4.2.1)':
+  '@hono/zod-validator@0.7.5(hono@4.12.4)(zod@4.2.1)':
     dependencies:
-      hono: 4.11.7
+      hono: 4.12.4
       zod: 4.2.1
 
   '@img/colour@1.0.0': {}
@@ -5466,11 +5466,11 @@ snapshots:
 
   hls.js@1.6.15: {}
 
-  hono-rate-limiter@0.5.3(hono@4.11.7):
+  hono-rate-limiter@0.5.3(hono@4.12.4):
     dependencies:
-      hono: 4.11.7
+      hono: 4.12.4
 
-  hono@4.11.7: {}
+  hono@4.12.4: {}
 
   html-escaper@2.0.2: {}
 
