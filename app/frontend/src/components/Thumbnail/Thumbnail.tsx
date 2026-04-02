@@ -39,4 +39,5 @@ const Thumbnail = ({ movie, hideMetadata }: ThumbnailProps) => {
     </div>
   );
 };
+
 export { Thumbnail };

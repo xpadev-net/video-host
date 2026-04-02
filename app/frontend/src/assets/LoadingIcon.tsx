@@ -42,4 +42,5 @@ const LoadingIcon = ({ className }: props) => (
     </g>
   </svg>
 );
+
 export { LoadingIcon };

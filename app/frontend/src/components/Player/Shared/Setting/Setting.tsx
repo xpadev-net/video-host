@@ -129,4 +129,5 @@ const Setting = ({ className }: Props) => {
     </div>
   );
 };
+
 export { Setting };

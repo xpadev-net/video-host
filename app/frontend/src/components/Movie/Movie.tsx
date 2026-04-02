@@ -188,4 +188,5 @@ const MovieCard_ = (
 };
 
 const MovieCard = forwardRef(MovieCard_);
+
 export { MovieCard };

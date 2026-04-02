@@ -146,7 +146,7 @@ const EnvSchema = z
   );
 
 // Export the schema for testing purposes
-export { EnvSchema, DEV_DEFAULTS };
+export { DEV_DEFAULTS, EnvSchema };
 
 /**
  * Parses and validates environment variables.

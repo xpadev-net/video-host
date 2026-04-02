@@ -52,7 +52,7 @@ export const authRoute = app
         },
       },
     });
-    if (!user || !user.password) {
+    if (!user?.password) {
       unauthorized("Invalid username or password");
     }
     if (!(await isPasswordValid(password, user.password))) {

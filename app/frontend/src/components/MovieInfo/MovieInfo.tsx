@@ -31,4 +31,5 @@ const MovieInfo = ({ data, className }: props) => {
     </div>
   );
 };
+
 export { MovieInfo };

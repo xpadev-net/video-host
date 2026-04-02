@@ -147,4 +147,4 @@ export const deleteProdFile = async (key: string): Promise<void> => {
   await deleteFromS3(S3_PROD_BUCKET, key);
 };
 
-export { S3_TMP_BUCKET, S3_PROD_BUCKET };
+export { S3_PROD_BUCKET, S3_TMP_BUCKET };

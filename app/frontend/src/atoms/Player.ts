@@ -60,16 +60,16 @@ const PlayerPlayPauseNotificationAtom = atom<{
 } | null>(null);
 
 export {
-  NiconicommentsConfigAtom,
-  DurablePlayerAtom,
   CurrentMovieAtom,
+  DurablePlayerAtom,
+  NiconicommentsConfigAtom,
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
   PlayerPlayPauseNotificationAtom,
-  PlayerVolumeAtom,
+  PlayerSeekNotificationAtom,
   PlayerSettingAtom,
   PlayerStateAtom,
-  PlayerSeekNotificationAtom,
+  PlayerVolumeAtom,
   VideoMetadataAtom,
   VideoRefAtom,
   WrapperRefAtom,
