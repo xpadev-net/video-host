@@ -28,7 +28,7 @@
     "jotai": "^2.16.0",
     "lucide-react": "^0.555.0",
     "next": "^16.2.6",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.10",
     "radix-ui": "^1.4.3",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
