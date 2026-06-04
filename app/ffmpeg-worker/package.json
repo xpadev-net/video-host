@@ -10,7 +10,7 @@
     "@aws-sdk/client-s3": "^3.952.0",
     "@video-host/backend": "workspace:*",
     "dotenv": "^17.2.3",
-    "hono": "^4.12.18",
+    "hono": "^4.12.21",
     "redis": "^5.10.0"
   },
   "devDependencies": {
