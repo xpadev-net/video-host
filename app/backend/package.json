@@ -19,7 +19,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.952.0",
     "@aws-sdk/s3-request-presigner": "^3.952.0",
-    "@hono/node-server": "^1.19.6",
+    "@hono/node-server": "^2.0.10",
     "@hono/zod-validator": "^0.7.5",
     "@prisma/client": "6.19.0",
     "@types/jsonwebtoken": "^9.0.10",
