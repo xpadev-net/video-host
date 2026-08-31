@@ -6,8 +6,8 @@ node_modules
 **/node_modules
 dist
 build
-.next
 out
+**/.output
 coverage
 *.log
 .DS_Store

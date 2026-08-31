@@ -1,6 +1,6 @@
 import { Avatar, Flex } from "@radix-ui/themes";
+import { Link } from "@tanstack/react-router";
 import type { FilteredUser } from "@video-host/backend";
-import Link from "next/link";
 import type { FC } from "react";
 
 type Props = {
@@ -11,7 +11,8 @@ type Props = {
 export const User: FC<Props> = ({ user, size }) => {
   return (
     <Link
-      href={`/users/${user.id}`}
+      to="/users/$user"
+      params={{ user: user.id }}
       className={"decoration-none hover:underline"}
     >
       <Flex direction={"row"} align={"center"} gap={"2"}>

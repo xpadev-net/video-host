@@ -1,11 +1,7 @@
 import type { AppRouter } from "@video-host/backend";
 import { hc } from "hono/client";
 import { AuthTokenLocalStorageKey } from "@/atoms/Auth";
-
-const apiEndpoint = process.env.NEXT_PUBLIC_API_ENDPOINT;
-if (!apiEndpoint) {
-  throw new Error("NEXT_PUBLIC_API_ENDPOINT is not defined");
-}
+import { ApiEndpoint } from "@/contexts/env";
 
 const customFetch = async (
   input: RequestInfo | URL,
@@ -29,4 +25,4 @@ const customFetch = async (
   return fetch(input, { ...requestInit, headers });
 };
 
-export const client = hc<AppRouter>(apiEndpoint, { fetch: customFetch });
+export const client = hc<AppRouter>(ApiEndpoint, { fetch: customFetch });

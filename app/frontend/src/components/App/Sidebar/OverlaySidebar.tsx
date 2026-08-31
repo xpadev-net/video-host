@@ -1,5 +1,5 @@
+import { Link } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import Link from "next/link";
 import { MdHistory, MdHomeFilled } from "react-icons/md";
 
 import { sidebarState } from "@/atoms/SidebarState";
@@ -28,14 +28,14 @@ const OverlaySidebar = () => {
         </div>
         <Link
           className="py-2 my-2 flex gap-2 items-center text-[var(--color-text)]"
-          href={"/"}
+          to={"/"}
         >
           <MdHomeFilled className="w-6 h-6" />
           <span className="leading-6 h-6">ホーム</span>
         </Link>
         <Link
           className="py-2 my-2 flex gap-2 items-center text-[var(--color-text)]"
-          href={"/history"}
+          to={"/history"}
         >
           <MdHistory className="w-6 h-6" />
           <span className="leading-6 h-6">履歴</span>

@@ -1,6 +1,6 @@
+import { useNavigate } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
-import { useRouter } from "next/router";
 import { type FC, useEffect, useMemo } from "react";
 import { VideoRefAtom } from "@/atoms/Player";
 import { findNext, findPrev } from "@/components/Player/utils/findPrevNext";
@@ -11,7 +11,7 @@ type Props = {
 
 const MediaSessionHandler: FC<Props> = ({ data }) => {
   const videoRef = useAtomValue(VideoRefAtom);
-  const router = useRouter();
+  const navigate = useNavigate();
 
   const next = useMemo(() => findNext(data), [data]);
   const prev = useMemo(() => findPrev(data), [data]);
@@ -41,17 +41,23 @@ const MediaSessionHandler: FC<Props> = ({ data }) => {
       nexttrack: next
         ? () => {
             if (!next) return;
-            void router.push(`/movies/${next.id}`);
+            void navigate({
+              to: "/movies/$movie",
+              params: { movie: next.id },
+            });
           }
         : null,
       previoustrack: prev
         ? () => {
             if (!prev) return;
-            void router.push(`/movies/${prev.id}`);
+            void navigate({
+              to: "/movies/$movie",
+              params: { movie: prev.id },
+            });
           }
         : null,
     }),
-    [videoRef, next, prev, router],
+    [videoRef, next, prev, navigate],
   );
 
   useEffect(() => {

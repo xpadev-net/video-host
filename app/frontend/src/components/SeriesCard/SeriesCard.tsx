@@ -1,5 +1,5 @@
+import { Link } from "@tanstack/react-router";
 import type { FormattedSeries } from "@video-host/backend";
-import Link from "next/link";
 import type { FC } from "react";
 import { Thumbnail } from "@/components/Thumbnail";
 import { User } from "@/components/User/User";
@@ -12,7 +12,8 @@ export const SeriesCard: FC<SeriesCardProps> = ({ series }) => {
   return (
     <Link
       className="flex flex-row p-2 rounded-xl hover:bg-[var(--color-hover)]"
-      href={`/series/${series.id}`}
+      to="/series/$series"
+      params={{ series: series.id }}
     >
       <div className="max-w-[40%] w-[357px]">
         <Thumbnail movie={series.movies?.[0]} hideMetadata={true} />

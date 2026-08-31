@@ -1,6 +1,5 @@
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue, useSetAtom } from "jotai";
-import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { LoadingIcon } from "@/assets/LoadingIcon";
 import {
@@ -9,6 +8,7 @@ import {
   VideoRefAtom,
   WrapperRefAtom,
 } from "@/atoms/Player";
+import { ImageWithFallback } from "@/components/ImageWithFallback";
 import { Controller } from "@/components/Player/MobilePlayer/Controller";
 import { CommentCanvas } from "@/components/Player/Shared/CommentCanvas";
 import { KeyboardHandler } from "@/components/Player/Shared/KeyboardHandler";
@@ -29,7 +29,7 @@ const MobilePlayer = ({ className, data, id, isPipMode = false }: props) => {
   const state = useAtomValue(PlayerStateAtom);
   const { isPipEnable, isNiconicommentsEnable } =
     useAtomValue(PlayerConfigAtom);
-  const wrapperRef = useRef<HTMLButtonElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const setVideoAtom = useSetAtom(VideoRefAtom);
@@ -70,74 +70,77 @@ const MobilePlayer = ({ className, data, id, isPipMode = false }: props) => {
   }, [setVideoAtom, setWrapperAtom]);
 
   return (
-    <button
+    <div
       className={cn(
         "relative h-auto w-full overflow-hidden bg-black",
         state.isFullscreen && "fixed left-0 top-0 w-screen h-dvh z-[20000]",
         isInactive && "cursor-none",
         className,
       )}
-      onClick={toggleAfk}
       ref={wrapperRef}
-      type="button"
-      tabIndex={0}
-      aria-label={state.paused ? "Play video" : "Pause video"}
       id={id}
     >
-      {state.isLoading && data && (
-        <>
-          <div className="absolute inset-0 w-full h-full bg-black/50 z-10">
-            <LoadingIcon className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
-          </div>
-          {data.thumbnailUrl && (
-            <Image
-              src={data.thumbnailUrl}
-              width={360}
-              height={240}
-              alt={""}
-              className="absolute inset-0 w-full h-full z-0"
-            />
-          )}
-        </>
-      )}
-      <div
-        className={cn(
-          "aspect-video h-full mx-auto relative max-h-[calc(100dvh-104px)]",
-          state.isFullscreen && "max-w-screen max-h-dvh",
-        )}
+      <button
+        className="relative block h-auto w-full overflow-hidden border-0 bg-black p-0"
+        onClick={toggleAfk}
+        type="button"
+        aria-label="Show or hide video controls"
       >
-        {isNiconicommentsEnable && EnableComments && !isPipMode && (
-          <CommentCanvas
-            key={data?.id}
-            url={data?.id}
-            className={cn(
-              "absolute inset-0 w-full h-full z-[2] pointer-events-none object-contain",
-              state.isFullscreen && "max-w-screen max-h-dvh",
+        {state.isLoading && data && (
+          <>
+            <div className="absolute inset-0 w-full h-full bg-black/50 z-10">
+              <LoadingIcon className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            {data.thumbnailUrl && (
+              <ImageWithFallback
+                src={data.thumbnailUrl}
+                width={360}
+                height={240}
+                alt={""}
+                className="absolute inset-0 w-full h-full z-0"
+              />
             )}
-            videoRef={videoRef.current}
-            pipVideoRef={pipVideoRef.current}
-          />
+          </>
         )}
-        <Video
+        <div
           className={cn(
-            "absolute inset-0 w-full h-full z-[1]",
+            "aspect-video h-full mx-auto relative max-h-[calc(100dvh-104px)]",
             state.isFullscreen && "max-w-screen max-h-dvh",
           )}
-          videoRef={videoRef}
-          movie={data}
-        />
-        <video
-          className={cn(
-            "absolute w-full h-full",
-            isPipEnable && EnableComments ? "z-3" : "-z-1",
+        >
+          {isNiconicommentsEnable && EnableComments && !isPipMode && (
+            <CommentCanvas
+              key={data?.id}
+              url={data?.id}
+              className={cn(
+                "absolute inset-0 w-full h-full z-[2] pointer-events-none object-contain",
+                state.isFullscreen && "max-w-screen max-h-dvh",
+              )}
+              videoRef={videoRef.current}
+              pipVideoRef={pipVideoRef.current}
+            />
           )}
-          ref={pipVideoRef}
-          autoPlay={true}
-          muted={true}
-          onPause={onPipPause}
-        />
-        <PlayerStatusDisplay />
-      </div>
+          <Video
+            className={cn(
+              "absolute inset-0 w-full h-full z-[1]",
+              state.isFullscreen && "max-w-screen max-h-dvh",
+            )}
+            videoRef={videoRef}
+            movie={data}
+          />
+          <video
+            className={cn(
+              "absolute w-full h-full",
+              isPipEnable && EnableComments ? "z-3" : "-z-1",
+            )}
+            ref={pipVideoRef}
+            autoPlay={true}
+            muted={true}
+            onPause={onPipPause}
+          />
+          <PlayerStatusDisplay />
+        </div>
+      </button>
       <Controller
         className={"z-10"}
         data={data}
@@ -146,7 +149,7 @@ const MobilePlayer = ({ className, data, id, isPipMode = false }: props) => {
       />
       {!isPipMode && <KeyboardHandler data={data} />}
       <MediaSessionHandler data={data} />
-    </button>
+    </div>
   );
 };
 

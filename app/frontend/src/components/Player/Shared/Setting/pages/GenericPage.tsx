@@ -106,6 +106,7 @@ const GenericPage: FC<GenericPageProps> = ({
               item.ariaLabel ||
               `${item.label}を${isChecked ? "無効" : "有効"}にする`
             }
+            aria-pressed={isChecked}
           >
             <div className="flex">
               {item.icon && (

@@ -59,13 +59,13 @@ export const useSettingDefinitions = (): Record<
   const setPlayerSetting = useSetAtom(PlayerSettingAtom);
   const [playbackRate, setPlaybackRate] = useAtom(PlayerPlaybackRateAtom);
 
-  const toggleWindowFullscreen = () => {
+  const toggleWindowFullscreen = (windowFullscreen: boolean) => {
     setPlayerConfig((pv) => ({
       ...pv,
-      windowFullscreen: !pv.windowFullscreen,
+      windowFullscreen,
     }));
     if (state.isFullscreen) {
-      if (playerConfig.windowFullscreen) {
+      if (!windowFullscreen) {
         wrapperRef
           ?.requestFullscreen()
           .catch(() => setState((pv) => ({ ...pv, isFullscreen: false })));
@@ -81,24 +81,24 @@ export const useSettingDefinitions = (): Record<
     setPlayerSetting((prev) => prev.filter((page) => page !== "playbackRate"));
   };
 
-  const toggleCommentActive = () => {
+  const toggleCommentActive = (isNiconicommentsEnable: boolean) => {
     setPlayerConfig((prev) => ({
       ...prev,
-      isNiconicommentsEnable: !prev.isNiconicommentsEnable,
+      isNiconicommentsEnable,
     }));
   };
 
-  const toggleNiconicommentsConfig = (key: keyof Options) => {
+  const updateNiconicommentsConfig = (key: keyof Options, enabled: boolean) => {
     setNiconicommentsConfig((prev) => ({
       ...prev,
-      [key]: !prev[key],
+      [key]: enabled,
     }));
   };
 
-  const togglePipEnable = () => {
+  const togglePipEnable = (isPipEnable: boolean) => {
     setPlayerConfig((prev) => ({
       ...prev,
-      isPipEnable: !prev.isPipEnable,
+      isPipEnable,
     }));
   };
 
@@ -169,7 +169,7 @@ export const useSettingDefinitions = (): Record<
       label: "FPS表示",
       icon: Activity,
       getValue: () => !!niconicommentsConfig.showFPS,
-      onChange: () => toggleNiconicommentsConfig("showFPS"),
+      onChange: (enabled) => updateNiconicommentsConfig("showFPS", enabled),
     },
     {
       type: "toggle",
@@ -177,7 +177,8 @@ export const useSettingDefinitions = (): Record<
       label: "当たり判定表示",
       icon: VectorSquare,
       getValue: () => !!niconicommentsConfig.showCollision,
-      onChange: () => toggleNiconicommentsConfig("showCollision"),
+      onChange: (enabled) =>
+        updateNiconicommentsConfig("showCollision", enabled),
     },
     {
       type: "toggle",
@@ -185,7 +186,8 @@ export const useSettingDefinitions = (): Record<
       label: "コメント数表示",
       icon: Sigma,
       getValue: () => !!niconicommentsConfig.showCommentCount,
-      onChange: () => toggleNiconicommentsConfig("showCommentCount"),
+      onChange: (enabled) =>
+        updateNiconicommentsConfig("showCommentCount", enabled),
     },
     {
       type: "toggle",

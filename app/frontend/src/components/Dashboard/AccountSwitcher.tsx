@@ -72,39 +72,6 @@ export const AccountSwitcher: FC = () => {
           @{selectedAccount.username} として表示中
         </div>
       )}
-      <style jsx>{`
-        .account-switcher {
-          padding: 1rem;
-          border-bottom: 1px solid var(--border-color, #333);
-        }
-        .account-switcher-label {
-          display: block;
-          font-size: 0.75rem;
-          color: var(--text-tertiary, #666);
-          margin-bottom: 0.5rem;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-        }
-        .account-switcher-select {
-          width: 100%;
-          padding: 0.5rem;
-          background: var(--background-primary, #0d0d0d);
-          border: 1px solid var(--border-color, #333);
-          border-radius: 6px;
-          color: var(--text-primary, #fff);
-          font-size: 0.875rem;
-          cursor: pointer;
-        }
-        .account-switcher-select:focus {
-          outline: none;
-          border-color: var(--primary-color, #3b82f6);
-        }
-        .account-switcher-note {
-          margin-top: 0.5rem;
-          font-size: 0.75rem;
-          color: var(--text-secondary, #999);
-        }
-      `}</style>
     </div>
   );
 };

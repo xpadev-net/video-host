@@ -1,7 +1,7 @@
+import { useNavigate } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
 import Hls from "hls.js";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useRouter } from "next/router";
 import {
   type RefObject,
   useCallback,
@@ -38,7 +38,7 @@ const Video = ({ className, videoRef, movie }: props) => {
 
   const hlsRef = useRef<Hls | null>(null);
 
-  const router = useRouter();
+  const navigate = useNavigate();
 
   const onVideoPlay = () => {
     setState((pv) => ({ ...pv, paused: false }));
@@ -91,7 +91,7 @@ const Video = ({ className, videoRef, movie }: props) => {
     if (!playerConfig.autoPlay || !movie) return;
     const next = findNext(movie);
     if (!next) return;
-    void router.push(`/movies/${next.id}`);
+    void navigate({ to: "/movies/$movie", params: { movie: next.id } });
   };
 
   const onVideoCanPlay = () => {

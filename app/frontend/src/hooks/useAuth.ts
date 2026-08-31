@@ -1,5 +1,5 @@
+import { useRouter } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AuthTokenAtom } from "@/atoms/Auth";
@@ -34,7 +34,7 @@ export function useAuth() {
     const callback = getSafeCallback(
       new URLSearchParams(window.location.search).get("callback"),
     );
-    router.push(callback ?? "/");
+    router.history.push(callback ?? "/");
   };
 
   const handleAuthError = (message?: string) => {

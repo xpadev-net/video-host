@@ -2,15 +2,18 @@
 
 set -e
 
-# Get environment variables and filter NEXT_PUBLIC_ ones.
-printenv | grep NEXT_PUBLIC_ | while read -r ENV_LINE ; do
+# Replace placeholder values embedded by Vite in public assets and Nitro's
+# server bundle so runtime-rendered HTML uses the same public configuration.
+printenv | grep '^VITE_' | while IFS= read -r ENV_LINE ; do
   # Separate the key and value parts from the found lines.
-  ENV_KEY=$(echo $ENV_LINE | cut -d "=" -f1)
-  ENV_VALUE=$(echo $ENV_LINE | cut -d "=" -f2)
+  ENV_KEY=${ENV_LINE%%=*}
+  ENV_VALUE=${ENV_LINE#*=}
+  ESCAPED_ENV_VALUE=$(printf '%s' "$ENV_VALUE" | sed 's/[&|\\]/\\&/g')
 
-  # Find all the places where our intermediate values are set and replace them using actual values.
-  # find .next -type f -exec sed -i "s|_${ENV_KEY}_|${ENV_VALUE}|g" {} \;
-  find app/frontend/.next -type f -exec sed -i "s|_${ENV_KEY}_|${ENV_VALUE}|g" {} \;
+  find app/frontend/.output/public app/frontend/.output/server -type f \
+    \( -name '*.js' -o -name '*.mjs' -o -name '*.css' -o -name '*.html' -o -name '*.json' \) \
+    -exec sed -i.bak "s|_${ENV_KEY}_|${ESCAPED_ENV_VALUE}|g" {} \;
+  find app/frontend/.output/public app/frontend/.output/server -type f -name '*.bak' -delete
 done
 
 # Execute the application main command.

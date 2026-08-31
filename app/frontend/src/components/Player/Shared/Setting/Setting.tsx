@@ -1,5 +1,12 @@
 import { useAtom, useAtomValue } from "jotai";
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type MouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   PlayerSettingAtom,
@@ -79,7 +86,11 @@ const Setting = ({ className }: Props) => {
     };
   }, [wrapperRef]);
 
-  const onClick = (e: MouseEvent<HTMLButtonElement>) => {
+  const onClick = (e: MouseEvent<HTMLFieldSetElement>) => {
+    e.stopPropagation();
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLFieldSetElement>) => {
     e.stopPropagation();
   };
 
@@ -95,14 +106,14 @@ const Setting = ({ className }: Props) => {
         maxHeight: isMobile ? "unset" : `${size.maxHeight}px`,
       }}
     >
-      <button
+      <fieldset
         onClick={onClick}
-        className="overflow-hidden transition-[width,height] duration-200 ease-in-out relative block"
+        onKeyDown={onKeyDown}
+        className="overflow-hidden transition-[width,height] duration-200 ease-in-out relative block min-w-0 border-0 p-0"
         style={{
           width: `${size.width}px`,
           height: `${size.height}px`,
         }}
-        type="button"
       >
         <div
           className="w-[1920px] h-[1080px] flex items-start absolute top-0 transition-[left] duration-200"
@@ -125,7 +136,7 @@ const Setting = ({ className }: Props) => {
             return <GenericPage key={key} config={config} />;
           })}
         </div>
-      </button>
+      </fieldset>
     </div>
   );
 };

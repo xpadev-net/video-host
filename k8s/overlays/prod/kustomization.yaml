@@ -56,8 +56,8 @@ configMapGenerator:
   - name: frontend-config
     literals:
       - api-endpoint=https://api.your-domain.com
-      - allowed-image-hostname=your-s3-domain.com
       - enable-comments=true
+      - require-signup-code=false
       - site-name=Video Host
 
   # FFmpeg Worker

@@ -1,4 +1,4 @@
-import { usePathname } from "next/navigation";
+import { useRouterState } from "@tanstack/react-router";
 import type { ReactElement } from "react";
 
 import { Header } from "@/components/App/Header";
@@ -10,7 +10,9 @@ type props = {
 };
 
 const App = ({ children }: props) => {
-  const pathname = usePathname();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   const isMobile = useIsMobile();
 
   if (pathname === "/login" || pathname === "/register") {
