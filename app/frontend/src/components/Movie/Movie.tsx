@@ -1,5 +1,5 @@
+import { Link } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
-import Link from "next/link";
 import { type ForwardedRef, forwardRef } from "react";
 import { Thumbnail } from "@/components/Thumbnail";
 import { User } from "@/components/User/User";
@@ -29,11 +29,15 @@ const MovieCard_ = (
   if (type === "column") {
     return (
       <div className={getWrapperClasses()}>
-        <Link className="max-w-[40%] w-[357px]" href={`/movies/${movie.id}`}>
+        <Link
+          className="max-w-[40%] w-[357px]"
+          to="/movies/$movie"
+          params={{ movie: movie.id }}
+        >
           <Thumbnail movie={movie} />
         </Link>
         <div className="flex-1 pl-2.5 flex flex-col gap-2">
-          <Link href={`/movies/${movie.id}`}>
+          <Link to="/movies/$movie" params={{ movie: movie.id }}>
             <span
               className="text-xl overflow-hidden text-ellipsis block text-[var(--color-text)] max-h-[60px] leading-normal"
               style={{
@@ -50,7 +54,8 @@ const MovieCard_ = (
               <User user={movie.author} size={"2"} />・
               <span className="overflow-hidden text-ellipsis text-sub-text flex flex-row">
                 <Link
-                  href={`/series/${movie.series.id}`}
+                  to="/series/$series"
+                  params={{ series: movie.series.id }}
                   className="text-text no-underline hover:underline overflow-hidden text-ellipsis block"
                   style={{
                     display: "-webkit-box",
@@ -122,20 +127,27 @@ const MovieCard_ = (
   };
 
   return (
-    <Link
-      href={`/movies/${movie.id}`}
-      className={getWrapperClasses()}
-      ref={ref}
-    >
+    <div className={`${getWrapperClasses()} relative`}>
+      <Link
+        to="/movies/$movie"
+        params={{ movie: movie.id }}
+        className="absolute inset-0 z-0 rounded-[inherit]"
+        aria-label={movie.title}
+        ref={ref}
+      />
       {index !== undefined && (
-        <span className="w-6 leading-[56px] text-xs text-center">
+        <span className="pointer-events-none relative z-10 w-6 leading-[56px] text-xs text-center">
           {index === "active" ? "▶" : index}
         </span>
       )}
-      <div className={getThumbnailClasses()}>
+      <div
+        className={`${getThumbnailClasses()} pointer-events-none relative z-10`}
+      >
         <Thumbnail movie={movie} />
       </div>
-      <div className={getTitlesClasses()}>
+      <div
+        className={`${getTitlesClasses()} pointer-events-none relative z-10`}
+      >
         <span
           className={getTitleClasses()}
           style={
@@ -156,23 +168,26 @@ const MovieCard_ = (
             style={getSeriesTitleStyle()}
           >
             <Link
-              href={`/series/${movie.series.id}`}
-              className="text-sub-text no-underline decoration-current hover:underline"
+              to="/series/$series"
+              params={{ series: movie.series.id }}
+              className="pointer-events-auto text-sub-text no-underline decoration-current hover:underline"
             >
               <span>{movie.series.title}</span>
             </Link>
             ・
             <Link
-              href={`/users/${movie.author.id}`}
-              className="text-sub-text no-underline decoration-current hover:underline"
+              to="/users/$user"
+              params={{ user: movie.author.id }}
+              className="pointer-events-auto text-sub-text no-underline decoration-current hover:underline"
             >
               <span>{movie.author.name}</span>
             </Link>
           </span>
         ) : (
           <Link
-            href={`/users/${movie.author.id}`}
-            className="text-sub-text no-underline decoration-current hover:underline"
+            to="/users/$user"
+            params={{ user: movie.author.id }}
+            className="pointer-events-auto text-sub-text no-underline decoration-current hover:underline"
           >
             <span
               className={getSeriesTitleClasses()}
@@ -183,7 +198,7 @@ const MovieCard_ = (
           </Link>
         )}
       </div>
-    </Link>
+    </div>
   );
 };
 

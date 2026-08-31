@@ -17,10 +17,13 @@ const Player = ({ data, className }: props) => {
   }, [data, setCurrentMovie]);
 
   useEffect(() => {
-    if (!playerPortalTargetRef.current) return;
-    setPlayerPortalTarget({ target: playerPortalTargetRef.current, className });
+    const target = playerPortalTargetRef.current;
+    if (!target) return;
+    setPlayerPortalTarget({ target, className });
     return () => {
-      setPlayerPortalTarget(null);
+      setPlayerPortalTarget((current) =>
+        current?.target === target ? null : current,
+      );
     };
   }, [setPlayerPortalTarget, className]);
 

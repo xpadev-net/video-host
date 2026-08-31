@@ -1,7 +1,7 @@
+import { useNavigate } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
 import { useSetAtom } from "jotai";
 import { Maximize2, X } from "lucide-react";
-import { useRouter } from "next/router";
 import { CurrentMovieAtom, VideoMetadataAtom } from "@/atoms/Player";
 import { cn } from "@/lib/utils";
 import { Slider } from "./Slider";
@@ -14,7 +14,7 @@ type props = {
 const PiPController = ({ data, isHovering }: props) => {
   const _setMetadata = useSetAtom(VideoMetadataAtom);
   const setCurrentMovie = useSetAtom(CurrentMovieAtom);
-  const router = useRouter();
+  const navigate = useNavigate();
   if (!data) return null;
 
   const handleClosePip = () => {
@@ -22,14 +22,13 @@ const PiPController = ({ data, isHovering }: props) => {
   };
 
   const handleBackToMovie = () => {
-    void router.push(`/movies/${data.id}`);
+    void navigate({ to: "/movies/$movie", params: { movie: data.id } });
   };
 
   return (
-    <button
-      className={`absolute top-0 left-0 w-full h-full text-white z-10`}
+    <fieldset
+      className="absolute top-0 left-0 w-full h-full min-w-0 border-0 p-0 text-white z-10"
       aria-label="Video player controls"
-      type="button"
     >
       <div
         className={cn(
@@ -63,7 +62,7 @@ const PiPController = ({ data, isHovering }: props) => {
         </button>
       </div>
       <Slider className="absolute bottom-0 left-0 w-full h-4 z-10" />
-    </button>
+    </fieldset>
   );
 };
 

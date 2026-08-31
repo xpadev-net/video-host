@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,10 @@ export function AuthForm({
       </form>
       <div className="text-center text-sm">
         <span className="text-muted-foreground">{linkText} </span>
-        <Link href={linkHref} className="text-primary hover:underline">
+        <Link
+          to={linkHref as "/login" | "/register"}
+          className="text-primary hover:underline"
+        >
           {linkLabel}
         </Link>
       </div>

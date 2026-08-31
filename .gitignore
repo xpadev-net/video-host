@@ -9,9 +9,9 @@ node_modules/
 .env.production
 .dev.vars
 
-# next.js
-.next/
+# build output
 out/
+**/.output/
 
 # build
 build/
@@ -19,6 +19,7 @@ dist/
 
 # testing
 coverage/
+.playwright-cli/
 
 # logs
 logs/

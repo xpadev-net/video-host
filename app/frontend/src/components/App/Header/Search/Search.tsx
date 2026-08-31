@@ -1,6 +1,5 @@
+import { Link, useNavigate } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/router";
 import {
   type ForwardedRef,
   forwardRef,
@@ -22,18 +21,18 @@ const Search_ = ({ className }: props, ref: ForwardedRef<HTMLInputElement>) => {
   const inputRef = useForwardRef<HTMLInputElement>(ref);
   const isMobile = useIsMobile();
 
-  const router = useRouter();
+  const navigate = useNavigate();
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     e.stopPropagation();
     if (!e.nativeEvent.isComposing && e.key === "Enter") {
-      void router.push(`/search/${encodeURIComponent(input)}`);
+      void navigate({ to: "/search/$query", params: { query: input } });
       inputRef.current?.blur();
       setShowSuggest(false);
     }
   };
   const onSearchClick = () => {
     if (input && input.length > 1) {
-      void router.push(`/search/${encodeURIComponent(input)}`);
+      void navigate({ to: "/search/$query", params: { query: input } });
       setShowSuggest(false);
     }
   };
@@ -70,7 +69,8 @@ const Search_ = ({ className }: props, ref: ForwardedRef<HTMLInputElement>) => {
                 {suggest.data.data.items.map((item) => {
                   return (
                     <Link
-                      href={`/search/${encodeURIComponent(item.title)}`}
+                      to="/search/$query"
+                      params={{ query: item.title }}
                       key={item.id}
                       className="text-text px-2.5 py-1.5 block hover:bg-hover"
                       onClick={onSuggestItemClick}

@@ -1,5 +1,5 @@
+import { Link } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
-import Link from "next/link";
 import { useState } from "react";
 import { MdKeyboardArrowDown, MdKeyboardArrowUp } from "react-icons/md";
 import { SeriesList } from "@/components/MovieList/SeriesList";
@@ -74,7 +74,8 @@ const PlayList = ({ data, className, maxHeight }: props) => {
                 </>
               )}
               <Link
-                href={`/users/${data.series.author.id}`}
+                to="/users/$user"
+                params={{ user: data.series.author.id }}
                 onClick={(e) => e.stopPropagation()}
               >
                 <span className="text-xs text-[var(--color-sub-text)] leading-6 truncate hover:underline">
