@@ -316,7 +316,16 @@ const pollForJobs = async (): Promise<void> => {
       const job = await getEncodeJobBlocking(5);
       if (job) {
         const jobStartedAt = performance.now();
-        const result = await processJob(job);
+        let result: JobResult;
+        try {
+          result = await processJob(job);
+        } catch (error) {
+          console.error(
+            `Job processing threw unexpectedly: movieId=${job.movieId}`,
+            error,
+          );
+          result = "failed";
+        }
         encodeJobs.add(1, { result });
         encodeJobDuration.record(
           (performance.now() - jobStartedAt) / 1000,
@@ -335,8 +344,14 @@ const pollForJobs = async (): Promise<void> => {
 };
 
 const shutdown = async (): Promise<void> => {
+  if (isShuttingDown) {
+    return;
+  }
   console.log("Shutting down...");
   isShuttingDown = true;
+  // Wait for the in-flight job (if any) so its result metrics, progress
+  // updates and callbacks are sent before the provider is shut down.
+  await pollPromise;
   await metricProvider
     ?.shutdown()
     .catch((err) => console.error("OTel metrics shutdown failed:", err));
@@ -348,7 +363,7 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 // Start polling
-pollForJobs().catch((error) => {
+const pollPromise = pollForJobs().catch((error) => {
   console.error("Fatal error:", error);
   process.exit(1);
 });
