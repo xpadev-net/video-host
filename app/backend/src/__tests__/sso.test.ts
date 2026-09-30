@@ -51,12 +51,21 @@ class MockOidcLinkConflictError extends Error {
   }
 }
 
-class MockOidcLinkBrowserMismatchError extends Error {
+class MockOidcLinkExpiredError extends Error {
   constructor() {
-    super("SSO link browser mismatch");
-    this.name = "OidcLinkBrowserMismatchError";
+    super("SSO link expired");
+    this.name = "OidcLinkExpiredError";
   }
 }
+
+class MockOidcLinkUserMismatchError extends Error {
+  constructor() {
+    super("SSO link user mismatch");
+    this.name = "OidcLinkUserMismatchError";
+  }
+}
+
+const mockConfirmOidcLink = vi.fn();
 
 vi.mock("@/lib/oidc", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/oidc")>();
@@ -65,9 +74,11 @@ vi.mock("@/lib/oidc", async (importOriginal) => {
     buildSsoAuthorizationUrl: (...args: unknown[]) =>
       mockBuildSsoAuthorizationUrl(...args),
     handleSsoCallback: (...args: unknown[]) => mockHandleSsoCallback(...args),
+    confirmOidcLink: (...args: unknown[]) => mockConfirmOidcLink(...args),
     OidcUserNotProvisionedError: MockOidcUserNotProvisionedError,
     OidcLinkConflictError: MockOidcLinkConflictError,
-    OidcLinkBrowserMismatchError: MockOidcLinkBrowserMismatchError,
+    OidcLinkExpiredError: MockOidcLinkExpiredError,
+    OidcLinkUserMismatchError: MockOidcLinkUserMismatchError,
   };
 });
 
@@ -221,9 +232,6 @@ describe("POST /auth/sso/link", () => {
       "/dashboard",
       "user-1",
     );
-    // The state cookie binds the flow to this browser so a shared
-    // authorization URL cannot attach another user's identity.
-    expect(res.headers.get("set-cookie")).toContain("oidc_link_state=link");
     clearOidcEnv();
   });
 
@@ -284,31 +292,13 @@ describe("GET /auth/sso/callback", () => {
     clearOidcEnv();
   });
 
-  it("should redirect to the callback path on successful account link", async () => {
+  it("should redirect to the frontend link page on account-link flows", async () => {
     enableOidcEnv();
     mockHandleSsoCallback.mockResolvedValue({
       kind: "link",
+      linkToken: "link-token-abc",
       callback: "/dashboard",
     });
-    const app = await buildApp();
-
-    const res = await app.request(
-      "/auth/sso/callback?code=auth-code&state=abc",
-      { headers: { cookie: "oidc_link_state=abc" } },
-    );
-
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("http://localhost:3000/dashboard");
-    // The browser-binding cookie is consumed with the flow
-    expect(res.headers.get("set-cookie")).toContain("oidc_link_state=");
-    clearOidcEnv();
-  });
-
-  it("should redirect to frontend login error when the link cookie mismatches", async () => {
-    enableOidcEnv();
-    mockHandleSsoCallback.mockRejectedValue(
-      new MockOidcLinkBrowserMismatchError(),
-    );
     const app = await buildApp();
 
     const res = await app.request(
@@ -317,7 +307,7 @@ describe("GET /auth/sso/callback", () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe(
-      "http://localhost:3000/login?error=sso_link_expired",
+      "http://localhost:3000/auth/link#token=link-token-abc&callback=%2Fdashboard",
     );
     clearOidcEnv();
   });
@@ -351,6 +341,104 @@ describe("GET /auth/sso/callback", () => {
     expect(res.headers.get("location")).toBe(
       "http://localhost:3000/login?error=sso_failed",
     );
+    clearOidcEnv();
+  });
+});
+
+describe("POST /auth/sso/link/confirm", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it("should return 401 without a session token", async () => {
+    enableOidcEnv();
+    const app = await buildApp();
+
+    const res = await app.request("/auth/sso/link/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: "link-token-abc" }),
+    });
+
+    expect(res.status).toBe(401);
+    expect(mockConfirmOidcLink).not.toHaveBeenCalled();
+    clearOidcEnv();
+  });
+
+  it("should confirm the pending link for the session user", async () => {
+    enableOidcEnv();
+    mockConfirmOidcLink.mockResolvedValue({ id: "user-1" });
+    const app = await buildApp();
+
+    const res = await app.request("/auth/sso/link/confirm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        authorization: "Bearer test-session",
+      },
+      body: JSON.stringify({ token: "link-token-abc" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockConfirmOidcLink).toHaveBeenCalledWith(
+      "link-token-abc",
+      "user-1",
+    );
+    clearOidcEnv();
+  });
+
+  it("should return 403 when the link was started by another account", async () => {
+    enableOidcEnv();
+    mockConfirmOidcLink.mockRejectedValue(new MockOidcLinkUserMismatchError());
+    const app = await buildApp();
+
+    const res = await app.request("/auth/sso/link/confirm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        authorization: "Bearer test-session",
+      },
+      body: JSON.stringify({ token: "link-token-abc" }),
+    });
+
+    expect(res.status).toBe(403);
+    clearOidcEnv();
+  });
+
+  it("should return 400 when the link token is expired or unknown", async () => {
+    enableOidcEnv();
+    mockConfirmOidcLink.mockRejectedValue(new MockOidcLinkExpiredError());
+    const app = await buildApp();
+
+    const res = await app.request("/auth/sso/link/confirm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        authorization: "Bearer test-session",
+      },
+      body: JSON.stringify({ token: "link-token-abc" }),
+    });
+
+    expect(res.status).toBe(400);
+    clearOidcEnv();
+  });
+
+  it("should return 400 when the identity is already linked elsewhere", async () => {
+    enableOidcEnv();
+    mockConfirmOidcLink.mockRejectedValue(new MockOidcLinkConflictError());
+    const app = await buildApp();
+
+    const res = await app.request("/auth/sso/link/confirm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        authorization: "Bearer test-session",
+      },
+      body: JSON.stringify({ token: "link-token-abc" }),
+    });
+
+    expect(res.status).toBe(400);
     clearOidcEnv();
   });
 });

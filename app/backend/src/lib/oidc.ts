@@ -60,6 +60,12 @@ const getOidcConfig = (): Promise<client.Configuration> => {
 };
 
 const stateKey = (state: string): string => `oidc:state:${state}`;
+const linkKey = (token: string): string => `oidc:link:${token}`;
+
+interface PendingOidcLink {
+  externalId: string;
+  linkUserId: string;
+}
 
 /**
  * Only same-origin absolute paths are safe to redirect to after login.
@@ -81,8 +87,7 @@ export const sanitizeCallback = (callback: string | null): string | null => {
 /**
  * Stores OIDC state/nonce/PKCE verifier in Redis and returns the provider
  * authorization URL the browser should be redirected to. The generated
- * `state` is returned alongside so callers can bind the flow to the
- * initiating browser (e.g. via an HttpOnly cookie for the link flow).
+ * `state` is returned alongside for callers that need it.
  */
 export const buildSsoAuthorizationUrl = async (
   callback: string | null,
@@ -127,22 +132,24 @@ const consumeState = async (state: string): Promise<OidcStateData | null> => {
 
 export type SsoCallbackResult =
   | { kind: "session"; token: string; callback: string | null }
-  | { kind: "link"; callback: string | null };
+  | { kind: "link"; linkToken: string; callback: string | null };
 
 /**
  * Exchanges the authorization code carried by `requestUrl` (the incoming
  * callback request) for tokens, validates them, and resolves the local user.
  * Returns the app session token to hand to the frontend.
  *
- * For the account-link flow (`linkUserId` in state), `linkStateCookie` must
- * equal the `state` parameter — the POST /sso/link endpoint sets it as an
- * HttpOnly cookie on the initiating browser. Without this check an attacker
- * could hand a victim an authorization URL bound to the attacker's account,
- * let the victim authenticate at the IdP, and absorb the victim's identity.
+ * Account-link flows (`linkUserId` in state) do NOT link here: the SSO
+ * identity is parked as a pending link under a fresh random `linkToken`,
+ * and the actual binding happens in POST /sso/link/confirm, which requires
+ * the initiator's session (pending.linkUserId === session user). The
+ * linkToken is minted here — never derived from `state` — so the initiator
+ * of a shared authorization URL can never complete it: an attacker who
+ * hands a victim his link URL only creates a pending that neither the
+ * victim (wrong account) nor the attacker (no token) can confirm.
  */
 export const handleSsoCallback = async (
   requestUrl: string,
-  linkStateCookie?: string,
 ): Promise<SsoCallbackResult> => {
   const config = await getOidcConfig();
 
@@ -176,11 +183,18 @@ export const handleSsoCallback = async (
   const externalId = `${claims.iss}#${claims.sub}`;
 
   if (stored.linkUserId) {
-    if (linkStateCookie !== state) {
-      throw new OidcLinkBrowserMismatchError();
-    }
-    await linkOidcUser(stored.linkUserId, externalId);
-    return { kind: "link", callback: stored.callback };
+    const linkToken = client.randomState();
+    const pending: PendingOidcLink = {
+      externalId,
+      linkUserId: stored.linkUserId,
+    };
+    const redis = await getRedisClient();
+    await redis.setEx(
+      linkKey(linkToken),
+      STATE_TTL_SECONDS,
+      JSON.stringify(pending),
+    );
+    return { kind: "link", linkToken, callback: stored.callback };
   }
 
   const user = await findOrProvisionOidcUser(externalId, claims);
@@ -190,6 +204,37 @@ export const handleSsoCallback = async (
 
   const token = await createSession(user.id);
   return { kind: "session", token, callback: stored.callback };
+};
+
+const consumePendingLink = async (
+  token: string,
+): Promise<PendingOidcLink | null> => {
+  const redis = await getRedisClient();
+  const raw = await redis.getDel(linkKey(token));
+  if (!raw) {
+    return null;
+  }
+  return JSON.parse(raw) as PendingOidcLink;
+};
+
+/**
+ * Completes the account-link flow: consumes the one-time link token handed
+ * to the frontend after the IdP round-trip and attaches the parked SSO
+ * identity to the initiator's account. Only the account that started the
+ * link (state.linkUserId) may confirm it.
+ */
+export const confirmOidcLink = async (
+  linkToken: string,
+  userId: string,
+): Promise<User> => {
+  const pending = await consumePendingLink(linkToken);
+  if (!pending) {
+    throw new OidcLinkExpiredError();
+  }
+  if (pending.linkUserId !== userId) {
+    throw new OidcLinkUserMismatchError();
+  }
+  return linkOidcUser(userId, pending.externalId);
 };
 
 /**
@@ -239,10 +284,17 @@ const linkOidcUser = async (
   throw new OidcLinkConflictError();
 };
 
-export class OidcLinkBrowserMismatchError extends Error {
+export class OidcLinkExpiredError extends Error {
   constructor() {
-    super("The SSO link flow must be completed in the browser that started it");
-    this.name = "OidcLinkBrowserMismatchError";
+    super("The SSO link is invalid or has expired");
+    this.name = "OidcLinkExpiredError";
+  }
+}
+
+export class OidcLinkUserMismatchError extends Error {
+  constructor() {
+    super("This SSO link was started by a different account");
+    this.name = "OidcLinkUserMismatchError";
   }
 }
 
