@@ -7,6 +7,7 @@ import {
   addJobToRetryQueue,
   processRetryQueue,
   getQueueDepths,
+  requeueJob,
 } from "./queue";
 import { downloadFromTmp, uploadToProd, deleteFromTmp } from "./s3";
 import { encodeVideo, getLocalPath, cleanup } from "./encoder";
@@ -54,6 +55,10 @@ meter
   });
 
 let isShuttingDown = false;
+
+// The job currently being processed (if any) so shutdown can hand it back
+// to the queue instead of losing it.
+let activeJob: EncodeJob | null = null;
 
 // Bound the graceful drain so a stalled job/callback cannot hang SIGTERM.
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 30_000;
@@ -103,7 +108,9 @@ const checkDiskSpace = async (): Promise<boolean> => {
   }
 };
 
-type JobResult = "completed" | "failed" | "retrying";
+// "error" marks unexpected processJob rejections (no confirmed terminal
+// outcome), distinct from handled "failed" paths.
+type JobResult = "completed" | "failed" | "retrying" | "error";
 
 const processJob = async (job: EncodeJob): Promise<JobResult> => {
   console.log(`Processing job: movieId=${job.movieId}, s3Key=${job.s3Key}`);
@@ -319,6 +326,7 @@ const pollForJobs = async (): Promise<void> => {
       const job = await getEncodeJobBlocking(5);
       if (job) {
         const jobStartedAt = performance.now();
+        activeJob = job;
         let result: JobResult;
         try {
           result = await processJob(job);
@@ -327,7 +335,24 @@ const pollForJobs = async (): Promise<void> => {
             `Job processing threw unexpectedly: movieId=${job.movieId}`,
             error,
           );
-          result = "failed";
+          // Best-effort terminal notification so the backend does not wait
+          // on "processing" forever; the job is already out of the queue.
+          try {
+            await setEncodeProgress(job.movieId, { status: "failed" });
+            await sendCallback({
+              movieId: job.movieId,
+              variantId: "original",
+              status: "failed",
+            });
+          } catch (notifyError) {
+            console.error(
+              `Failed to report job failure: movieId=${job.movieId}`,
+              notifyError,
+            );
+          }
+          result = "error";
+        } finally {
+          activeJob = null;
         }
         encodeJobs.add(1, { result });
         encodeJobDuration.record(
@@ -360,6 +385,21 @@ const shutdown = async (): Promise<void> => {
       setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS),
     ),
   ]);
+  // If the drain timed out mid-job, hand it back to the queue so another
+  // worker can pick it up instead of losing the popped job entirely.
+  if (activeJob) {
+    console.warn(
+      `Requeueing in-flight job on shutdown: movieId=${activeJob.movieId}`,
+    );
+    try {
+      await requeueJob(activeJob);
+    } catch (err) {
+      console.error(
+        `Failed to requeue job on shutdown: movieId=${activeJob.movieId}`,
+        err,
+      );
+    }
+  }
   await metricProvider
     ?.shutdown()
     .catch((err) => console.error("OTel metrics shutdown failed:", err));

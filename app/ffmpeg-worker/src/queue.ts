@@ -254,6 +254,13 @@ const processRetryQueueWithClient = async (
   }
 };
 
+// Push a job back onto the main queue unchanged (e.g. a worker shutting
+// down mid-job): interruption is not a failure, so retryCount is untouched.
+export const requeueJob = async (job: EncodeJob): Promise<void> => {
+  const client = await getRedisClient();
+  await client.rPush(ENCODE_QUEUE_KEY, JSON.stringify(job));
+};
+
 export const getQueueDepths = async (): Promise<{
   main: number;
   retry: number;

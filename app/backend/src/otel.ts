@@ -23,6 +23,12 @@ const EXPORT_INTERVAL_MS = 30_000;
 // after init (a NoopMeter while export is disabled).
 export const getMeter = () => metrics.getMeter(DEFAULT_SERVICE_NAME);
 
+let enabled = false;
+
+// True once a real MeterProvider is registered. Callers can skip registering
+// instrumentation entirely when export is disabled.
+export const isOtelMetricsEnabled = () => enabled;
+
 /**
  * Registers a global MeterProvider pushing OTLP metrics to the collector.
  * No-op unless OTEL_EXPORTER_OTLP_ENDPOINT or
@@ -48,6 +54,7 @@ export const initOtelMetrics = () => {
     ],
   });
   metrics.setGlobalMeterProvider(provider);
+  enabled = true;
 
   const shutdown = (signal: "SIGINT" | "SIGTERM") => {
     provider

@@ -2,9 +2,13 @@ import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { routePath } from "hono/route";
 import type { HonoApp } from "@/@types/hono";
-import { getMeter } from "@/otel";
+import { getMeter, isOtelMetricsEnabled } from "@/otel";
 
 export const handleMetrics = (app: HonoApp) => {
+  // Skip request instrumentation entirely when export is disabled.
+  if (!isOtelMetricsEnabled()) {
+    return;
+  }
   const meter = getMeter();
   const requestDuration = meter.createHistogram(
     "http.server.request.duration",
