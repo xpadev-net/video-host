@@ -11,6 +11,9 @@ import {
 } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import {
+  AudioTrackIdAtom,
+  AudioTracksAtom,
+  HlsRefAtom,
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
   PlayerStateAtom,
@@ -34,6 +37,9 @@ const Video = ({ className, videoRef, movie }: props) => {
   const playbackRate = useAtomValue(PlayerPlaybackRateAtom);
   const [configVolume, setConfigVolume] = useAtom(PlayerVolumeAtom);
   const setWatchedHistory = useSetAtom(watchedHistoryAtom);
+  const setHls = useSetAtom(HlsRefAtom);
+  const setAudioTracks = useSetAtom(AudioTracksAtom);
+  const setAudioTrackId = useSetAtom(AudioTrackIdAtom);
   const [url, setUrl] = useState<string>("");
 
   const hlsRef = useRef<Hls | null>(null);
@@ -121,9 +127,22 @@ const Video = ({ className, videoRef, movie }: props) => {
           enableWorker: true,
           lowLatencyMode: true,
         });
+        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
+          setAudioTracks(
+            data.audioTracks.map((track) => ({
+              id: track.id,
+              name: track.name,
+              lang: track.lang,
+            })),
+          );
+        });
+        hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
+          setAudioTrackId(data.id);
+        });
         hls.loadSource(url);
         hls.attachMedia(video);
         hlsRef.current = hls;
+        setHls(hls);
         video.crossOrigin = "anonymous";
         video.disableRemotePlayback = true;
       } else {
@@ -133,7 +152,7 @@ const Video = ({ className, videoRef, movie }: props) => {
       }
       setPlayerConfig((pv) => ({ ...pv }));
     },
-    [token, setPlayerConfig],
+    [token, setPlayerConfig, setHls, setAudioTracks, setAudioTrackId],
   );
 
   useEffect(() => {
@@ -151,6 +170,9 @@ const Video = ({ className, videoRef, movie }: props) => {
     const variant = movie?.variants[0];
     if (!variant) {
       videoRef.current.srcObject = null;
+      setAudioTracks([]);
+      setAudioTrackId(-1);
+      setHls(null);
       return;
     }
 
@@ -171,8 +193,21 @@ const Video = ({ className, videoRef, movie }: props) => {
     setUrl(variant.contentUrl);
     return () => {
       hlsRef.current?.destroy();
+      hlsRef.current = null;
+      setHls(null);
+      setAudioTracks([]);
+      setAudioTrackId(-1);
     };
-  }, [videoRef.current, movie, setWatchedHistory, url, loadVideo]);
+  }, [
+    videoRef.current,
+    movie,
+    setWatchedHistory,
+    url,
+    loadVideo,
+    setHls,
+    setAudioTracks,
+    setAudioTrackId,
+  ]);
 
   return (
     <video

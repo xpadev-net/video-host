@@ -1,7 +1,7 @@
-import { spawn } from "child_process";
-import { mkdirSync, existsSync, rmSync, statSync } from "fs";
-import { join, dirname } from "path";
-import { TEMP_DIR, FFMPEG_THREADS } from "./env";
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { FFMPEG_THREADS, TEMP_DIR } from "./env";
 
 export interface EncodeResult {
   success: boolean;
@@ -10,9 +10,11 @@ export interface EncodeResult {
   error?: string;
 }
 
-export interface ProgressCallback {
-  (progress: { currentTime: number; duration: number; percent: number }): void;
-}
+export type ProgressCallback = (progress: {
+  currentTime: number;
+  duration: number;
+  percent: number;
+}) => void;
 
 // Ensure temp directory exists
 if (!existsSync(TEMP_DIR)) {
@@ -40,7 +42,7 @@ const getInputDuration = async (inputPath: string): Promise<number> => {
     ffprobe.on("close", (code) => {
       if (code === 0) {
         const duration = parseFloat(stdout.trim());
-        resolve(isNaN(duration) ? 0 : duration);
+        resolve(Number.isNaN(duration) ? 0 : duration);
       } else {
         resolve(0);
       }
@@ -98,9 +100,15 @@ export const encodeVideo = async (
     }
 
     // FFmpeg command for re-encoding to mp4
+    // Keep the first video stream and all audio streams so multi-audio
+    // sources stay selectable when packaged as HLS by nginx-vod-module
     const ffmpegArgs = [
       "-i",
       inputPath,
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a?",
       "-c:v",
       "libx264",
       "-preset",
@@ -135,7 +143,9 @@ export const encodeVideo = async (
 
     // Check if already aborted after spawning (race condition check)
     if (abortSignal?.aborted) {
-      console.log("Encoding aborted immediately after spawn (timeout during download)");
+      console.log(
+        "Encoding aborted immediately after spawn (timeout during download)",
+      );
       ffmpeg.kill("SIGTERM");
       // Force kill after short delay
       setTimeout(() => {
@@ -184,7 +194,10 @@ export const encodeVideo = async (
       if (onProgress && inputDuration > 0) {
         const currentTime = parseTimeFromStderr(line);
         if (currentTime !== null) {
-          const percent = Math.min(100, Math.round((currentTime / inputDuration) * 100));
+          const percent = Math.min(
+            100,
+            Math.round((currentTime / inputDuration) * 100),
+          );
           onProgress({
             currentTime: Math.round(currentTime),
             duration: Math.round(inputDuration),
@@ -250,7 +263,7 @@ const getDuration = async (filePath: string): Promise<number> => {
     ffprobe.on("close", (code) => {
       if (code === 0) {
         const duration = parseFloat(stdout.trim());
-        resolve(isNaN(duration) ? 0 : Math.round(duration));
+        resolve(Number.isNaN(duration) ? 0 : Math.round(duration));
       } else {
         resolve(0);
       }
@@ -263,7 +276,7 @@ const getDuration = async (filePath: string): Promise<number> => {
 };
 
 const sanitizeFilename = (name: string): string => {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255);
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 255);
 };
 
 export const getLocalPath = (s3Key: string, suffix: string): string => {
