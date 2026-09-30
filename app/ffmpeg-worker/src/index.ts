@@ -63,6 +63,14 @@ let activeJob: EncodeJob | null = null;
 // Bound the graceful drain so a stalled job/callback cannot hang SIGTERM.
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 30_000;
 
+// After aborting the in-flight job, give its own failure handling a bounded
+// window to retry/requeue it through the normal path.
+const SHUTDOWN_SETTLE_TIMEOUT_MS = 10_000;
+
+// Aborted on shutdown so the in-flight job stops via the normal failure
+// path instead of running alongside a requeued copy on another worker.
+const jobShutdownAbort = new AbortController();
+
 const checkDiskSpace = async (): Promise<boolean> => {
   try {
     // Use df command to check available disk space
@@ -164,6 +172,14 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 
   // Create abort controller for timeout management
   const abortController = new AbortController();
+  const onShutdownAbort = () => abortController.abort();
+  if (jobShutdownAbort.signal.aborted) {
+    abortController.abort();
+  } else {
+    jobShutdownAbort.signal.addEventListener("abort", onShutdownAbort, {
+      once: true,
+    });
+  }
   const timeoutId = setTimeout(() => {
     console.error(
       `Job timeout after ${JOB_TIMEOUT_SECONDS} seconds: movieId=${job.movieId}`,
@@ -289,6 +305,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
   } finally {
     // Clear timeout if job completed before timeout
     clearTimeout(timeoutId);
+    jobShutdownAbort.signal.removeEventListener("abort", onShutdownAbort);
     cleanup(filesToCleanup);
   }
 };
@@ -385,8 +402,23 @@ const shutdown = async (): Promise<void> => {
       setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS),
     ),
   ]);
-  // If the drain timed out mid-job, hand it back to the queue so another
-  // worker can pick it up instead of losing the popped job entirely.
+  // If the drain timed out mid-job, abort it so its own failure handling
+  // puts it back on the retry queue. Requeueing while it still runs would
+  // let a second worker process the same job concurrently.
+  if (activeJob) {
+    console.warn(
+      `Aborting in-flight job on shutdown: movieId=${activeJob.movieId}`,
+    );
+    jobShutdownAbort.abort();
+    await Promise.race([
+      pollPromise,
+      new Promise((resolve) =>
+        setTimeout(resolve, SHUTDOWN_SETTLE_TIMEOUT_MS),
+      ),
+    ]);
+  }
+  // Last resort: the job did not settle even after abort (e.g. stuck in a
+  // non-abortable await). Push it back so it is not lost entirely.
   if (activeJob) {
     console.warn(
       `Requeueing in-flight job on shutdown: movieId=${activeJob.movieId}`,
