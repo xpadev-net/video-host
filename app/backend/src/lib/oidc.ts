@@ -206,17 +206,6 @@ export const handleSsoCallback = async (
   return { kind: "session", token, callback: stored.callback };
 };
 
-const consumePendingLink = async (
-  token: string,
-): Promise<PendingOidcLink | null> => {
-  const redis = await getRedisClient();
-  const raw = await redis.getDel(linkKey(token));
-  if (!raw) {
-    return null;
-  }
-  return JSON.parse(raw) as PendingOidcLink;
-};
-
 /**
  * Completes the account-link flow: consumes the one-time link token handed
  * to the frontend after the IdP round-trip and attaches the parked SSO
@@ -227,12 +216,20 @@ export const confirmOidcLink = async (
   linkToken: string,
   userId: string,
 ): Promise<User> => {
-  const pending = await consumePendingLink(linkToken);
-  if (!pending) {
+  const redis = await getRedisClient();
+  const raw = await redis.get(linkKey(linkToken));
+  if (!raw) {
     throw new OidcLinkExpiredError();
   }
+  const pending = JSON.parse(raw) as PendingOidcLink;
   if (pending.linkUserId !== userId) {
+    // Reject WITHOUT consuming: a wrong-session confirm must not burn the
+    // initiator's pending link.
     throw new OidcLinkUserMismatchError();
+  }
+  if ((await redis.del(linkKey(linkToken))) === 0) {
+    // Another confirm consumed it between get and del
+    throw new OidcLinkExpiredError();
   }
   return linkOidcUser(userId, pending.externalId);
 };
