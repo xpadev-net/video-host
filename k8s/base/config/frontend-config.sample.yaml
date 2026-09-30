@@ -8,3 +8,6 @@ data:
   allowed-image-hostname: "your-s3-domain.com"
   enable-comments: "true"
   site-name: "Video Host"
+  # OpenTelemetry (メトリクス送信先。空の場合は無効)
+  otel-endpoint: ""  # 例: "http://otel-collector.otel-collector.svc.cluster.local:4318"
+  otel-service-name: "video-host-frontend"

@@ -6,10 +6,12 @@ import {
   setEncodeProgress,
   addJobToRetryQueue,
   processRetryQueue,
+  getQueueDepths,
 } from "./queue";
 import { downloadFromTmp, uploadToProd, deleteFromTmp } from "./s3";
 import { encodeVideo, getLocalPath, cleanup } from "./encoder";
 import { sendCallback } from "./callback";
+import { initOtelMetrics, getMeter } from "./otel";
 import { execFile } from "child_process";
 import { promisify } from "util";
 
@@ -17,6 +19,39 @@ const execFileAsync = promisify(execFile);
 
 console.log("FFmpeg Worker starting...");
 console.log(`Commit Hash: ${process.env.COMMIT_HASH || "unknown"}`);
+
+const metricProvider = initOtelMetrics();
+const meter = getMeter();
+
+const encodeJobs = meter.createCounter("video_host.encode.jobs", {
+  description: "Encode jobs processed, by terminal result.",
+  unit: "{job}",
+});
+const encodeJobDuration = meter.createHistogram(
+  "video_host.encode.job.duration",
+  {
+    description: "Time spent processing one encode job.",
+    unit: "s",
+  },
+);
+const retryQueueMoved = meter.createCounter("video_host.encode.queue.moved", {
+  description: "Jobs moved from the retry queue back to the main queue.",
+  unit: "{job}",
+});
+meter
+  .createObservableGauge("video_host.encode.queue.depth", {
+    description: "Jobs waiting in the encode queues.",
+    unit: "{job}",
+  })
+  .addCallback(async (observableResult) => {
+    try {
+      const { main, retry } = await getQueueDepths();
+      observableResult.observe(main, { queue: "main" });
+      observableResult.observe(retry, { queue: "retry" });
+    } catch (err) {
+      console.error("Failed to observe encode queue depth:", err);
+    }
+  });
 
 let isShuttingDown = false;
 
@@ -65,7 +100,9 @@ const checkDiskSpace = async (): Promise<boolean> => {
   }
 };
 
-const processJob = async (job: EncodeJob): Promise<void> => {
+type JobResult = "completed" | "failed" | "retrying";
+
+const processJob = async (job: EncodeJob): Promise<JobResult> => {
   console.log(`Processing job: movieId=${job.movieId}, s3Key=${job.s3Key}`);
 
   // Check disk space before processing
@@ -82,6 +119,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
         await setEncodeProgress(job.movieId, {
           status: "retrying",
         });
+        return "retrying";
       } catch (retryError) {
         console.error(`Failed to schedule retry: movieId=${job.movieId}`, retryError);
         // Fall through to mark as failed
@@ -104,7 +142,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
         status: "failed",
       });
     }
-    return;
+    return "failed";
   }
 
   // Set status to processing
@@ -158,7 +196,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
           await setEncodeProgress(job.movieId, {
             status: "retrying",
           });
-          return;
+          return "retrying";
         } catch (retryError) {
           console.error(`Failed to schedule retry: movieId=${job.movieId}`, retryError);
           // Fall through to mark as failed
@@ -171,7 +209,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
         variantId: "original",
         status: "failed",
       });
-      return;
+      return "failed";
     }
 
     // Upload to prod-bucket (same key structure)
@@ -199,6 +237,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
     });
 
     console.log(`Job completed successfully: movieId=${job.movieId}`);
+    return "completed";
   } catch (error) {
     console.error(`Job failed: movieId=${job.movieId}`, error);
     // Try to retry the job
@@ -212,6 +251,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
         await setEncodeProgress(job.movieId, {
           status: "retrying",
         });
+        return "retrying";
       } catch (retryError) {
         console.error(`Failed to schedule retry for job: movieId=${job.movieId}`, retryError);
         // If retry scheduling fails, mark as failed
@@ -235,6 +275,7 @@ const processJob = async (job: EncodeJob): Promise<void> => {
         status: "failed",
       });
     }
+    return "failed";
   } finally {
     // Clear timeout if job completed before timeout
     clearTimeout(timeoutId);
@@ -247,7 +288,10 @@ const pollForJobs = async (): Promise<void> => {
   const retryQueueInterval = setInterval(async () => {
     if (!isShuttingDown) {
       try {
-        await processRetryQueue();
+        const moved = await processRetryQueue();
+        if (moved > 0) {
+          retryQueueMoved.add(moved);
+        }
       } catch (error) {
         console.error("Error processing retry queue:", error);
       }
@@ -258,7 +302,10 @@ const pollForJobs = async (): Promise<void> => {
 
   // Process retry queue once at startup
   try {
-    await processRetryQueue();
+    const moved = await processRetryQueue();
+    if (moved > 0) {
+      retryQueueMoved.add(moved);
+    }
   } catch (error) {
     console.error("Error processing retry queue at startup:", error);
   }
@@ -268,7 +315,13 @@ const pollForJobs = async (): Promise<void> => {
       // Use blocking pop with 5 second timeout
       const job = await getEncodeJobBlocking(5);
       if (job) {
-        await processJob(job);
+        const jobStartedAt = performance.now();
+        const result = await processJob(job);
+        encodeJobs.add(1, { result });
+        encodeJobDuration.record(
+          (performance.now() - jobStartedAt) / 1000,
+          { result },
+        );
       }
       // If no job, brPop will timeout and return null, then loop continues
     } catch (error) {
@@ -284,6 +337,9 @@ const pollForJobs = async (): Promise<void> => {
 const shutdown = async (): Promise<void> => {
   console.log("Shutting down...");
   isShuttingDown = true;
+  await metricProvider
+    ?.shutdown()
+    .catch((err) => console.error("OTel metrics shutdown failed:", err));
   await closeRedis();
   process.exit(0);
 };

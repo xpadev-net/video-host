@@ -124,6 +124,11 @@ const EnvSchema = z
 
     // Video Processing
     VOD_BASE_URL: z.string().default(""),
+
+    // OpenTelemetry metrics export (disabled when the endpoint is unset)
+    OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: z.string().optional(),
+    OTEL_SERVICE_NAME: z.string().optional(),
   })
   .refine(
     (env) => {
@@ -198,6 +203,12 @@ export const REDIS_SENTINEL_PASSWORD = env.REDIS_SENTINEL_PASSWORD;
 
 // Video Processing
 export const VOD_BASE_URL = env.VOD_BASE_URL;
+
+// OpenTelemetry
+export const OTEL_EXPORTER_OTLP_ENDPOINT = env.OTEL_EXPORTER_OTLP_ENDPOINT;
+export const OTEL_EXPORTER_OTLP_METRICS_ENDPOINT =
+  env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
+export const OTEL_SERVICE_NAME = env.OTEL_SERVICE_NAME;
 export const CALLBACK_SECRET = env.CALLBACK_SECRET;
 export const VOD_INTERNAL_SECRET = env.VOD_INTERNAL_SECRET;
 

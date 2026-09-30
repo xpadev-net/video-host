@@ -8,6 +8,11 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.952.0",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
     "@video-host/backend": "workspace:*",
     "dotenv": "^17.2.3",
     "hono": "^4.12.18",

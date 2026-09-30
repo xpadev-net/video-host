@@ -254,6 +254,18 @@ const processRetryQueueWithClient = async (
   }
 };
 
+export const getQueueDepths = async (): Promise<{
+  main: number;
+  retry: number;
+}> => {
+  const client = await getRedisClient();
+  const [main, retry] = await Promise.all([
+    client.lLen(ENCODE_QUEUE_KEY),
+    client.zCard(RETRY_QUEUE_KEY),
+  ]);
+  return { main, retry };
+};
+
 export const closeRedis = async (): Promise<void> => {
   if (redisClient) {
     await ((redisClient as RedisClientType).quit || (redisClient as RedisSentinelType).close)?.();

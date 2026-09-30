@@ -126,6 +126,19 @@ spec:
                   optional: true
             - name: TEMP_DIR
               value: /tmp/ffmpeg-worker
+            # OpenTelemetry (metrics export is disabled when otel-endpoint is unset)
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: otel-endpoint
+                  optional: true
+            - name: OTEL_SERVICE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: otel-service-name
+                  optional: true
           volumeMounts:
             - name: temp-storage
               mountPath: /tmp/ffmpeg-worker
