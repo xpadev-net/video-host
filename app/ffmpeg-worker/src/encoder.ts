@@ -54,6 +54,58 @@ const getInputDuration = async (inputPath: string): Promise<number> => {
   });
 };
 
+// Pick the highest-resolution non-cover-art video stream so explicit
+// mapping keeps FFmpeg's "best video" selection instead of the first one
+const getVideoStreamMap = async (inputPath: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const ffprobe = spawn("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "stream=index,codec_type,width,height,disposition",
+      "-of",
+      "json",
+      inputPath,
+    ]);
+
+    let stdout = "";
+    ffprobe.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    const fallback = () => resolve("0:V");
+
+    ffprobe.on("close", (code) => {
+      try {
+        if (code !== 0) return fallback();
+        const parsed = JSON.parse(stdout) as {
+          streams?: {
+            index: number;
+            codec_type?: string;
+            width?: number;
+            height?: number;
+            disposition?: { attached_pic?: number };
+          }[];
+        };
+        const videoStreams = (parsed.streams ?? []).filter(
+          (s) => s.codec_type === "video" && s.disposition?.attached_pic !== 1,
+        );
+        if (videoStreams.length === 0) return fallback();
+        const best = videoStreams.reduce((a, b) =>
+          (b.width ?? 0) * (b.height ?? 0) > (a.width ?? 0) * (a.height ?? 0)
+            ? b
+            : a,
+        );
+        resolve(`0:${best.index}`);
+      } catch {
+        fallback();
+      }
+    });
+
+    ffprobe.on("error", fallback);
+  });
+};
+
 // Parse time=HH:MM:SS.XX from ffmpeg stderr
 const parseTimeFromStderr = (line: string): number | null => {
   const match = line.match(/time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
@@ -92,6 +144,8 @@ export const encodeVideo = async (
     };
   }
 
+  const videoMap = await getVideoStreamMap(inputPath);
+
   return new Promise((resolve) => {
     // Ensure output directory exists
     const outputDir = dirname(outputPath);
@@ -101,13 +155,12 @@ export const encodeVideo = async (
 
     // FFmpeg command for re-encoding to mp4
     // Keep all audio streams so multi-audio sources stay selectable when
-    // packaged as HLS by nginx-vod-module. 0:V selects all video streams
-    // except attached pictures (cover art / thumbnails).
+    // packaged as HLS by nginx-vod-module.
     const ffmpegArgs = [
       "-i",
       inputPath,
       "-map",
-      "0:V",
+      videoMap,
       "-map",
       "0:a?",
       "-c:v",
