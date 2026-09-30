@@ -79,15 +79,18 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
   };
 
   return (
-    <div className="user-picker" ref={containerRef}>
+    <div className="relative flex flex-col gap-2" ref={containerRef}>
       {selected.length > 0 && (
-        <div className="selected-users">
+        <div className="flex flex-wrap gap-2">
           {selected.map((user) => (
-            <span key={user.id} className="user-chip">
+            <span
+              key={user.id}
+              className="bg-thirdly-background border-border text-text inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
+            >
               {user.name}
               <button
                 type="button"
-                className="chip-remove"
+                className="text-sub-text hover:text-text cursor-pointer text-base leading-none"
                 onClick={() => handleRemove(user.id)}
                 aria-label={`${user.name}を削除`}
               >
@@ -106,95 +109,27 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
         placeholder="ユーザー名で検索して追加"
       />
       {isFocused && query.trim() && (
-        <div className="search-results">
+        <div className="bg-background border-border absolute top-full right-0 left-0 z-10 mt-1 max-h-60 overflow-y-auto rounded-lg border">
           {isSearching ? (
-            <div className="search-status">検索中...</div>
+            <div className="text-sub-text px-3 py-2.5 text-sm">検索中...</div>
           ) : results.length > 0 ? (
             results.map((user) => (
               <button
                 key={user.id}
                 type="button"
-                className="search-result"
+                className="text-text hover:bg-thirdly-background block w-full cursor-pointer px-3 py-2.5 text-left"
                 onClick={() => handleSelect(user)}
               >
-                <span className="result-name">{user.name}</span>
+                <span className="text-sm">{user.name}</span>
               </button>
             ))
           ) : (
-            <div className="search-status">ユーザーが見つかりません</div>
+            <div className="text-sub-text px-3 py-2.5 text-sm">
+              ユーザーが見つかりません
+            </div>
           )}
         </div>
       )}
-      <style jsx>{`
-        .user-picker {
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        .selected-users {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.5rem;
-        }
-        .user-chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.375rem;
-          padding: 0.375rem 0.75rem;
-          background: var(--background-tertiary, #252525);
-          border: 1px solid var(--border-color, #333);
-          border-radius: 9999px;
-          color: var(--text-primary, #fff);
-          font-size: 0.875rem;
-        }
-        .chip-remove {
-          background: none;
-          border: none;
-          color: var(--text-secondary, #999);
-          cursor: pointer;
-          font-size: 1rem;
-          line-height: 1;
-          padding: 0;
-        }
-        .chip-remove:hover {
-          color: var(--text-primary, #fff);
-        }
-        .search-results {
-          position: absolute;
-          top: 100%;
-          left: 0;
-          right: 0;
-          margin-top: 0.25rem;
-          background: var(--background-primary, #0d0d0d);
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
-          max-height: 240px;
-          overflow-y: auto;
-          z-index: 10;
-        }
-        .search-result {
-          display: block;
-          width: 100%;
-          padding: 0.625rem 0.75rem;
-          background: none;
-          border: none;
-          text-align: left;
-          color: var(--text-primary, #fff);
-          cursor: pointer;
-        }
-        .search-result:hover {
-          background: var(--background-tertiary, #252525);
-        }
-        .result-name {
-          font-size: 0.875rem;
-        }
-        .search-status {
-          padding: 0.625rem 0.75rem;
-          color: var(--text-secondary, #999);
-          font-size: 0.875rem;
-        }
-      `}</style>
     </div>
   );
 };
