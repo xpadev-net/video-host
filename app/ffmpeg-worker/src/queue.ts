@@ -1,4 +1,5 @@
 import { createClient, createSentinel, RedisSentinelType, type RedisClientType } from "redis";
+import { randomUUID } from "crypto";
 import {
   REDIS_URL,
   REDIS_SENTINEL_HOSTS,
@@ -101,6 +102,21 @@ export const setEncodeProgress = async (
 export const clearEncodeProgress = async (movieId: string): Promise<void> => {
   const client = await getRedisClient();
   await client.del(`${ENCODE_PROGRESS_PREFIX}${movieId}`);
+};
+
+export const getEncodeProgress = async (
+  movieId: string,
+): Promise<EncodeProgress | null> => {
+  const client = await getRedisClient();
+  const raw = await client.get(`${ENCODE_PROGRESS_PREFIX}${movieId}`);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as EncodeProgress;
+  } catch {
+    return null;
+  }
 };
 
 export const addJobToRetryQueue = async (job: EncodeJob): Promise<void> => {
@@ -252,6 +268,175 @@ const processRetryQueueWithClient = async (
     console.error("Error processing retry queue:", error);
     return 0;
   }
+};
+
+// Jobs popped from the main queue are claimed here (score = claim time in
+// ms) until they finish, so a dead worker's job can be recovered by any live
+// worker instead of being lost.
+export const PROCESSING_QUEUE_KEY = "video:encode:processing";
+
+export interface ProcessingClaimCompletion {
+  contentUrl: string;
+  duration?: number;
+}
+
+export interface ProcessingClaim {
+  // Unique per claim attempt so a re-queued job's new claim is a distinct
+  // member: a stale owner's ZREM/DEL can never disturb the new claim.
+  claimId: string;
+  job: EncodeJob;
+  completion?: ProcessingClaimCompletion;
+}
+
+// A job's recorded outcome once its input is deleted: unlike progress keys
+// (1h TTL) this outlives the claim lease, and unlike the claim member it
+// survives a failed claim rewrite — reapers and workers popping the job
+// check it before deciding to encode.
+export const JOB_COMPLETION_PREFIX = "video:encode:completion:";
+const JOB_COMPLETION_TTL_SECONDS = 24 * 3600;
+
+export const getJobCompletion = async (
+  movieId: string,
+): Promise<ProcessingClaimCompletion | null> => {
+  const client = await getRedisClient();
+  const raw = await client.get(`${JOB_COMPLETION_PREFIX}${movieId}`);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as ProcessingClaimCompletion;
+  } catch {
+    return null;
+  }
+};
+
+export const claimProcessingJob = async (
+  job: EncodeJob,
+): Promise<string> => {
+  const client = await getRedisClient();
+  const member = JSON.stringify({
+    claimId: randomUUID(),
+    job,
+  } satisfies ProcessingClaim);
+  await client.zAdd(PROCESSING_QUEUE_KEY, { score: Date.now(), value: member });
+  return member;
+};
+
+// Once the job's input is deleted it can never be re-encoded; record the
+// outcome atomically with the claim refresh so a reaper finalizes it via
+// callback rather than requeue it.
+export const commitProcessingJob = async (
+  member: string,
+  job: EncodeJob,
+  completion: ProcessingClaimCompletion,
+): Promise<string> => {
+  const client = await getRedisClient();
+  await client
+    .multi()
+    // XX keeps this a score refresh only: if a reaper already removed the
+    // member, committing must not resurrect a phantom claim.
+    .zAdd(
+      PROCESSING_QUEUE_KEY,
+      { score: Date.now(), value: member },
+      { condition: "XX" },
+    )
+    .setEx(
+      `${JOB_COMPLETION_PREFIX}${job.movieId}`,
+      JOB_COMPLETION_TTL_SECONDS,
+      JSON.stringify(completion),
+    )
+    .exec();
+  return member;
+};
+
+const FINISH_PROCESSING_JOB_SCRIPT = `
+  local removed = redis.call('ZREM', KEYS[1], ARGV[1])
+  if removed == 1 then
+    redis.call('DEL', KEYS[2])
+    return 1
+  end
+  return 0
+`;
+
+// Terminal release: drop the claim and the completion record together —
+// atomically, so a reaper that already claimed the member keeps the
+// completion record alive for whoever picked up the job.
+export const finishProcessingJob = async (
+  member: string,
+  movieId: string,
+): Promise<void> => {
+  const client = await getRedisClient();
+  await (client as RedisClientType).eval(FINISH_PROCESSING_JOB_SCRIPT, {
+    keys: [PROCESSING_QUEUE_KEY, `${JOB_COMPLETION_PREFIX}${movieId}`],
+    arguments: [member],
+  });
+};
+
+export const releaseProcessingJob = async (member: string): Promise<void> => {
+  const client = await getRedisClient();
+  await client.zRem(PROCESSING_QUEUE_KEY, member);
+};
+
+// Expire a claim early so the reaper hands the job to another worker even
+// though the lease has not elapsed (used after relinquishing on shutdown).
+export const expireProcessingJob = async (member: string): Promise<void> => {
+  const client = await getRedisClient();
+  await client.zAdd(PROCESSING_QUEUE_KEY, { score: 0, value: member });
+};
+
+export const getStaleProcessingJobs = async (
+  claimedBeforeMs: number,
+): Promise<string[]> => {
+  const client = await getRedisClient();
+  return client.zRangeByScore(PROCESSING_QUEUE_KEY, 0, claimedBeforeMs);
+};
+
+const REQUEUE_PROCESSING_JOB_SCRIPT = `
+  if redis.call('EXISTS', KEYS[3]) == 1 then
+    return 0
+  end
+  local removed = redis.call('ZREM', KEYS[1], ARGV[1])
+  if removed == 1 then
+    redis.call('RPUSH', KEYS[2], ARGV[2])
+    return 1
+  end
+  return 0
+`;
+
+// Atomically move a stale claim back to the main queue — only while no
+// completion record exists, so a commit landing after the stale read can
+// never leave a re-queued job whose input is already deleted. The ZREM
+// guard lets only one worker perform the handoff when several reap
+// concurrently.
+export const requeueStaleProcessingJob = async (
+  member: string,
+): Promise<boolean> => {
+  const client = await getRedisClient();
+  const claim = JSON.parse(member) as ProcessingClaim;
+  const result = await (client as RedisClientType).eval(
+    REQUEUE_PROCESSING_JOB_SCRIPT,
+    {
+      keys: [
+        PROCESSING_QUEUE_KEY,
+        ENCODE_QUEUE_KEY,
+        `${JOB_COMPLETION_PREFIX}${claim.job.movieId}`,
+      ],
+      arguments: [member, JSON.stringify(claim.job)],
+    },
+  );
+  return result === 1;
+};
+
+export const getQueueDepths = async (): Promise<{
+  main: number;
+  retry: number;
+}> => {
+  const client = await getRedisClient();
+  const [main, retry] = await Promise.all([
+    client.lLen(ENCODE_QUEUE_KEY),
+    client.zCard(RETRY_QUEUE_KEY),
+  ]);
+  return { main, retry };
 };
 
 export const closeRedis = async (): Promise<void> => {

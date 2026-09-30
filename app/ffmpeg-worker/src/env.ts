@@ -64,3 +64,10 @@ export const JOB_TIMEOUT_SECONDS = parseInt(
 export const FFMPEG_THREADS = process.env.FFMPEG_THREADS
   ? parseInt(process.env.FFMPEG_THREADS, 10)
   : undefined; // undefined means use default (all available CPUs)
+
+// OpenTelemetry metrics export (disabled when the endpoint is unset)
+export const OTEL_EXPORTER_OTLP_ENDPOINT =
+  process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+export const OTEL_EXPORTER_OTLP_METRICS_ENDPOINT =
+  process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
+export const OTEL_SERVICE_NAME = process.env.OTEL_SERVICE_NAME;

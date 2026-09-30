@@ -3,8 +3,11 @@ import { Hono } from "hono";
 import type { HonoApp } from "@/@types/hono";
 import { PORT } from "@/env";
 import { initializeS3Buckets } from "@/lib/s3";
+import { initOtelMetrics } from "@/otel";
 import { registerMiddleware } from "./middleware";
 import { registerRoute } from "./routes";
+
+initOtelMetrics();
 
 const app = new Hono() as HonoApp;
 

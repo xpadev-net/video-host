@@ -34,3 +34,6 @@ data:
   redis-sentinel-name: ""
   # Video Processing
   vod-base-url: "http://vod-server/vod"
+  # OpenTelemetry (メトリクス送信先。空の場合は無効)
+  otel-endpoint: ""  # 例: "http://otel-collector.otel-collector.svc.cluster.local:4318"
+  otel-service-name: "video-host-backend"
