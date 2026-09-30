@@ -100,13 +100,14 @@ export const encodeVideo = async (
     }
 
     // FFmpeg command for re-encoding to mp4
-    // Keep the first video stream and all audio streams so multi-audio
-    // sources stay selectable when packaged as HLS by nginx-vod-module
+    // Keep all audio streams so multi-audio sources stay selectable when
+    // packaged as HLS by nginx-vod-module. 0:V selects all video streams
+    // except attached pictures (cover art / thumbnails).
     const ffmpegArgs = [
       "-i",
       inputPath,
       "-map",
-      "0:v:0",
+      "0:V",
       "-map",
       "0:a?",
       "-c:v",

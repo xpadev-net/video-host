@@ -43,6 +43,7 @@ const Video = ({ className, videoRef, movie }: props) => {
   const [url, setUrl] = useState<string>("");
 
   const hlsRef = useRef<Hls | null>(null);
+  const selectedAudioTrackRef = useRef(-1);
 
   const router = useRouter();
 
@@ -111,7 +112,7 @@ const Video = ({ className, videoRef, movie }: props) => {
   const onVideoSeeking = () => setState((pv) => ({ ...pv, isLoading: true }));
 
   const loadVideo = useCallback(
-    (video: HTMLVideoElement, url: string) => {
+    (video: HTMLVideoElement, url: string, restoreAudioTrackId?: number) => {
       if (Hls.isSupported()) {
         if (hlsRef.current) {
           hlsRef.current.destroy();
@@ -135,8 +136,16 @@ const Video = ({ className, videoRef, movie }: props) => {
               lang: track.lang,
             })),
           );
+          if (
+            restoreAudioTrackId !== undefined &&
+            restoreAudioTrackId >= 0 &&
+            data.audioTracks.some((track) => track.id === restoreAudioTrackId)
+          ) {
+            hls.audioTrack = restoreAudioTrackId;
+          }
         });
         hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
+          selectedAudioTrackRef.current = data.id;
           setAudioTrackId(data.id);
         });
         hls.loadSource(url);
@@ -170,6 +179,7 @@ const Video = ({ className, videoRef, movie }: props) => {
     const variant = movie?.variants[0];
     if (!variant) {
       videoRef.current.srcObject = null;
+      selectedAudioTrackRef.current = -1;
       setAudioTracks([]);
       setAudioTrackId(-1);
       setHls(null);
@@ -178,9 +188,14 @@ const Video = ({ className, videoRef, movie }: props) => {
 
     if (variant.contentUrl === url) {
       const currentTime = videoRef.current.currentTime;
-      void loadVideo(videoRef.current, variant.contentUrl);
+      void loadVideo(
+        videoRef.current,
+        variant.contentUrl,
+        selectedAudioTrackRef.current,
+      );
       videoRef.current.currentTime = currentTime;
     } else {
+      selectedAudioTrackRef.current = -1;
       setWatchedHistory((pv) => ({
         ...pv,
         [movie.id]: {
