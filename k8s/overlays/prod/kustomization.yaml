@@ -40,6 +40,15 @@ configMapGenerator:
   - name: backend-config
     literals:
       - signup-enabled=false
+      - password-auth-enabled=true
+      - oidc-enabled=false
+      - oidc-issuer-url=
+      - oidc-client-id=
+      - oidc-redirect-uri=https://api.your-domain.com/api/v4/auth/sso/callback
+      - oidc-scope=openid profile email
+      - oidc-display-name=SSO
+      - oidc-auto-provision=true
+      - frontend-url=https://your-frontend-domain.com
       - cors-origin=https://your-frontend-domain.com
       - public-endpoints=
       - s3-tmp-bucket=video-tmp

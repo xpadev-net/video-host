@@ -3,12 +3,13 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import type { FilteredUser, PaginatedResponse } from "@/@types/models";
+import { PASSWORD_AUTH_ENABLED } from "@/env";
 import { filterUser } from "@/lib/filter";
 import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/session";
 import { meRoute } from "@/routes/api/v4/users/me";
-import { badRequest } from "@/utils/response";
+import { badRequest, forbidden } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { userRoute } from "./[user]";
 
@@ -93,6 +94,9 @@ export const usersRoute = app
     return ok(c, response);
   })
   .post("/", zValidator("json", PostSchema), async (c) => {
+    if (!PASSWORD_AUTH_ENABLED) {
+      forbidden("Password-based signup is disabled; sign in with SSO instead");
+    }
     const data = c.req.valid("json");
     const { username, password, name } = data;
 

@@ -1,13 +1,41 @@
 import Head from "next/head";
 import Link from "next/link";
 import type { FC } from "react";
+import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useSelf } from "@/hooks/useUser";
+import { client } from "@/lib/client";
+import { getAuthConfig } from "@/service/getAuthConfig";
 
 const DashboardPage: FC = () => {
   const { data: response, isLoading } = useSelf();
   // biome-ignore lint/suspicious/noExplicitAny: complex type inference
   const user = response?.status === "ok" ? (response as any).data : null;
+  const [ssoDisplayName, setSsoDisplayName] = useState<string | null>(null);
+
+  useEffect(() => {
+    void getAuthConfig().then((config) => {
+      if (config?.ssoEnabled) {
+        setSsoDisplayName(config.ssoDisplayName);
+      }
+    });
+  }, []);
+
+  // Starts the account-link flow: POST /auth/sso/link returns the provider
+  // authorization URL, which the browser then navigates to.
+  const handleLinkSso = async () => {
+    try {
+      const res = await client.api.v4.auth.sso.link.$post({
+        query: { callback: "/dashboard" },
+      });
+      const body = await res.json();
+      if (body.status === "ok") {
+        window.location.assign(body.data);
+      }
+    } catch {
+      // fall through: do nothing on failure (button is best-effort)
+    }
+  };
 
   if (isLoading) {
     return (
@@ -52,6 +80,18 @@ const DashboardPage: FC = () => {
             <span className="dashboard-card-icon">📋</span>
             <span className="dashboard-card-title">プレイリストを作成</span>
           </Link>
+          {ssoDisplayName && (
+            <button
+              type="button"
+              className="dashboard-card"
+              onClick={handleLinkSso}
+            >
+              <span className="dashboard-card-icon">🔗</span>
+              <span className="dashboard-card-title">
+                {ssoDisplayName}と連携
+              </span>
+            </button>
+          )}
         </div>
       </div>
       <style jsx>{`
@@ -75,6 +115,8 @@ const DashboardPage: FC = () => {
           border-radius: 12px;
           text-decoration: none;
           transition: all 0.2s;
+          cursor: pointer;
+          font: inherit;
         }
         .dashboard-card:hover {
           border-color: var(--primary-color, #3b82f6);

@@ -2,11 +2,27 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
+import {
+  FRONTEND_URL,
+  OIDC_DISPLAY_NAME,
+  OIDC_ENABLED,
+  PASSWORD_AUTH_ENABLED,
+  SIGNUP_ENABLED,
+} from "@/env";
+import {
+  buildSsoAuthorizationUrl,
+  confirmOidcLink,
+  handleSsoCallback,
+  OidcLinkConflictError,
+  OidcLinkExpiredError,
+  OidcLinkUserMismatchError,
+  OidcUserNotProvisionedError,
+} from "@/lib/oidc";
 import { isPasswordValid } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { authRateLimiter } from "@/lib/rateLimiter";
 import { createSession } from "@/lib/session";
-import { unauthorized } from "@/utils/response";
+import { badRequest, forbidden, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const passwordAuthSchema = z.object({
@@ -23,6 +39,14 @@ const tokenAuthSchema = z.object({
 const authSchema = z.union([passwordAuthSchema, tokenAuthSchema]);
 
 const app = new Hono<Env>();
+
+const frontendUrl = (path: string) =>
+  `${FRONTEND_URL.replace(/\/+$/, "")}${path}`;
+
+const ssoErrorRedirect = (code: string) =>
+  frontendUrl(`/login?error=${encodeURIComponent(code)}`);
+
+const linkConfirmSchema = z.object({ token: z.string() });
 
 export const authRoute = app
   .post("/", authRateLimiter, zValidator("json", authSchema), async (c) => {
@@ -42,6 +66,9 @@ export const authRoute = app
       }
       const newToken = await createSession(session.userId);
       return ok(c, newToken);
+    }
+    if (!PASSWORD_AUTH_ENABLED) {
+      forbidden("Password authentication is disabled");
     }
     const { username, password } = data;
     const user = await prisma.user.findFirst({
@@ -72,6 +99,121 @@ export const authRoute = app
       },
     });
     return ok(c, null);
+  })
+  .get("/config", async (c) => {
+    // Public auth configuration consumed by the frontend login/register pages
+    return ok(c, {
+      passwordAuthEnabled: PASSWORD_AUTH_ENABLED,
+      ssoEnabled: OIDC_ENABLED,
+      ssoDisplayName: OIDC_DISPLAY_NAME,
+      signupEnabled: SIGNUP_ENABLED,
+    });
+  })
+  .post("/sso/link", async (c) => {
+    // Account-link flow: lets a logged-in (password) user attach an SSO
+    // identity before the instance switches to SSO-only. Requires a valid
+    // session — the auth middleware attaches `user` when a Bearer token is
+    // present even though /api/v4/auth is a public prefix.
+    if (!OIDC_ENABLED) {
+      forbidden("SSO is not enabled");
+    }
+    const user = c.get("user");
+    if (!user) {
+      unauthorized("Login required");
+    }
+    const { url } = await buildSsoAuthorizationUrl(
+      c.req.query("callback") ?? null,
+      user.id,
+    );
+    return ok(c, url.toString());
+  })
+  .post(
+    "/sso/link/confirm",
+    zValidator("json", linkConfirmSchema),
+    async (c) => {
+      // Completes the account-link flow started by POST /sso/link. The
+      // pending link is bound to the initiator's account — a link token
+      // leaked to another user (e.g. via a shared authorization URL) is
+      // rejected here because their session does not match.
+      if (!OIDC_ENABLED) {
+        forbidden("SSO is not enabled");
+      }
+      const user = c.get("user");
+      if (!user) {
+        unauthorized("Login required");
+      }
+      try {
+        await confirmOidcLink(c.req.valid("json").token, user.id);
+        return ok(c, null);
+      } catch (err) {
+        if (err instanceof OidcLinkExpiredError) {
+          badRequest("Invalid or expired SSO link");
+        }
+        if (err instanceof OidcLinkUserMismatchError) {
+          forbidden("This SSO link was started by a different account");
+        }
+        if (err instanceof OidcLinkConflictError) {
+          badRequest(
+            "This SSO identity is already linked to another account, " +
+              "or this account is already linked to a different SSO identity",
+          );
+        }
+        throw err;
+      }
+    },
+  )
+  .get("/sso/login", async (c) => {
+    if (!OIDC_ENABLED) {
+      return c.redirect(ssoErrorRedirect("sso_unavailable"));
+    }
+    try {
+      const { url } = await buildSsoAuthorizationUrl(
+        c.req.query("callback") ?? null,
+      );
+      return c.redirect(url.toString());
+    } catch (err) {
+      console.error("Failed to build SSO authorization URL:", err);
+      return c.redirect(ssoErrorRedirect("sso_unavailable"));
+    }
+  })
+  .get("/sso/callback", async (c) => {
+    if (!OIDC_ENABLED) {
+      return c.redirect(ssoErrorRedirect("sso_unavailable"));
+    }
+    const idpError = new URL(c.req.url).searchParams.get("error");
+    if (idpError) {
+      console.error("OIDC provider returned an error:", idpError);
+      return c.redirect(ssoErrorRedirect("sso_failed"));
+    }
+    try {
+      const result = await handleSsoCallback(c.req.url);
+      if (result.kind === "link") {
+        // Link flow parks the SSO identity behind a one-time token; the
+        // frontend confirms it via POST /sso/link/confirm with the
+        // initiator's session before anything is written.
+        const params = new URLSearchParams({ token: result.linkToken });
+        if (result.callback) {
+          params.set("callback", result.callback);
+        }
+        return c.redirect(frontendUrl(`/auth/link#${params.toString()}`));
+      }
+      const params = new URLSearchParams({ token: result.token });
+      if (result.callback) {
+        params.set("callback", result.callback);
+      }
+      // Fragment (not query): keeps the session token out of server logs
+      // and Referer headers. The frontend parses it from location.hash.
+      return c.redirect(frontendUrl(`/auth/callback#${params.toString()}`));
+    } catch (err) {
+      if (err instanceof OidcUserNotProvisionedError) {
+        return c.redirect(ssoErrorRedirect("sso_user_not_found"));
+      }
+      if (err instanceof OidcLinkConflictError) {
+        return c.redirect(ssoErrorRedirect("sso_identity_taken"));
+      }
+      console.error("SSO callback failed:", err);
+      return c.redirect(ssoErrorRedirect("sso_failed"));
+    }
   });
 
 export const registerAuthRoute = (app: HonoApp) => {

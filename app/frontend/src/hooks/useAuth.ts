@@ -5,20 +5,14 @@ import { useState } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
 
 export const getSafeCallback = (callback: string | null) => {
-  if (!callback) {
-    return null;
-  }
-  try {
-    const decoded = decodeURIComponent(callback);
-    if (
-      decoded.startsWith("/") &&
-      !decoded.startsWith("//") &&
-      !decoded.includes("://")
-    ) {
-      return decoded;
-    }
-  } catch {
-    return null;
+  // Callers pass URLSearchParams.get() output — already URL-decoded. Do NOT
+  // decodeURIComponent again: a second decode corrupts literal "%" paths.
+  if (
+    callback?.startsWith("/") &&
+    !callback.startsWith("//") &&
+    !callback.includes("://")
+  ) {
+    return callback;
   }
   return null;
 };
