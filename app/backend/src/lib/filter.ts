@@ -38,6 +38,7 @@ export const filterMovie = (episode: FilteredMovie): FilteredMovie => {
     author: filterUser(episode.author),
     series: episode.series ? filterSeries(episode.series) : undefined,
     createdAt: episode.createdAt,
+    viewers: episode.viewers?.map(filterUser),
   };
 };
 

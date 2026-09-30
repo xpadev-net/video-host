@@ -1,10 +1,15 @@
-import type { FormattedMovie } from "@video-host/backend";
+import type {
+  FilteredUser,
+  FormattedMovie,
+  Visibility,
+} from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import { type FC, type FormEvent, useEffect, useState } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
+import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { client } from "@/lib/client";
 
 interface EncodeProgress {
@@ -23,9 +28,8 @@ const EditVideoPage: FC = () => {
   const [movie, setMovie] = useState<FormattedMovie | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<
-    "PUBLIC" | "UNLISTED" | "PRIVATE"
-  >("PUBLIC");
+  const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
+  const [viewers, setViewers] = useState<FilteredUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +62,7 @@ const EditVideoPage: FC = () => {
         setTitle(movieData.title);
         setDescription(movieData.description || "");
         setVisibility(movieData.visibility);
+        setViewers(movieData.viewers ?? []);
       } catch {
         setError("動画の取得に失敗しました");
       } finally {
@@ -157,6 +162,7 @@ const EditVideoPage: FC = () => {
             title: title.trim(),
             description: description.trim(),
             visibility,
+            viewerIds: viewers.map((viewer) => viewer.id),
           },
         },
         {
@@ -275,17 +281,25 @@ const EditVideoPage: FC = () => {
             <select
               id="visibility"
               value={visibility}
-              onChange={(e) =>
-                setVisibility(
-                  e.target.value as "PUBLIC" | "UNLISTED" | "PRIVATE",
-                )
-              }
+              onChange={(e) => setVisibility(e.target.value as Visibility)}
             >
               <option value="PUBLIC">公開</option>
               <option value="UNLISTED">限定公開</option>
+              <option value="LIMITED">指定ユーザー公開</option>
               <option value="PRIVATE">非公開</option>
             </select>
           </div>
+
+          {visibility === "LIMITED" && (
+            <div className="form-group">
+              <label htmlFor="viewers">公開するユーザー</label>
+              <UserPicker
+                id="viewers"
+                selected={viewers}
+                onChange={setViewers}
+              />
+            </div>
+          )}
 
           {error && <div className="error-message">{error}</div>}
 

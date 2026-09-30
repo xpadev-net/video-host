@@ -1,3 +1,4 @@
+import type { BasicVisibility } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
@@ -25,9 +26,7 @@ const EditPlaylistPage: FC = () => {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<
-    "PUBLIC" | "UNLISTED" | "PRIVATE"
-  >("PUBLIC");
+  const [visibility, setVisibility] = useState<BasicVisibility>("PUBLIC");
   const [movies, setMovies] = useState<PlaylistMovie[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,7 +51,7 @@ const EditPlaylistPage: FC = () => {
         const data = json.data;
         setTitle(data.title);
         setDescription(data.description || "");
-        setVisibility(data.visibility);
+        setVisibility(data.visibility as BasicVisibility);
         // Assuming backend returns matching structure.
         const playlistMovies: PlaylistMovie[] = (data.movies || []).map(
           (m: unknown, index: number) => ({
@@ -138,11 +137,7 @@ const EditPlaylistPage: FC = () => {
             <select
               id="visibility"
               value={visibility}
-              onChange={(e) =>
-                setVisibility(
-                  e.target.value as "PUBLIC" | "UNLISTED" | "PRIVATE",
-                )
-              }
+              onChange={(e) => setVisibility(e.target.value as BasicVisibility)}
             >
               <option value="PUBLIC">公開</option>
               <option value="UNLISTED">限定公開</option>
