@@ -257,6 +257,12 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
   const outputPath = getLocalPath(job.s3Key, "_output.mp4");
   const filesToCleanup = [inputPath, outputPath];
 
+  // Set once the tmp input is deleted: past that point the job can only be
+  // finalized as success — re-encoding is impossible, so errors in the
+  // finalize steps must never fall into the retry/failed path.
+  let committedOutcome: { contentUrl: string; duration?: number } | null =
+    null;
+
   // Create abort controller for timeout management
   const abortController = new AbortController();
   const onShutdownAbort = () => abortController.abort();
@@ -344,12 +350,21 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     const contentUrl = `${VOD_BASE_URL}/vod/${job.s3Key}/master.m3u8`;
 
     // The input is gone: if this worker dies now the job can no longer be
-    // re-encoded, so mark the claim with its outcome for the reaper.
+    // re-encoded, so mark the claim with its outcome for the reaper. A
+    // failure here must not send the job down the retry path.
+    committedOutcome = { contentUrl, duration: result.duration };
     if (activeJobClaim) {
-      activeJobClaim = await commitProcessingJob(activeJobClaim, job, {
-        contentUrl,
-        duration: result.duration,
-      });
+      try {
+        activeJobClaim = await commitProcessingJob(activeJobClaim, job, {
+          contentUrl,
+          duration: result.duration,
+        });
+      } catch (claimError) {
+        console.error(
+          `Failed to mark processing claim committed: movieId=${job.movieId}`,
+          claimError,
+        );
+      }
     }
 
     if (jobRelinquished) {
@@ -374,6 +389,35 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
   } catch (error) {
     if (jobRelinquished) {
       return "relinquished";
+    }
+    if (committedOutcome) {
+      // Input is already deleted — an encode retry would fail to download
+      // it. Finalize as success instead of re-encoding.
+      console.error(
+        `Job failed after commit, finalizing as completed: movieId=${job.movieId}`,
+        error,
+      );
+      try {
+        await setEncodeProgress(job.movieId, {
+          status: "completed",
+          progress: 100,
+        });
+        await sendCallback({
+          movieId: job.movieId,
+          variantId: "original",
+          status: "success",
+          s3Key: job.s3Key,
+          contentUrl: committedOutcome.contentUrl,
+          duration: committedOutcome.duration,
+        });
+        return "completed";
+      } catch (finalizeError) {
+        console.error(
+          `Failed to finalize committed job: movieId=${job.movieId}`,
+          finalizeError,
+        );
+        return "error";
+      }
     }
     console.error(`Job failed: movieId=${job.movieId}`, error);
     // Try to retry the job
