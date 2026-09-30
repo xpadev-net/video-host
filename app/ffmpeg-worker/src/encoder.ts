@@ -62,7 +62,7 @@ const getVideoStreamMap = async (inputPath: string): Promise<string> => {
       "-v",
       "error",
       "-show_entries",
-      "stream=index,codec_type,width,height,disposition",
+      "stream=index,codec_type,width,height:stream_disposition=attached_pic",
       "-of",
       "json",
       inputPath,
