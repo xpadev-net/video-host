@@ -3,11 +3,17 @@ import {
   getEncodeJobBlocking,
   closeRedis,
   type EncodeJob,
+  type ProcessingClaim,
   setEncodeProgress,
   addJobToRetryQueue,
   processRetryQueue,
   getQueueDepths,
-  requeueJob,
+  claimProcessingJob,
+  commitProcessingJob,
+  releaseProcessingJob,
+  expireProcessingJob,
+  getStaleProcessingJobs,
+  requeueStaleProcessingJob,
 } from "./queue";
 import { downloadFromTmp, uploadToProd, deleteFromTmp } from "./s3";
 import { encodeVideo, getLocalPath, cleanup } from "./encoder";
@@ -56,9 +62,13 @@ meter
 
 let isShuttingDown = false;
 
-// The job currently being processed (if any) so shutdown can hand it back
-// to the queue instead of losing it.
+// The job currently being processed (if any) together with its processing
+// claim in Redis. On shutdown the claim is expired instead of republishing
+// the job, so another worker can only take it over after this worker has
+// relinquished terminal writes.
 let activeJob: EncodeJob | null = null;
+let activeJobClaim: string | null = null;
+let jobRelinquished = false;
 
 // Bound the graceful drain so a stalled job/callback cannot hang SIGTERM.
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 30_000;
@@ -70,6 +80,70 @@ const SHUTDOWN_SETTLE_TIMEOUT_MS = 10_000;
 // Aborted on shutdown so the in-flight job stops via the normal failure
 // path instead of running alongside a requeued copy on another worker.
 const jobShutdownAbort = new AbortController();
+
+// Claims older than JOB_TIMEOUT + margin belong to a worker that died
+// mid-job (SIGKILL, crash) — live jobs are bounded by the job timeout.
+const PROCESSING_JOB_LEASE_MS = JOB_TIMEOUT_SECONDS * 1000 + 15 * 60 * 1000;
+
+// Reaper: recover claims whose owner died mid-job. Committed claims carry
+// their outcome (input already deleted, so re-encoding is impossible) and
+// are finalized via progress + callback; others are requeued atomically.
+const reapStaleProcessingJobs = async (): Promise<void> => {
+  const staleMembers = await getStaleProcessingJobs(
+    Date.now() - PROCESSING_JOB_LEASE_MS,
+  );
+  for (const member of staleMembers) {
+    let claim: ProcessingClaim;
+    try {
+      claim = JSON.parse(member) as ProcessingClaim;
+    } catch (err) {
+      console.error("Dropping malformed processing claim:", err);
+      await releaseProcessingJob(member).catch(() => {});
+      continue;
+    }
+    const { job, completion } = claim;
+    if (completion) {
+      try {
+        await setEncodeProgress(job.movieId, {
+          status: "completed",
+          progress: 100,
+        });
+        await sendCallback({
+          movieId: job.movieId,
+          variantId: "original",
+          status: "success",
+          s3Key: job.s3Key,
+          contentUrl: completion.contentUrl,
+          duration: completion.duration,
+        });
+        await releaseProcessingJob(member);
+        console.log(
+          `Finalized job from stale claim: movieId=${job.movieId}`,
+        );
+      } catch (err) {
+        // Leave the claim in place so a later reap retries it.
+        console.error(
+          `Failed to finalize stale processing claim: movieId=${job.movieId}`,
+          err,
+        );
+      }
+      continue;
+    }
+    try {
+      const requeued = await requeueStaleProcessingJob(member);
+      if (requeued) {
+        console.log(
+          `Requeued job from stale claim: movieId=${job.movieId}`,
+        );
+      }
+    } catch (err) {
+      console.error(
+        `Failed to requeue stale processing claim: movieId=${job.movieId}`,
+        err,
+      );
+    }
+  }
+};
 
 const checkDiskSpace = async (): Promise<boolean> => {
   try {
@@ -117,14 +191,23 @@ const checkDiskSpace = async (): Promise<boolean> => {
 };
 
 // "error" marks unexpected processJob rejections (no confirmed terminal
-// outcome), distinct from handled "failed" paths.
-type JobResult = "completed" | "failed" | "retrying" | "error";
+// outcome), distinct from handled "failed" paths. "relinquished" marks a
+// job whose ownership was transferred to the queue during shutdown.
+type JobResult =
+  | "completed"
+  | "failed"
+  | "retrying"
+  | "error"
+  | "relinquished";
 
 const processJob = async (job: EncodeJob): Promise<JobResult> => {
   console.log(`Processing job: movieId=${job.movieId}, s3Key=${job.s3Key}`);
 
   // Check disk space before processing
   const hasEnoughSpace = await checkDiskSpace();
+  if (jobRelinquished) {
+    return "relinquished";
+  }
   if (!hasEnoughSpace) {
     console.error(
       `Insufficient disk space for job: movieId=${job.movieId}, scheduling retry`,
@@ -163,6 +246,10 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     return "failed";
   }
 
+  if (jobRelinquished) {
+    return "relinquished";
+  }
+
   // Set status to processing
   await setEncodeProgress(job.movieId, { status: "processing", progress: 0 });
 
@@ -198,6 +285,9 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       inputPath,
       outputPath,
       async (progress) => {
+        if (jobRelinquished) {
+          return;
+        }
         // Update progress in Redis
         await setEncodeProgress(job.movieId, {
           status: "processing",
@@ -208,6 +298,10 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       },
       abortController.signal,
     );
+
+    if (jobRelinquished) {
+      return "relinquished";
+    }
 
     if (!result.success) {
       console.error(`Encoding failed: ${result.error}`);
@@ -249,6 +343,19 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     // Generate content URL for VOD streaming
     const contentUrl = `${VOD_BASE_URL}/vod/${job.s3Key}/master.m3u8`;
 
+    // The input is gone: if this worker dies now the job can no longer be
+    // re-encoded, so mark the claim with its outcome for the reaper.
+    if (activeJobClaim) {
+      activeJobClaim = await commitProcessingJob(activeJobClaim, job, {
+        contentUrl,
+        duration: result.duration,
+      });
+    }
+
+    if (jobRelinquished) {
+      return "relinquished";
+    }
+
     // Set status to completed
     await setEncodeProgress(job.movieId, { status: "completed", progress: 100 });
 
@@ -265,6 +372,9 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     console.log(`Job completed successfully: movieId=${job.movieId}`);
     return "completed";
   } catch (error) {
+    if (jobRelinquished) {
+      return "relinquished";
+    }
     console.error(`Job failed: movieId=${job.movieId}`, error);
     // Try to retry the job
     const retryCount = job.retryCount || 0;
@@ -322,6 +432,11 @@ const pollForJobs = async (): Promise<void> => {
       } catch (error) {
         console.error("Error processing retry queue:", error);
       }
+      try {
+        await reapStaleProcessingJobs();
+      } catch (error) {
+        console.error("Error reaping stale processing jobs:", error);
+      }
     } else {
       clearInterval(retryQueueInterval);
     }
@@ -337,6 +452,13 @@ const pollForJobs = async (): Promise<void> => {
     console.error("Error processing retry queue at startup:", error);
   }
 
+  // Recover claims left behind by workers that died mid-job.
+  try {
+    await reapStaleProcessingJobs();
+  } catch (error) {
+    console.error("Error reaping stale processing jobs at startup:", error);
+  }
+
   while (!isShuttingDown) {
     try {
       // Use blocking pop with 5 second timeout
@@ -344,6 +466,15 @@ const pollForJobs = async (): Promise<void> => {
       if (job) {
         const jobStartedAt = performance.now();
         activeJob = job;
+        jobRelinquished = false;
+        try {
+          activeJobClaim = await claimProcessingJob(job);
+        } catch (claimError) {
+          console.error(
+            `Failed to record processing claim: movieId=${job.movieId}`,
+            claimError,
+          );
+        }
         let result: JobResult;
         try {
           result = await processJob(job);
@@ -369,7 +500,20 @@ const pollForJobs = async (): Promise<void> => {
           }
           result = "error";
         } finally {
+          // Relinquished claims are owned by the queue again: releasing
+          // them here could delete a claim another worker just took.
+          if (activeJobClaim && !jobRelinquished) {
+            try {
+              await releaseProcessingJob(activeJobClaim);
+            } catch (releaseError) {
+              console.error(
+                `Failed to release processing claim: movieId=${job.movieId}`,
+                releaseError,
+              );
+            }
+          }
           activeJob = null;
+          activeJobClaim = null;
         }
         encodeJobs.add(1, { result });
         encodeJobDuration.record(
@@ -418,18 +562,23 @@ const shutdown = async (): Promise<void> => {
     ]);
   }
   // Last resort: the job did not settle even after abort (e.g. stuck in a
-  // non-abortable await). Push it back so it is not lost entirely.
+  // non-abortable await). Relinquish it — its remaining terminal writes are
+  // skipped — and expire the claim so another worker's reaper hands it off:
+  // committed claims are finalized via callback, others are requeued.
   if (activeJob) {
     console.warn(
-      `Requeueing in-flight job on shutdown: movieId=${activeJob.movieId}`,
+      `Relinquishing in-flight job on shutdown: movieId=${activeJob.movieId}`,
     );
-    try {
-      await requeueJob(activeJob);
-    } catch (err) {
-      console.error(
-        `Failed to requeue job on shutdown: movieId=${activeJob.movieId}`,
-        err,
-      );
+    jobRelinquished = true;
+    if (activeJobClaim) {
+      try {
+        await expireProcessingJob(activeJobClaim);
+      } catch (err) {
+        console.error(
+          `Failed to expire processing claim: movieId=${activeJob.movieId}`,
+          err,
+        );
+      }
     }
   }
   await metricProvider

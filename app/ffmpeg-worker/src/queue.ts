@@ -254,11 +254,91 @@ const processRetryQueueWithClient = async (
   }
 };
 
-// Push a job back onto the main queue unchanged (e.g. a worker shutting
-// down mid-job): interruption is not a failure, so retryCount is untouched.
-export const requeueJob = async (job: EncodeJob): Promise<void> => {
+// Jobs popped from the main queue are claimed here (score = claim time in
+// ms) until they finish, so a dead worker's job can be recovered by any live
+// worker instead of being lost.
+export const PROCESSING_QUEUE_KEY = "video:encode:processing";
+
+export interface ProcessingClaimCompletion {
+  contentUrl: string;
+  duration?: number;
+}
+
+export interface ProcessingClaim {
+  job: EncodeJob;
+  completion?: ProcessingClaimCompletion;
+}
+
+export const claimProcessingJob = async (
+  job: EncodeJob,
+): Promise<string> => {
   const client = await getRedisClient();
-  await client.rPush(ENCODE_QUEUE_KEY, JSON.stringify(job));
+  const member = JSON.stringify({ job } satisfies ProcessingClaim);
+  await client.zAdd(PROCESSING_QUEUE_KEY, { score: Date.now(), value: member });
+  return member;
+};
+
+// Once the job's input is deleted it can never be re-encoded; the claim is
+// rewritten to carry the outcome so a reaper can finalize it via callback
+// rather than requeue it.
+export const commitProcessingJob = async (
+  member: string,
+  job: EncodeJob,
+  completion: ProcessingClaimCompletion,
+): Promise<string> => {
+  const client = await getRedisClient();
+  const nextMember = JSON.stringify({ job, completion } satisfies ProcessingClaim);
+  await client
+    .multi()
+    .zRem(PROCESSING_QUEUE_KEY, member)
+    .zAdd(PROCESSING_QUEUE_KEY, { score: Date.now(), value: nextMember })
+    .exec();
+  return nextMember;
+};
+
+export const releaseProcessingJob = async (member: string): Promise<void> => {
+  const client = await getRedisClient();
+  await client.zRem(PROCESSING_QUEUE_KEY, member);
+};
+
+// Expire a claim early so the reaper hands the job to another worker even
+// though the lease has not elapsed (used after relinquishing on shutdown).
+export const expireProcessingJob = async (member: string): Promise<void> => {
+  const client = await getRedisClient();
+  await client.zAdd(PROCESSING_QUEUE_KEY, { score: 0, value: member });
+};
+
+export const getStaleProcessingJobs = async (
+  claimedBeforeMs: number,
+): Promise<string[]> => {
+  const client = await getRedisClient();
+  return client.zRangeByScore(PROCESSING_QUEUE_KEY, 0, claimedBeforeMs);
+};
+
+const REQUEUE_PROCESSING_JOB_SCRIPT = `
+  local removed = redis.call('ZREM', KEYS[1], ARGV[1])
+  if removed == 1 then
+    redis.call('RPUSH', KEYS[2], ARGV[2])
+    return 1
+  end
+  return 0
+`;
+
+// Atomically move a stale claim back to the main queue; the ZREM guard lets
+// only one worker perform the handoff when several reap concurrently.
+export const requeueStaleProcessingJob = async (
+  member: string,
+): Promise<boolean> => {
+  const client = await getRedisClient();
+  const claim = JSON.parse(member) as ProcessingClaim;
+  const result = await (client as RedisClientType).eval(
+    REQUEUE_PROCESSING_JOB_SCRIPT,
+    {
+      keys: [PROCESSING_QUEUE_KEY, ENCODE_QUEUE_KEY],
+      arguments: [member, JSON.stringify(claim.job)],
+    },
+  );
+  return result === 1;
 };
 
 export const getQueueDepths = async (): Promise<{
