@@ -11,6 +11,8 @@ import {
   getQueueDepths,
   claimProcessingJob,
   commitProcessingJob,
+  finishProcessingJob,
+  getJobCompletion,
   releaseProcessingJob,
   expireProcessingJob,
   getStaleProcessingJobs,
@@ -103,10 +105,12 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
       await releaseProcessingJob(member).catch(() => {});
       continue;
     }
-    const { job, completion } = claim;
-    // A claim without a recorded completion may still belong to a job that
-    // finished (e.g. its commit write failed): check the terminal progress
-    // state so we never requeue a video whose input is already gone.
+    const { job } = claim;
+    // The completion record (24h) is authoritative: it outlives the claim
+    // lease, so a committed outcome is never re-queued as an encode job.
+    const completion =
+      (await getJobCompletion(job.movieId).catch(() => null)) ??
+      claim.completion;
     if (!completion) {
       const progress = await getEncodeProgress(job.movieId).catch(() => null);
       if (progress?.status === "failed") {
@@ -121,8 +125,9 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
             status: "success",
             s3Key: job.s3Key,
             contentUrl: `${VOD_BASE_URL}/vod/${job.s3Key}/master.m3u8`,
+            duration: progress.duration,
           });
-          await releaseProcessingJob(member);
+          await finishProcessingJob(member, job.movieId);
           console.log(
             `Finalized completed job from stale claim: movieId=${job.movieId}`,
           );
@@ -140,6 +145,7 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
         await setEncodeProgress(job.movieId, {
           status: "completed",
           progress: 100,
+          duration: completion.duration,
         });
         await sendCallback({
           movieId: job.movieId,
@@ -149,7 +155,7 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
           contentUrl: completion.contentUrl,
           duration: completion.duration,
         });
-        await releaseProcessingJob(member);
+        await finishProcessingJob(member, job.movieId);
         console.log(
           `Finalized job from stale claim: movieId=${job.movieId}`,
         );
@@ -406,7 +412,11 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     }
 
     // Set status to completed
-    await setEncodeProgress(job.movieId, { status: "completed", progress: 100 });
+    await setEncodeProgress(job.movieId, {
+      status: "completed",
+      progress: 100,
+      duration: result.duration,
+    });
 
     // Send success callback
     await sendCallback({
@@ -435,6 +445,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         await setEncodeProgress(job.movieId, {
           status: "completed",
           progress: 100,
+          duration: committedOutcome.duration,
         });
         await sendCallback({
           movieId: job.movieId,
@@ -569,6 +580,53 @@ const pollForJobs = async (): Promise<void> => {
             claimError,
           );
         }
+        // The job may already have a recorded outcome (input deleted, then
+        // requeued by a stale claim): finalize instead of re-encoding.
+        const priorCompletion = await getJobCompletion(job.movieId).catch(
+          () => null,
+        );
+        if (priorCompletion) {
+          activeJobCommitted = true;
+          try {
+            await setEncodeProgress(job.movieId, {
+              status: "completed",
+              progress: 100,
+              duration: priorCompletion.duration,
+            });
+            await sendCallback({
+              movieId: job.movieId,
+              variantId: "original",
+              status: "success",
+              s3Key: job.s3Key,
+              contentUrl: priorCompletion.contentUrl,
+              duration: priorCompletion.duration,
+            });
+          } catch (finalizeError) {
+            console.error(
+              `Failed to finalize already-completed job: movieId=${job.movieId}`,
+              finalizeError,
+            );
+          }
+          if (activeJobClaim) {
+            try {
+              await finishProcessingJob(activeJobClaim, job.movieId);
+            } catch (finishError) {
+              console.error(
+                `Failed to release processing claim: movieId=${job.movieId}`,
+                finishError,
+              );
+            }
+          }
+          encodeJobs.add(1, { result: "completed" });
+          encodeJobDuration.record(
+            (performance.now() - jobStartedAt) / 1000,
+            { result: "completed" },
+          );
+          activeJob = null;
+          activeJobClaim = null;
+          activeJobCommitted = false;
+          continue;
+        }
         let result: JobResult = "error";
         try {
           result = await processJob(job);
@@ -603,7 +661,11 @@ const pollForJobs = async (): Promise<void> => {
             (!activeJobCommitted || result === "completed");
           if (activeJobClaim && claimResolved) {
             try {
-              await releaseProcessingJob(activeJobClaim);
+              if (result === "completed") {
+                await finishProcessingJob(activeJobClaim, job.movieId);
+              } else {
+                await releaseProcessingJob(activeJobClaim);
+              }
             } catch (releaseError) {
               console.error(
                 `Failed to release processing claim: movieId=${job.movieId}`,

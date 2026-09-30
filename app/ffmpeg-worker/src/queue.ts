@@ -284,6 +284,28 @@ export interface ProcessingClaim {
   completion?: ProcessingClaimCompletion;
 }
 
+// A job's recorded outcome once its input is deleted: unlike progress keys
+// (1h TTL) this outlives the claim lease, and unlike the claim member it
+// survives a failed claim rewrite — reapers and workers popping the job
+// check it before deciding to encode.
+export const JOB_COMPLETION_PREFIX = "video:encode:completion:";
+const JOB_COMPLETION_TTL_SECONDS = 24 * 3600;
+
+export const getJobCompletion = async (
+  movieId: string,
+): Promise<ProcessingClaimCompletion | null> => {
+  const client = await getRedisClient();
+  const raw = await client.get(`${JOB_COMPLETION_PREFIX}${movieId}`);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as ProcessingClaimCompletion;
+  } catch {
+    return null;
+  }
+};
+
 export const claimProcessingJob = async (
   job: EncodeJob,
 ): Promise<string> => {
@@ -293,22 +315,39 @@ export const claimProcessingJob = async (
   return member;
 };
 
-// Once the job's input is deleted it can never be re-encoded; the claim is
-// rewritten to carry the outcome so a reaper can finalize it via callback
-// rather than requeue it.
+// Once the job's input is deleted it can never be re-encoded; record the
+// outcome atomically with the claim refresh so a reaper finalizes it via
+// callback rather than requeue it.
 export const commitProcessingJob = async (
   member: string,
   job: EncodeJob,
   completion: ProcessingClaimCompletion,
 ): Promise<string> => {
   const client = await getRedisClient();
-  const nextMember = JSON.stringify({ job, completion } satisfies ProcessingClaim);
+  await client
+    .multi()
+    .zAdd(PROCESSING_QUEUE_KEY, { score: Date.now(), value: member })
+    .setEx(
+      `${JOB_COMPLETION_PREFIX}${job.movieId}`,
+      JOB_COMPLETION_TTL_SECONDS,
+      JSON.stringify(completion),
+    )
+    .exec();
+  return member;
+};
+
+// Terminal release: drop the claim and the completion record together so a
+// future job for the same movie cannot see a stale outcome.
+export const finishProcessingJob = async (
+  member: string,
+  movieId: string,
+): Promise<void> => {
+  const client = await getRedisClient();
   await client
     .multi()
     .zRem(PROCESSING_QUEUE_KEY, member)
-    .zAdd(PROCESSING_QUEUE_KEY, { score: Date.now(), value: nextMember })
+    .del(`${JOB_COMPLETION_PREFIX}${movieId}`)
     .exec();
-  return nextMember;
 };
 
 export const releaseProcessingJob = async (member: string): Promise<void> => {
