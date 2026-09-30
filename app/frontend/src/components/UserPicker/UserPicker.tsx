@@ -31,9 +31,9 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
         const res = await client.api.v4.users.$get({
           query: { query: trimmed, limit: "10" },
         });
-        if (requestId !== latestRequestId.current) return;
         if (res.ok) {
           const json = await res.json();
+          if (requestId !== latestRequestId.current) return;
           const items = json.data.items as FilteredUser[];
           setResults(
             items.filter(
