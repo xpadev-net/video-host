@@ -14,6 +14,7 @@ const ssoErrorMessages: Record<string, string> = {
   sso_failed: "SSOログインに失敗しました",
   sso_unavailable: "SSOログインは現在利用できません",
   sso_user_not_found: "このアカウントは登録されていません",
+  sso_identity_taken: "このSSOアカウントは既に別のアカウントに連携されています",
 };
 
 const LoginPage = () => {
@@ -41,20 +42,22 @@ const LoginPage = () => {
     document.title = `ログイン - ${SiteName}`;
 
     void (async () => {
-      // Check if already authenticated
-      const token = localStorage.getItem("token");
-      if (token && token !== "null" && token.trim() !== "") {
-        const callback = getSafeCallback(
-          new URLSearchParams(window.location.search).get("callback"),
-        );
-        router.push(callback ?? "/");
-        return;
-      }
+      const params = new URLSearchParams(window.location.search);
 
-      // Surface SSO errors bounced back from the backend callback
-      const ssoError = new URLSearchParams(window.location.search).get("error");
+      // Surface SSO errors bounced back from the backend callback.
+      // Checked BEFORE the existing-session redirect so a failed SSO login
+      // is not silently swallowed when the browser still holds a token.
+      const ssoError = params.get("error");
       if (ssoError) {
         setError(ssoErrorMessages[ssoError] ?? "SSOログインに失敗しました");
+      } else {
+        // Check if already authenticated
+        const token = localStorage.getItem("token");
+        if (token && token !== "null" && token.trim() !== "") {
+          const callback = getSafeCallback(params.get("callback"));
+          router.push(callback ?? "/");
+          return;
+        }
       }
 
       const config = await getAuthConfig();

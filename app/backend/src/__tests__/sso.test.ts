@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Env } from "@/@types/hono";
 
 // Mock Prisma before imports
 const mockPrisma = {
@@ -43,6 +44,13 @@ class MockOidcUserNotProvisionedError extends Error {
   }
 }
 
+class MockOidcLinkConflictError extends Error {
+  constructor() {
+    super("SSO identity conflict");
+    this.name = "OidcLinkConflictError";
+  }
+}
+
 vi.mock("@/lib/oidc", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/oidc")>();
   return {
@@ -51,6 +59,7 @@ vi.mock("@/lib/oidc", async (importOriginal) => {
       mockBuildSsoAuthorizationUrl(...args),
     handleSsoCallback: (...args: unknown[]) => mockHandleSsoCallback(...args),
     OidcUserNotProvisionedError: MockOidcUserNotProvisionedError,
+    OidcLinkConflictError: MockOidcLinkConflictError,
   };
 });
 
@@ -74,7 +83,7 @@ const clearOidcEnv = () => {
 const buildApp = async () => {
   const { authRoute } = await import("../routes/api/v4/auth");
   const { usersRoute } = await import("../routes/api/v4/users/index");
-  const app = new Hono();
+  const app = new Hono<Env>();
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
       return c.json(
@@ -86,6 +95,24 @@ const buildApp = async () => {
       { status: "error", code: 500, message: "Internal Server Error" },
       500,
     );
+  });
+  // Mirror the production auth middleware's Bearer handling: set `user`
+  // when a valid token is presented (tests use a fixed sentinel token).
+  app.use("*", async (c, next) => {
+    if (c.req.header("authorization") === "Bearer test-session") {
+      c.set("user", {
+        id: "user-1",
+        username: "u1",
+        name: "U1",
+        password: "hashed",
+        role: "USER",
+        avatarUrl: null,
+        externalId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+    await next();
   });
   app.route("/auth", authRoute);
   app.route("/users", usersRoute);
@@ -149,6 +176,57 @@ describe("GET /auth/sso/login", () => {
   });
 });
 
+describe("POST /auth/sso/link", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it("should return 401 without a session token", async () => {
+    enableOidcEnv();
+    const app = await buildApp();
+
+    const res = await app.request("/auth/sso/link", { method: "POST" });
+
+    expect(res.status).toBe(401);
+    clearOidcEnv();
+  });
+
+  it("should return the provider URL bound to the authenticated user", async () => {
+    enableOidcEnv();
+    mockBuildSsoAuthorizationUrl.mockResolvedValue(
+      new URL("https://idp.example.com/authorize?state=link"),
+    );
+    const app = await buildApp();
+
+    const res = await app.request("/auth/sso/link?callback=/dashboard", {
+      method: "POST",
+      headers: { authorization: "Bearer test-session" },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data).toBe("https://idp.example.com/authorize?state=link");
+    expect(mockBuildSsoAuthorizationUrl).toHaveBeenCalledWith(
+      "/dashboard",
+      "user-1",
+    );
+    clearOidcEnv();
+  });
+
+  it("should return 403 when SSO is disabled", async () => {
+    const app = await buildApp();
+
+    const res = await app.request("/auth/sso/link", {
+      method: "POST",
+      headers: { authorization: "Bearer test-session" },
+    });
+
+    expect(res.status).toBe(403);
+    expect(mockBuildSsoAuthorizationUrl).not.toHaveBeenCalled();
+  });
+});
+
 describe("GET /auth/sso/callback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -188,6 +266,22 @@ describe("GET /auth/sso/callback", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe(
       "http://localhost:3000/login?error=sso_user_not_found",
+    );
+    clearOidcEnv();
+  });
+
+  it("should redirect to frontend login error on link conflict", async () => {
+    enableOidcEnv();
+    mockHandleSsoCallback.mockRejectedValue(new MockOidcLinkConflictError());
+    const app = await buildApp();
+
+    const res = await app.request(
+      "/auth/sso/callback?code=auth-code&state=abc",
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(
+      "http://localhost:3000/login?error=sso_identity_taken",
     );
     clearOidcEnv();
   });

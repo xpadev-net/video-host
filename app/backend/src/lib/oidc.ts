@@ -33,6 +33,8 @@ interface OidcStateData {
   codeVerifier: string;
   /** Frontend-relative path to land on after login (already validated). */
   callback: string | null;
+  /** Set for the account-link flow: attach the SSO identity to this user. */
+  linkUserId?: string;
 }
 
 let configPromise: Promise<client.Configuration> | null = null;
@@ -82,6 +84,7 @@ export const sanitizeCallback = (callback: string | null): string | null => {
  */
 export const buildSsoAuthorizationUrl = async (
   callback: string | null,
+  linkUserId?: string,
 ): Promise<URL> => {
   const config = await getOidcConfig();
 
@@ -95,6 +98,7 @@ export const buildSsoAuthorizationUrl = async (
     nonce,
     codeVerifier,
     callback: sanitizeCallback(callback),
+    linkUserId,
   };
   await redis.setEx(stateKey(state), STATE_TTL_SECONDS, JSON.stringify(data));
 
@@ -161,7 +165,9 @@ export const handleSsoCallback = async (
   }
 
   const externalId = `${claims.iss}#${claims.sub}`;
-  const user = await findOrProvisionOidcUser(externalId, claims);
+  const user = stored.linkUserId
+    ? await linkOidcUser(stored.linkUserId, externalId)
+    : await findOrProvisionOidcUser(externalId, claims);
   if (!user) {
     throw new OidcUserNotProvisionedError();
   }
@@ -169,6 +175,45 @@ export const handleSsoCallback = async (
   const token = await createSession(user.id);
   return { token, callback: stored.callback };
 };
+
+/**
+ * Account-link flow: attach an SSO identity to an already-authenticated
+ * local account so the user can migrate off password login.
+ */
+const linkOidcUser = async (
+  userId: string,
+  externalId: string,
+): Promise<User> => {
+  const target = await prisma.user.findUnique({ where: { id: userId } });
+  if (!target) {
+    throw new Error("Link target account no longer exists");
+  }
+  if (target.externalId && target.externalId !== externalId) {
+    throw new OidcLinkConflictError();
+  }
+  const conflict = await prisma.user.findUnique({ where: { externalId } });
+  if (conflict && conflict.id !== target.id) {
+    throw new OidcLinkConflictError();
+  }
+  if (conflict) {
+    // Already linked to this same identity — idempotent success
+    return conflict;
+  }
+  return prisma.user.update({
+    where: { id: userId },
+    data: { externalId },
+  });
+};
+
+export class OidcLinkConflictError extends Error {
+  constructor() {
+    super(
+      "This SSO identity is already linked to another account, or this " +
+        "account is already linked to a different SSO identity",
+    );
+    this.name = "OidcLinkConflictError";
+  }
+}
 
 export class OidcUserNotProvisionedError extends Error {
   constructor() {

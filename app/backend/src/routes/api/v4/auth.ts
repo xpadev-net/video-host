@@ -12,6 +12,7 @@ import {
 import {
   buildSsoAuthorizationUrl,
   handleSsoCallback,
+  OidcLinkConflictError,
   OidcUserNotProvisionedError,
 } from "@/lib/oidc";
 import { isPasswordValid } from "@/lib/password";
@@ -103,6 +104,24 @@ export const authRoute = app
       signupEnabled: SIGNUP_ENABLED,
     });
   })
+  .post("/sso/link", async (c) => {
+    // Account-link flow: lets a logged-in (password) user attach an SSO
+    // identity before the instance switches to SSO-only. Requires a valid
+    // session — the auth middleware attaches `user` when a Bearer token is
+    // present even though /api/v4/auth is a public prefix.
+    if (!OIDC_ENABLED) {
+      forbidden("SSO is not enabled");
+    }
+    const user = c.get("user");
+    if (!user) {
+      unauthorized("Login required");
+    }
+    const url = await buildSsoAuthorizationUrl(
+      c.req.query("callback") ?? null,
+      user.id,
+    );
+    return ok(c, url.toString());
+  })
   .get("/sso/login", async (c) => {
     if (!OIDC_ENABLED) {
       return c.redirect(ssoErrorRedirect("sso_unavailable"));
@@ -138,6 +157,9 @@ export const authRoute = app
     } catch (err) {
       if (err instanceof OidcUserNotProvisionedError) {
         return c.redirect(ssoErrorRedirect("sso_user_not_found"));
+      }
+      if (err instanceof OidcLinkConflictError) {
+        return c.redirect(ssoErrorRedirect("sso_identity_taken"));
       }
       console.error("SSO callback failed:", err);
       return c.redirect(ssoErrorRedirect("sso_failed"));
