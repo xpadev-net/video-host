@@ -5,6 +5,7 @@ import {
   type EncodeJob,
   type ProcessingClaim,
   setEncodeProgress,
+  getEncodeProgress,
   addJobToRetryQueue,
   processRetryQueue,
   getQueueDepths,
@@ -68,6 +69,7 @@ let isShuttingDown = false;
 // relinquished terminal writes.
 let activeJob: EncodeJob | null = null;
 let activeJobClaim: string | null = null;
+let activeJobCommitted = false;
 let jobRelinquished = false;
 
 // Bound the graceful drain so a stalled job/callback cannot hang SIGTERM.
@@ -102,6 +104,37 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
       continue;
     }
     const { job, completion } = claim;
+    // A claim without a recorded completion may still belong to a job that
+    // finished (e.g. its commit write failed): check the terminal progress
+    // state so we never requeue a video whose input is already gone.
+    if (!completion) {
+      const progress = await getEncodeProgress(job.movieId).catch(() => null);
+      if (progress?.status === "failed") {
+        await releaseProcessingJob(member).catch(() => {});
+        continue;
+      }
+      if (progress?.status === "completed") {
+        try {
+          await sendCallback({
+            movieId: job.movieId,
+            variantId: "original",
+            status: "success",
+            s3Key: job.s3Key,
+            contentUrl: `${VOD_BASE_URL}/vod/${job.s3Key}/master.m3u8`,
+          });
+          await releaseProcessingJob(member);
+          console.log(
+            `Finalized completed job from stale claim: movieId=${job.movieId}`,
+          );
+        } catch (err) {
+          console.error(
+            `Failed to finalize completed stale claim: movieId=${job.movieId}`,
+            err,
+          );
+        }
+        continue;
+      }
+    }
     if (completion) {
       try {
         await setEncodeProgress(job.movieId, {
@@ -353,6 +386,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     // re-encoded, so mark the claim with its outcome for the reaper. A
     // failure here must not send the job down the retry path.
     committedOutcome = { contentUrl, duration: result.duration };
+    activeJobCommitted = true;
     if (activeJobClaim) {
       try {
         activeJobClaim = await commitProcessingJob(activeJobClaim, job, {
@@ -416,6 +450,22 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
           `Failed to finalize committed job: movieId=${job.movieId}`,
           finalizeError,
         );
+        // Keep the job recoverable: ensure the claim is marked committed so
+        // a reaper can retry the finalize instead of losing it on release.
+        if (activeJobClaim) {
+          try {
+            activeJobClaim = await commitProcessingJob(
+              activeJobClaim,
+              job,
+              committedOutcome,
+            );
+          } catch (claimError) {
+            console.error(
+              `Failed to persist committed claim: movieId=${job.movieId}`,
+              claimError,
+            );
+          }
+        }
         return "error";
       }
     }
@@ -519,7 +569,7 @@ const pollForJobs = async (): Promise<void> => {
             claimError,
           );
         }
-        let result: JobResult;
+        let result: JobResult = "error";
         try {
           result = await processJob(job);
         } catch (error) {
@@ -545,8 +595,13 @@ const pollForJobs = async (): Promise<void> => {
           result = "error";
         } finally {
           // Relinquished claims are owned by the queue again: releasing
-          // them here could delete a claim another worker just took.
-          if (activeJobClaim && !jobRelinquished) {
+          // them here could delete a claim another worker just took. A
+          // committed job that failed to finalize keeps its claim so the
+          // reaper can finish it instead of losing an uploaded video.
+          const claimResolved =
+            !jobRelinquished &&
+            (!activeJobCommitted || result === "completed");
+          if (activeJobClaim && claimResolved) {
             try {
               await releaseProcessingJob(activeJobClaim);
             } catch (releaseError) {
@@ -558,6 +613,7 @@ const pollForJobs = async (): Promise<void> => {
           }
           activeJob = null;
           activeJobClaim = null;
+          activeJobCommitted = false;
         }
         encodeJobs.add(1, { result });
         encodeJobDuration.record(

@@ -103,6 +103,21 @@ export const clearEncodeProgress = async (movieId: string): Promise<void> => {
   await client.del(`${ENCODE_PROGRESS_PREFIX}${movieId}`);
 };
 
+export const getEncodeProgress = async (
+  movieId: string,
+): Promise<EncodeProgress | null> => {
+  const client = await getRedisClient();
+  const raw = await client.get(`${ENCODE_PROGRESS_PREFIX}${movieId}`);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as EncodeProgress;
+  } catch {
+    return null;
+  }
+};
+
 export const addJobToRetryQueue = async (job: EncodeJob): Promise<void> => {
   const client = await getRedisClient();
   const retryCount = (job.retryCount || 0) + 1;
