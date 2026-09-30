@@ -16,7 +16,12 @@ const AuthCallbackPage = () => {
   const setAuthToken = useSetAtom(AuthTokenAtom);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    // Backend sends the token in the fragment (#...) so it never reaches
+    // server logs or Referer headers; fall back to query for errors.
+    const hash = window.location.hash.replace(/^#/, "");
+    const params = hash
+      ? new URLSearchParams(hash)
+      : new URLSearchParams(window.location.search);
     const token = params.get("token");
     if (!token) {
       const error = params.get("error") ?? "sso_failed";

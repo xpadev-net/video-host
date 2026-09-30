@@ -209,7 +209,17 @@ const EnvSchema = z
     message:
       "At least one authentication method must be enabled: set " +
       "PASSWORD_AUTH_ENABLED=true or configure OIDC_ENABLED=true",
-  });
+  })
+  .refine(
+    (env) =>
+      !(env.OIDC_ENABLED && env.NODE_ENV === "production") ||
+      env.FRONTEND_URL.startsWith("https://"),
+    {
+      message:
+        "FRONTEND_URL must be set to an https:// URL in production when " +
+        "OIDC_ENABLED is true (the SSO callback carries the session token)",
+    },
+  );
 
 // Export the schema for testing purposes
 export { DEV_DEFAULTS, EnvSchema };

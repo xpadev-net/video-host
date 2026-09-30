@@ -64,20 +64,14 @@ const stateKey = (state: string): string => `oidc:state:${state}`;
  * Mirrors the frontend getSafeCallback() rules.
  */
 export const sanitizeCallback = (callback: string | null): string | null => {
-  if (!callback) {
-    return null;
-  }
-  try {
-    const decoded = decodeURIComponent(callback);
-    if (
-      decoded.startsWith("/") &&
-      !decoded.startsWith("//") &&
-      !decoded.includes("://")
-    ) {
-      return decoded;
-    }
-  } catch {
-    return null;
+  // c.req.query() is already URL-decoded by Hono — do NOT decodeURIComponent
+  // again: a second decode would corrupt paths containing literal "%".
+  if (
+    callback?.startsWith("/") &&
+    !callback.startsWith("//") &&
+    !callback.includes("://")
+  ) {
+    return callback;
   }
   return null;
 };
@@ -218,7 +212,15 @@ const findOrProvisionOidcUser = async (
           role: "USER",
         },
       });
-    } catch {}
+    } catch {
+      // A concurrent first login for the same identity may have won the
+      // unique-externalId race — resolve to it instead of failing.
+      const winner = await prisma.user.findUnique({ where: { externalId } });
+      if (winner) {
+        return winner;
+      }
+      // Otherwise the collision was the username — retry with a suffix.
+    }
   }
   throw new Error("Failed to generate a unique username for the SSO user");
 };

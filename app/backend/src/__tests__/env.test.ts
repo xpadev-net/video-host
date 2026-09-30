@@ -227,6 +227,7 @@ describe("Environment Validation (Zod Schema)", () => {
       OIDC_ISSUER_URL: "https://idp.example.com",
       OIDC_CLIENT_ID: "client-id-123",
       OIDC_REDIRECT_URI: "https://api.example.com/api/v4/auth/sso/callback",
+      FRONTEND_URL: "https://app.example.com",
     };
 
     it("should default to password auth enabled and SSO disabled", () => {
@@ -289,6 +290,41 @@ describe("Environment Validation (Zod Schema)", () => {
       if (result.success) {
         expect(result.data.PASSWORD_AUTH_ENABLED).toBe(false);
       }
+    });
+
+    it("should require an https FRONTEND_URL in production when OIDC is enabled", () => {
+      const env = createProductionEnv({
+        ...oidcEnv,
+        FRONTEND_URL: "",
+      });
+      const result = EnvSchema.safeParse(env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const messages = result.error.issues.map((i) => i.message).join(" ");
+        expect(messages).toMatch(/FRONTEND_URL/);
+      }
+    });
+
+    it("should reject a plain-http FRONTEND_URL in production when OIDC is enabled", () => {
+      const env = createProductionEnv({
+        ...oidcEnv,
+        FRONTEND_URL: "http://app.example.com",
+      });
+      const result = EnvSchema.safeParse(env);
+
+      expect(result.success).toBe(false);
+    });
+
+    it("should allow http FRONTEND_URL in development even with OIDC enabled", () => {
+      const env = {
+        ...createProductionEnv(oidcEnv),
+        NODE_ENV: "development",
+        FRONTEND_URL: "http://localhost:3000",
+      };
+      const result = EnvSchema.safeParse(env);
+
+      expect(result.success).toBe(true);
     });
 
     it("should tolerate empty OIDC values in k8s-style config", () => {

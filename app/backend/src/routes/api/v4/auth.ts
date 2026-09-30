@@ -132,7 +132,9 @@ export const authRoute = app
       if (callback) {
         params.set("callback", callback);
       }
-      return c.redirect(frontendUrl(`/auth/callback?${params.toString()}`));
+      // Fragment (not query): keeps the session token out of server logs
+      // and Referer headers. The frontend parses it from location.hash.
+      return c.redirect(frontendUrl(`/auth/callback#${params.toString()}`));
     } catch (err) {
       if (err instanceof OidcUserNotProvisionedError) {
         return c.redirect(ssoErrorRedirect("sso_user_not_found"));

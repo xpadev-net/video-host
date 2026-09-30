@@ -23,6 +23,8 @@ export const systemAccountsRoute = app
     const systemAccounts = await prisma.user.findMany({
       where: {
         password: null,
+        // SSO users are regular users without a password, not system accounts
+        externalId: null,
       },
       select: {
         id: true,
@@ -90,7 +92,7 @@ export const systemAccountsRoute = app
       badRequest("System account not found");
     }
 
-    if (systemAccount.password !== null) {
+    if (systemAccount.password !== null || systemAccount.externalId !== null) {
       badRequest("Cannot delete a regular user account");
     }
 

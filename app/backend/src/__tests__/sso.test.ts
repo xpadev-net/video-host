@@ -169,7 +169,7 @@ describe("GET /auth/sso/callback", () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe(
-      "http://localhost:3000/auth/callback?token=session-token-123&callback=%2Fmovies",
+      "http://localhost:3000/auth/callback#token=session-token-123&callback=%2Fmovies",
     );
     clearOidcEnv();
   });
@@ -293,7 +293,10 @@ describe("sanitizeCallback", () => {
   it("should accept safe relative paths", async () => {
     const { sanitizeCallback } = await import("../lib/oidc");
     expect(sanitizeCallback("/movies")).toBe("/movies");
-    expect(sanitizeCallback("%2Fseries%2Fabc")).toBe("/series/abc");
+    // Input is already URL-decoded by Hono — encoded input must NOT be
+    // decoded again, and literal percent paths pass through untouched.
+    expect(sanitizeCallback("%2Fseries%2Fabc")).toBeNull();
+    expect(sanitizeCallback("/movies/%25abc")).toBe("/movies/%25abc");
     expect(sanitizeCallback(null)).toBeNull();
   });
 
