@@ -20,7 +20,13 @@ export type PlayerState = {
   isFullscreen: boolean;
 };
 
-export type SettingKey = "main" | "playbackRate" | "comments";
+export type SettingKey = "main" | "playbackRate" | "comments" | "audioTrack";
+
+export type PlayerAudioTrack = {
+  id: number;
+  name: string;
+  lang?: string;
+};
 
 // Setting Items Types
 type BaseSettingItem = {

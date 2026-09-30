@@ -1,8 +1,10 @@
 import type { FormattedMovie } from "@video-host/backend";
 import type { Options } from "@xpadev-net/niconicomments";
+import type Hls from "hls.js";
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import type {
+  PlayerAudioTrack,
   PlayerConfig,
   PlayerState,
   SettingKey,
@@ -17,6 +19,9 @@ const CurrentMovieAtom = atom<FormattedMovie | null>(null);
 
 const WrapperRefAtom = atom<HTMLButtonElement | null>(null);
 const VideoRefAtom = atom<HTMLVideoElement | null>(null);
+const HlsRefAtom = atom<Hls | null>(null);
+const AudioTracksAtom = atom<PlayerAudioTrack[]>([]);
+const AudioTrackIdAtom = atom<number>(-1);
 const VideoMetadataAtom = atom<VideoMetadata>({ currentTime: 0, duration: 0 });
 
 const PlayerStateAtom = atom<PlayerState>({
@@ -60,8 +65,11 @@ const PlayerPlayPauseNotificationAtom = atom<{
 } | null>(null);
 
 export {
+  AudioTrackIdAtom,
+  AudioTracksAtom,
   CurrentMovieAtom,
   DurablePlayerAtom,
+  HlsRefAtom,
   NiconicommentsConfigAtom,
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
