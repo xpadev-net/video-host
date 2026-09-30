@@ -402,16 +402,16 @@ describe("Authorization - Visibility Filtering", () => {
   });
 
   describe("buildMovieAccessWhere", () => {
-    it("should restrict anonymous users to PUBLIC", () => {
+    it("should restrict anonymous users to PUBLIC and UNLISTED", () => {
       expect(buildMovieAccessWhere(undefined)).toEqual({
-        visibility: "PUBLIC",
+        visibility: { in: ["PUBLIC", "UNLISTED"] },
       });
     });
 
-    it("should allow regular users PUBLIC, own, and shared LIMITED movies", () => {
+    it("should allow regular users PUBLIC, UNLISTED, own, and shared LIMITED movies", () => {
       expect(buildMovieAccessWhere(regularUser)).toEqual({
         OR: [
-          { visibility: "PUBLIC" },
+          { visibility: { in: ["PUBLIC", "UNLISTED"] } },
           { authorId: "user-123" },
           {
             visibility: "LIMITED",

@@ -10,6 +10,7 @@ import { deleteProdFile, deleteTmpFile } from "@/lib/s3";
 import {
   buildMovieAccessWhere,
   canViewMovie,
+  canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
@@ -82,6 +83,10 @@ export const movieRoute = app
       ...formatMovie(
         filterMovie({
           ...movie,
+          series:
+            movie.series && canViewOwnedEntity(movie.series, user)
+              ? movie.series
+              : undefined,
           viewers: canSeeViewers
             ? movie.viewers.map((viewer) => viewer.user)
             : undefined,

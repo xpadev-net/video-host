@@ -12,6 +12,7 @@ import { movieRoute } from "@/routes/api/v4/movies/[movie]";
 import {
   buildMovieAccessWhere,
   buildVisibilityFilter,
+  canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
@@ -51,8 +52,9 @@ const app = new Hono<Env>();
 export const moviesRoute = app
   .get("/", zValidator("query", QuerySchema), async (c) => {
     const { page, limit, query, author } = c.req.valid("query");
+    const user = c.get("user");
 
-    const where = buildVisibilityFilter(c.get("user"), query, author, true);
+    const where = buildVisibilityFilter(user, query, author, true);
 
     // Get total count for pagination metadata
     const totalCount = await prisma.movie.count({ where });
@@ -80,7 +82,17 @@ export const moviesRoute = app
     const hasPrev = page > 1;
 
     const response: PaginatedResponse<FormattedMovie> = {
-      items: movies.map((v) => formatMovie(filterMovie(v))),
+      items: movies.map((v) =>
+        formatMovie(
+          filterMovie({
+            ...v,
+            series:
+              v.series && canViewOwnedEntity(v.series, user)
+                ? v.series
+                : undefined,
+          }),
+        ),
+      ),
       pagination: {
         page,
         limit,

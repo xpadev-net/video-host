@@ -14,9 +14,11 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const latestRequestId = useRef(0);
 
   useEffect(() => {
     const trimmed = query.trim();
+    const requestId = ++latestRequestId.current;
     if (!trimmed) {
       setResults([]);
       setIsSearching(false);
@@ -29,6 +31,7 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
         const res = await client.api.v4.users.$get({
           query: { query: trimmed, limit: "10" },
         });
+        if (requestId !== latestRequestId.current) return;
         if (res.ok) {
           const json = await res.json();
           const items = json.data.items as FilteredUser[];
@@ -39,9 +42,13 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
           );
         }
       } catch {
-        setResults([]);
+        if (requestId === latestRequestId.current) {
+          setResults([]);
+        }
       } finally {
-        setIsSearching(false);
+        if (requestId === latestRequestId.current) {
+          setIsSearching(false);
+        }
       }
     }, 300);
 
