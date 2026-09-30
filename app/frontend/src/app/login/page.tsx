@@ -15,6 +15,8 @@ const ssoErrorMessages: Record<string, string> = {
   sso_unavailable: "SSOログインは現在利用できません",
   sso_user_not_found: "このアカウントは登録されていません",
   sso_identity_taken: "このSSOアカウントは既に別のアカウントに連携されています",
+  sso_link_expired:
+    "SSO連携が無効または期限切れです。開始したブラウザでもう一度やり直してください",
 };
 
 const LoginPage = () => {

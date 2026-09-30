@@ -1,17 +1,20 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import {
   FRONTEND_URL,
   OIDC_DISPLAY_NAME,
   OIDC_ENABLED,
+  OIDC_REDIRECT_URI,
   PASSWORD_AUTH_ENABLED,
   SIGNUP_ENABLED,
 } from "@/env";
 import {
   buildSsoAuthorizationUrl,
   handleSsoCallback,
+  OidcLinkBrowserMismatchError,
   OidcLinkConflictError,
   OidcUserNotProvisionedError,
 } from "@/lib/oidc";
@@ -42,6 +45,23 @@ const frontendUrl = (path: string) =>
 
 const ssoErrorRedirect = (code: string) =>
   frontendUrl(`/login?error=${encodeURIComponent(code)}`);
+
+const LINK_STATE_COOKIE = "oidc_link_state";
+
+// Binds the account-link flow to the initiating browser: set on POST
+// /sso/link and required again on /sso/callback, so an authorization URL
+// shared with a victim cannot attach the victim's SSO identity to the
+// attacker's account. Cross-site deployments (frontend on a different
+// registrable domain than the API) need SameSite=None;Secure for the
+// fetch response cookie to be stored; http development falls back to Lax.
+const linkStateCookieOptions = {
+  path: "/",
+  httpOnly: true,
+  maxAge: 600, // same TTL as the Redis state entry
+  ...(OIDC_REDIRECT_URI?.startsWith("https://")
+    ? { secure: true, sameSite: "None" as const }
+    : { sameSite: "Lax" as const }),
+};
 
 export const authRoute = app
   .post("/", authRateLimiter, zValidator("json", authSchema), async (c) => {
@@ -116,10 +136,11 @@ export const authRoute = app
     if (!user) {
       unauthorized("Login required");
     }
-    const url = await buildSsoAuthorizationUrl(
+    const { url, state } = await buildSsoAuthorizationUrl(
       c.req.query("callback") ?? null,
       user.id,
     );
+    setCookie(c, LINK_STATE_COOKIE, state, linkStateCookieOptions);
     return ok(c, url.toString());
   })
   .get("/sso/login", async (c) => {
@@ -127,7 +148,7 @@ export const authRoute = app
       return c.redirect(ssoErrorRedirect("sso_unavailable"));
     }
     try {
-      const url = await buildSsoAuthorizationUrl(
+      const { url } = await buildSsoAuthorizationUrl(
         c.req.query("callback") ?? null,
       );
       return c.redirect(url.toString());
@@ -146,20 +167,32 @@ export const authRoute = app
       return c.redirect(ssoErrorRedirect("sso_failed"));
     }
     try {
-      const { token, callback } = await handleSsoCallback(c.req.url);
-      const params = new URLSearchParams({ token });
-      if (callback) {
-        params.set("callback", callback);
+      const result = await handleSsoCallback(
+        c.req.url,
+        getCookie(c, LINK_STATE_COOKIE),
+      );
+      if (result.kind === "link") {
+        // Single-use: drop the browser-binding cookie once the flow ends
+        deleteCookie(c, LINK_STATE_COOKIE, { path: "/" });
+        return c.redirect(frontendUrl(result.callback ?? "/dashboard"));
+      }
+      const params = new URLSearchParams({ token: result.token });
+      if (result.callback) {
+        params.set("callback", result.callback);
       }
       // Fragment (not query): keeps the session token out of server logs
       // and Referer headers. The frontend parses it from location.hash.
       return c.redirect(frontendUrl(`/auth/callback#${params.toString()}`));
     } catch (err) {
+      deleteCookie(c, LINK_STATE_COOKIE, { path: "/" });
       if (err instanceof OidcUserNotProvisionedError) {
         return c.redirect(ssoErrorRedirect("sso_user_not_found"));
       }
       if (err instanceof OidcLinkConflictError) {
         return c.redirect(ssoErrorRedirect("sso_identity_taken"));
+      }
+      if (err instanceof OidcLinkBrowserMismatchError) {
+        return c.redirect(ssoErrorRedirect("sso_link_expired"));
       }
       console.error("SSO callback failed:", err);
       return c.redirect(ssoErrorRedirect("sso_failed"));

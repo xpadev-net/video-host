@@ -51,6 +51,13 @@ class MockOidcLinkConflictError extends Error {
   }
 }
 
+class MockOidcLinkBrowserMismatchError extends Error {
+  constructor() {
+    super("SSO link browser mismatch");
+    this.name = "OidcLinkBrowserMismatchError";
+  }
+}
+
 vi.mock("@/lib/oidc", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/oidc")>();
   return {
@@ -60,6 +67,7 @@ vi.mock("@/lib/oidc", async (importOriginal) => {
     handleSsoCallback: (...args: unknown[]) => mockHandleSsoCallback(...args),
     OidcUserNotProvisionedError: MockOidcUserNotProvisionedError,
     OidcLinkConflictError: MockOidcLinkConflictError,
+    OidcLinkBrowserMismatchError: MockOidcLinkBrowserMismatchError,
   };
 });
 
@@ -148,9 +156,10 @@ describe("GET /auth/sso/login", () => {
 
   it("should redirect to the provider authorization URL", async () => {
     enableOidcEnv();
-    mockBuildSsoAuthorizationUrl.mockResolvedValue(
-      new URL("https://idp.example.com/authorize?state=abc"),
-    );
+    mockBuildSsoAuthorizationUrl.mockResolvedValue({
+      url: new URL("https://idp.example.com/authorize?state=abc"),
+      state: "abc",
+    });
     const app = await buildApp();
 
     const res = await app.request("/auth/sso/login?callback=/movies");
@@ -194,9 +203,10 @@ describe("POST /auth/sso/link", () => {
 
   it("should return the provider URL bound to the authenticated user", async () => {
     enableOidcEnv();
-    mockBuildSsoAuthorizationUrl.mockResolvedValue(
-      new URL("https://idp.example.com/authorize?state=link"),
-    );
+    mockBuildSsoAuthorizationUrl.mockResolvedValue({
+      url: new URL("https://idp.example.com/authorize?state=link"),
+      state: "link",
+    });
     const app = await buildApp();
 
     const res = await app.request("/auth/sso/link?callback=/dashboard", {
@@ -211,6 +221,9 @@ describe("POST /auth/sso/link", () => {
       "/dashboard",
       "user-1",
     );
+    // The state cookie binds the flow to this browser so a shared
+    // authorization URL cannot attach another user's identity.
+    expect(res.headers.get("set-cookie")).toContain("oidc_link_state=link");
     clearOidcEnv();
   });
 
@@ -236,6 +249,7 @@ describe("GET /auth/sso/callback", () => {
   it("should redirect to the frontend callback with the session token", async () => {
     enableOidcEnv();
     mockHandleSsoCallback.mockResolvedValue({
+      kind: "session",
       token: "session-token-123",
       callback: "/movies",
     });
@@ -266,6 +280,44 @@ describe("GET /auth/sso/callback", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe(
       "http://localhost:3000/login?error=sso_user_not_found",
+    );
+    clearOidcEnv();
+  });
+
+  it("should redirect to the callback path on successful account link", async () => {
+    enableOidcEnv();
+    mockHandleSsoCallback.mockResolvedValue({
+      kind: "link",
+      callback: "/dashboard",
+    });
+    const app = await buildApp();
+
+    const res = await app.request(
+      "/auth/sso/callback?code=auth-code&state=abc",
+      { headers: { cookie: "oidc_link_state=abc" } },
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("http://localhost:3000/dashboard");
+    // The browser-binding cookie is consumed with the flow
+    expect(res.headers.get("set-cookie")).toContain("oidc_link_state=");
+    clearOidcEnv();
+  });
+
+  it("should redirect to frontend login error when the link cookie mismatches", async () => {
+    enableOidcEnv();
+    mockHandleSsoCallback.mockRejectedValue(
+      new MockOidcLinkBrowserMismatchError(),
+    );
+    const app = await buildApp();
+
+    const res = await app.request(
+      "/auth/sso/callback?code=auth-code&state=abc",
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(
+      "http://localhost:3000/login?error=sso_link_expired",
     );
     clearOidcEnv();
   });

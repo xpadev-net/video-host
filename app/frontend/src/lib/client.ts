@@ -26,7 +26,9 @@ const customFetch = async (
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  return fetch(input, { ...requestInit, headers });
+  // credentials: "include" so the SSO link flow's HttpOnly cookie is stored
+  // even when the API is on a different origin/subdomain than the frontend.
+  return fetch(input, { ...requestInit, headers, credentials: "include" });
 };
 
 export const client = hc<AppRouter>(apiEndpoint, { fetch: customFetch });

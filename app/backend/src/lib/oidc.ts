@@ -80,12 +80,14 @@ export const sanitizeCallback = (callback: string | null): string | null => {
 
 /**
  * Stores OIDC state/nonce/PKCE verifier in Redis and returns the provider
- * authorization URL the browser should be redirected to.
+ * authorization URL the browser should be redirected to. The generated
+ * `state` is returned alongside so callers can bind the flow to the
+ * initiating browser (e.g. via an HttpOnly cookie for the link flow).
  */
 export const buildSsoAuthorizationUrl = async (
   callback: string | null,
   linkUserId?: string,
-): Promise<URL> => {
+): Promise<{ url: URL; state: string }> => {
   const config = await getOidcConfig();
 
   const codeVerifier = client.randomPKCECodeVerifier();
@@ -102,7 +104,7 @@ export const buildSsoAuthorizationUrl = async (
   };
   await redis.setEx(stateKey(state), STATE_TTL_SECONDS, JSON.stringify(data));
 
-  return client.buildAuthorizationUrl(config, {
+  const url = client.buildAuthorizationUrl(config, {
     redirect_uri: OIDC_REDIRECT_URI as string,
     scope: OIDC_SCOPE,
     state,
@@ -110,6 +112,7 @@ export const buildSsoAuthorizationUrl = async (
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
   });
+  return { url, state };
 };
 
 const consumeState = async (state: string): Promise<OidcStateData | null> => {
@@ -122,18 +125,24 @@ const consumeState = async (state: string): Promise<OidcStateData | null> => {
   return JSON.parse(raw) as OidcStateData;
 };
 
-export interface SsoCallbackResult {
-  token: string;
-  callback: string | null;
-}
+export type SsoCallbackResult =
+  | { kind: "session"; token: string; callback: string | null }
+  | { kind: "link"; callback: string | null };
 
 /**
  * Exchanges the authorization code carried by `requestUrl` (the incoming
  * callback request) for tokens, validates them, and resolves the local user.
  * Returns the app session token to hand to the frontend.
+ *
+ * For the account-link flow (`linkUserId` in state), `linkStateCookie` must
+ * equal the `state` parameter — the POST /sso/link endpoint sets it as an
+ * HttpOnly cookie on the initiating browser. Without this check an attacker
+ * could hand a victim an authorization URL bound to the attacker's account,
+ * let the victim authenticate at the IdP, and absorb the victim's identity.
  */
 export const handleSsoCallback = async (
   requestUrl: string,
+  linkStateCookie?: string,
 ): Promise<SsoCallbackResult> => {
   const config = await getOidcConfig();
 
@@ -165,15 +174,22 @@ export const handleSsoCallback = async (
   }
 
   const externalId = `${claims.iss}#${claims.sub}`;
-  const user = stored.linkUserId
-    ? await linkOidcUser(stored.linkUserId, externalId)
-    : await findOrProvisionOidcUser(externalId, claims);
+
+  if (stored.linkUserId) {
+    if (linkStateCookie !== state) {
+      throw new OidcLinkBrowserMismatchError();
+    }
+    await linkOidcUser(stored.linkUserId, externalId);
+    return { kind: "link", callback: stored.callback };
+  }
+
+  const user = await findOrProvisionOidcUser(externalId, claims);
   if (!user) {
     throw new OidcUserNotProvisionedError();
   }
 
   const token = await createSession(user.id);
-  return { token, callback: stored.callback };
+  return { kind: "session", token, callback: stored.callback };
 };
 
 /**
@@ -188,22 +204,47 @@ const linkOidcUser = async (
   if (!target) {
     throw new Error("Link target account no longer exists");
   }
-  if (target.externalId && target.externalId !== externalId) {
+  if (target.externalId) {
+    // Already linked — idempotent for the same identity, conflict otherwise
+    if (target.externalId === externalId) {
+      return target;
+    }
     throw new OidcLinkConflictError();
   }
   const conflict = await prisma.user.findUnique({ where: { externalId } });
-  if (conflict && conflict.id !== target.id) {
+  if (conflict) {
     throw new OidcLinkConflictError();
   }
-  if (conflict) {
-    // Already linked to this same identity — idempotent success
-    return conflict;
+  // Atomic claim guarded by externalId: null — a concurrent link that
+  // committed first makes count===0, and a concurrent link of the same
+  // identity onto another account trips the unique index. Either way the
+  // loser's write can never silently overwrite the winner's.
+  try {
+    const { count } = await prisma.user.updateMany({
+      where: { id: userId, externalId: null },
+      data: { externalId },
+    });
+    if (count > 0) {
+      return prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    }
+  } catch {
+    // fall through to winner resolution
   }
-  return prisma.user.update({
-    where: { id: userId },
-    data: { externalId },
-  });
+  const winner = await prisma.user.findUnique({ where: { id: userId } });
+  if (winner?.externalId === externalId) {
+    // A concurrent link of this same identity onto the account won —
+    // idempotent success.
+    return winner;
+  }
+  throw new OidcLinkConflictError();
 };
+
+export class OidcLinkBrowserMismatchError extends Error {
+  constructor() {
+    super("The SSO link flow must be completed in the browser that started it");
+    this.name = "OidcLinkBrowserMismatchError";
+  }
+}
 
 export class OidcLinkConflictError extends Error {
   constructor() {
