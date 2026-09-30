@@ -55,6 +55,9 @@ meter
 
 let isShuttingDown = false;
 
+// Bound the graceful drain so a stalled job/callback cannot hang SIGTERM.
+const SHUTDOWN_DRAIN_TIMEOUT_MS = 30_000;
+
 const checkDiskSpace = async (): Promise<boolean> => {
   try {
     // Use df command to check available disk space
@@ -351,7 +354,12 @@ const shutdown = async (): Promise<void> => {
   isShuttingDown = true;
   // Wait for the in-flight job (if any) so its result metrics, progress
   // updates and callbacks are sent before the provider is shut down.
-  await pollPromise;
+  await Promise.race([
+    pollPromise,
+    new Promise((resolve) =>
+      setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS),
+    ),
+  ]);
   await metricProvider
     ?.shutdown()
     .catch((err) => console.error("OTel metrics shutdown failed:", err));
