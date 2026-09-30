@@ -220,4 +220,93 @@ describe("Environment Validation (Zod Schema)", () => {
       expect(envModule.PASSWORD_HASH_ROUNDS).toBeGreaterThanOrEqual(12);
     });
   });
+
+  describe("OIDC / password-auth validation", () => {
+    const oidcEnv = {
+      OIDC_ENABLED: "true",
+      OIDC_ISSUER_URL: "https://idp.example.com",
+      OIDC_CLIENT_ID: "client-id-123",
+      OIDC_REDIRECT_URI: "https://api.example.com/api/v4/auth/sso/callback",
+    };
+
+    it("should default to password auth enabled and SSO disabled", () => {
+      const env = createProductionEnv();
+      const result = EnvSchema.safeParse(env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.PASSWORD_AUTH_ENABLED).toBe(true);
+        expect(result.data.OIDC_ENABLED).toBe(false);
+      }
+    });
+
+    it("should fail when OIDC_ENABLED is missing required fields", () => {
+      const env = createProductionEnv({ OIDC_ENABLED: "true" });
+      const result = EnvSchema.safeParse(env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const messages = result.error.issues.map((i) => i.message).join(" ");
+        expect(messages).toMatch(/OIDC_ISSUER_URL/);
+      }
+    });
+
+    it("should pass when OIDC_ENABLED has all required fields", () => {
+      const env = createProductionEnv(oidcEnv);
+      const result = EnvSchema.safeParse(env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.OIDC_ISSUER_URL).toBe("https://idp.example.com");
+        expect(result.data.OIDC_SCOPE).toBe("openid profile email");
+        expect(result.data.OIDC_DISPLAY_NAME).toBe("SSO");
+        expect(result.data.OIDC_AUTO_PROVISION).toBe(true);
+      }
+    });
+
+    it("should reject disabling every authentication method", () => {
+      const env = createProductionEnv({
+        PASSWORD_AUTH_ENABLED: "false",
+        OIDC_ENABLED: "false",
+      });
+      const result = EnvSchema.safeParse(env);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const messages = result.error.issues.map((i) => i.message).join(" ");
+        expect(messages).toMatch(/authentication method/);
+      }
+    });
+
+    it("should allow SSO-only mode", () => {
+      const env = createProductionEnv({
+        ...oidcEnv,
+        PASSWORD_AUTH_ENABLED: "false",
+      });
+      const result = EnvSchema.safeParse(env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.PASSWORD_AUTH_ENABLED).toBe(false);
+      }
+    });
+
+    it("should tolerate empty OIDC values in k8s-style config", () => {
+      const env = createProductionEnv({
+        OIDC_ISSUER_URL: "",
+        OIDC_REDIRECT_URI: "",
+        OIDC_SCOPE: "",
+        FRONTEND_URL: "",
+      });
+      const result = EnvSchema.safeParse(env);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.OIDC_ISSUER_URL).toBeUndefined();
+        expect(result.data.OIDC_REDIRECT_URI).toBeUndefined();
+        expect(result.data.OIDC_SCOPE).toBe("openid profile email");
+        expect(result.data.FRONTEND_URL).toBe("http://localhost:3000");
+      }
+    });
+  });
 });

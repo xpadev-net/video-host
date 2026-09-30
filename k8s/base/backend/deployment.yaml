@@ -55,6 +55,73 @@ spec:
                   name: backend-secrets
                   key: signup-code
                   optional: true
+            - name: PASSWORD_AUTH_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: password-auth-enabled
+                  optional: true
+            # SSO (OpenID Connect)
+            - name: OIDC_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: oidc-enabled
+                  optional: true
+            - name: OIDC_ISSUER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: oidc-issuer-url
+                  optional: true
+            - name: OIDC_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: oidc-client-id
+                  optional: true
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secrets
+                  key: oidc-client-secret
+                  optional: true
+            - name: OIDC_REDIRECT_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: oidc-redirect-uri
+                  optional: true
+            - name: OIDC_SCOPE
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: oidc-scope
+                  optional: true
+            - name: OIDC_DISPLAY_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: oidc-display-name
+                  optional: true
+            - name: OIDC_AUTO_PROVISION
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: oidc-auto-provision
+                  optional: true
+            - name: OIDC_ALLOW_HTTP
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: oidc-allow-http
+                  optional: true
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: frontend-url
+                  optional: true
             # CORS
             - name: CORS_ORIGIN
               valueFrom:

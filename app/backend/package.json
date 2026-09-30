@@ -28,6 +28,7 @@
     "hono": "^4.12.18",
     "hono-rate-limiter": "^0.5.3",
     "jsonwebtoken": "^9.0.3",
+    "openid-client": "^6.8.8",
     "prisma": "^6.19.1",
     "redis": "^5.10.0",
     "zod": "^4.2.1"

@@ -2,11 +2,23 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
+import {
+  FRONTEND_URL,
+  OIDC_DISPLAY_NAME,
+  OIDC_ENABLED,
+  PASSWORD_AUTH_ENABLED,
+  SIGNUP_ENABLED,
+} from "@/env";
+import {
+  buildSsoAuthorizationUrl,
+  handleSsoCallback,
+  OidcUserNotProvisionedError,
+} from "@/lib/oidc";
 import { isPasswordValid } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { authRateLimiter } from "@/lib/rateLimiter";
 import { createSession } from "@/lib/session";
-import { unauthorized } from "@/utils/response";
+import { forbidden, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const passwordAuthSchema = z.object({
@@ -23,6 +35,12 @@ const tokenAuthSchema = z.object({
 const authSchema = z.union([passwordAuthSchema, tokenAuthSchema]);
 
 const app = new Hono<Env>();
+
+const frontendUrl = (path: string) =>
+  `${FRONTEND_URL.replace(/\/+$/, "")}${path}`;
+
+const ssoErrorRedirect = (code: string) =>
+  frontendUrl(`/login?error=${encodeURIComponent(code)}`);
 
 export const authRoute = app
   .post("/", authRateLimiter, zValidator("json", authSchema), async (c) => {
@@ -42,6 +60,9 @@ export const authRoute = app
       }
       const newToken = await createSession(session.userId);
       return ok(c, newToken);
+    }
+    if (!PASSWORD_AUTH_ENABLED) {
+      forbidden("Password authentication is disabled");
     }
     const { username, password } = data;
     const user = await prisma.user.findFirst({
@@ -72,6 +93,53 @@ export const authRoute = app
       },
     });
     return ok(c, null);
+  })
+  .get("/config", async (c) => {
+    // Public auth configuration consumed by the frontend login/register pages
+    return ok(c, {
+      passwordAuthEnabled: PASSWORD_AUTH_ENABLED,
+      ssoEnabled: OIDC_ENABLED,
+      ssoDisplayName: OIDC_DISPLAY_NAME,
+      signupEnabled: SIGNUP_ENABLED,
+    });
+  })
+  .get("/sso/login", async (c) => {
+    if (!OIDC_ENABLED) {
+      return c.redirect(ssoErrorRedirect("sso_unavailable"));
+    }
+    try {
+      const url = await buildSsoAuthorizationUrl(
+        c.req.query("callback") ?? null,
+      );
+      return c.redirect(url.toString());
+    } catch (err) {
+      console.error("Failed to build SSO authorization URL:", err);
+      return c.redirect(ssoErrorRedirect("sso_unavailable"));
+    }
+  })
+  .get("/sso/callback", async (c) => {
+    if (!OIDC_ENABLED) {
+      return c.redirect(ssoErrorRedirect("sso_unavailable"));
+    }
+    const idpError = new URL(c.req.url).searchParams.get("error");
+    if (idpError) {
+      console.error("OIDC provider returned an error:", idpError);
+      return c.redirect(ssoErrorRedirect("sso_failed"));
+    }
+    try {
+      const { token, callback } = await handleSsoCallback(c.req.url);
+      const params = new URLSearchParams({ token });
+      if (callback) {
+        params.set("callback", callback);
+      }
+      return c.redirect(frontendUrl(`/auth/callback?${params.toString()}`));
+    } catch (err) {
+      if (err instanceof OidcUserNotProvisionedError) {
+        return c.redirect(ssoErrorRedirect("sso_user_not_found"));
+      }
+      console.error("SSO callback failed:", err);
+      return c.redirect(ssoErrorRedirect("sso_failed"));
+    }
   });
 
 export const registerAuthRoute = (app: HonoApp) => {
