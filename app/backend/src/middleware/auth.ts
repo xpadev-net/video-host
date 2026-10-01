@@ -63,6 +63,10 @@ const authMiddleware = createMiddleware<{
 });
 
 const isPublicEndpoint = (url: string) => {
+  // Auth endpoints (login, SSO flow, auth config) are unauthenticated by design
+  if (url.startsWith("/api/v4/auth")) {
+    return true;
+  }
   // Callback endpoint has its own secret-based auth
   if (url.startsWith("/api/v4/callback")) {
     return true;

@@ -332,6 +332,21 @@ describe("Auth Middleware", () => {
       expect(json.status).toBe("ok");
     });
 
+    it("should allow access to /api/v4/auth endpoints without authentication", async () => {
+      app.get("/api/v4/auth/config", (c) => {
+        return c.json({ status: "ok" });
+      });
+      app.get("/api/v4/auth/sso/login", (c) => {
+        return c.json({ status: "ok" });
+      });
+
+      const res = await app.request("/api/v4/auth/config");
+      expect(res.status).toBe(200);
+
+      const ssoRes = await app.request("/api/v4/auth/sso/login");
+      expect(ssoRes.status).toBe(200);
+    });
+
     it("should allow callback endpoints even with invalid token", async () => {
       app.post("/api/v4/callback/webhook", (c) => {
         return c.json({ status: "ok" });

@@ -6,6 +6,19 @@ metadata:
 data:
   # Auth
   signup-enabled: "false"
+  # パスワード認証の有効/無効 (false にするとログイン・サインアップはSSOのみ)
+  password-auth-enabled: "true"
+  # SSO (OpenID Connect)
+  oidc-enabled: "false"
+  oidc-issuer-url: ""                                    # 例: https://authentik.example.com/application/o/video-host/
+  oidc-client-id: ""
+  oidc-redirect-uri: "https://api.your-domain.com/api/v4/auth/sso/callback"
+  oidc-scope: "openid profile email"
+  oidc-display-name: "SSO"                               # ログインボタンの表示名
+  oidc-auto-provision: "true"                            # 初回SSOログイン時にユーザーを自動作成
+  oidc-allow-http: "false"                               # http://のプロバイダを許可 (ローカル開発用のみ)
+  # フロントエンドのベースURL (SSO完了後のリダイレクト先)
+  frontend-url: "https://your-frontend-domain.com"
   # CORS (カンマ区切りで複数指定可能)
   cors-origin: "https://your-frontend-domain.com"
   public-endpoints: ""
@@ -21,3 +34,6 @@ data:
   redis-sentinel-name: ""
   # Video Processing
   vod-base-url: "http://vod-server/vod"
+  # OpenTelemetry (メトリクス送信先。空の場合は無効)
+  otel-endpoint: ""  # 例: "http://otel-collector.otel-collector.svc.cluster.local:4318"
+  otel-service-name: "video-host-backend"

@@ -3,10 +3,23 @@ import {
   useNavigate,
   useRouter,
 } from "@tanstack/react-router";
-import type { FormattedMovie } from "@video-host/backend";
+import type {
+  FilteredUser,
+  FormattedMovie,
+  Visibility,
+} from "@video-host/backend";
 import { useAtomValue } from "jotai";
-import { type FormEvent, useEffect, useState } from "react";
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
+import { UserPicker } from "@/components/UserPicker/UserPicker";
+import { useUpload } from "@/hooks/useUpload";
 import { client } from "@/lib/client";
 
 export const Route = createFileRoute("/_app/dashboard/videos/$id/edit")({
@@ -31,50 +44,63 @@ function EditVideoPage() {
   const [movie, setMovie] = useState<FormattedMovie | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<
-    "PUBLIC" | "UNLISTED" | "PRIVATE"
-  >("PUBLIC");
+  const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
+  const [viewers, setViewers] = useState<FilteredUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [encodeProgress, setEncodeProgress] = useState<EncodeProgress | null>(
     null,
   );
+  const { resume, state: uploadState } = useUpload();
+  const resumeFileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const fetchMovie = useCallback(async () => {
     if (!token) return;
 
-    const fetchMovie = async () => {
-      try {
-        const res = await client.api.v4.movies[":movie"].$get(
-          {
-            param: { movie: id },
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
+    try {
+      const res = await client.api.v4.movies[":movie"].$get(
+        {
+          param: { movie: id },
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
 
-        if (!res.ok) {
-          throw new Error("Failed to fetch");
-        }
-
-        const json = await res.json();
-        // biome-ignore lint/suspicious/noExplicitAny: loose typing
-        const movieData = json.data as any;
-        setMovie(movieData);
-        setTitle(movieData.title);
-        setDescription(movieData.description || "");
-        setVisibility(movieData.visibility);
-      } catch {
-        setError("動画の取得に失敗しました");
-      } finally {
-        setIsLoading(false);
+      if (!res.ok) {
+        throw new Error("Failed to fetch");
       }
-    };
 
-    fetchMovie();
+      const json = await res.json();
+      // biome-ignore lint/suspicious/noExplicitAny: loose typing
+      const movieData = json.data as any;
+      setMovie(movieData);
+      setTitle(movieData.title);
+      setDescription(movieData.description || "");
+      setVisibility(movieData.visibility);
+      setViewers(movieData.viewers ?? []);
+    } catch {
+      setError("動画の取得に失敗しました");
+    } finally {
+      setIsLoading(false);
+    }
   }, [id, token]);
+
+  useEffect(() => {
+    void fetchMovie();
+  }, [fetchMovie]);
+
+  const handleResumeFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    e.target.value = "";
+    if (!selectedFile || typeof id !== "string") return;
+    const succeeded = await resume(id, selectedFile);
+    if (succeeded) {
+      // Variant flipped to PROCESSING; the SSE effect picks it up.
+      await fetchMovie();
+    }
+  };
 
   // SSE for encoding progress with authentication
   useEffect(() => {
@@ -165,6 +191,7 @@ function EditVideoPage() {
             title: title.trim(),
             description: description.trim(),
             visibility,
+            viewerIds: viewers.map((viewer) => viewer.id),
           },
         },
         {
@@ -193,6 +220,11 @@ function EditVideoPage() {
 
   const variant = movie.variants?.[0];
   const isEncoding = variant?.status === "PROCESSING";
+  const isUploadPending = variant?.status === "UPLOADING";
+  const isResuming =
+    uploadState.phase === "uploading" ||
+    uploadState.phase === "completing" ||
+    uploadState.phase === "creating";
 
   return (
     <>
@@ -238,6 +270,51 @@ function EditVideoPage() {
           </div>
         )}
 
+        {/* Upload resume: record exists but the file never fully landed */}
+        {isUploadPending && (
+          <div
+            className="mb-6 flex max-w-[600px] flex-col gap-3 rounded-xl border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.1)] p-6 text-[#eab308]"
+            aria-live="polite"
+          >
+            {isResuming ? (
+              <>
+                <div className="font-medium text-[#eab308]">
+                  アップロード中 ({uploadState.progress}%)
+                </div>
+                <div className="h-2 overflow-hidden rounded bg-[rgba(234,179,8,0.2)]">
+                  <div
+                    className="h-full rounded bg-[#eab308] transition-[width]"
+                    style={{ width: `${uploadState.progress}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <span>
+                  この動画はアップロードが完了していません。ファイルを選択するとアップロードを再開できます。
+                </span>
+                <button
+                  type="button"
+                  className="self-start cursor-pointer rounded-lg border border-[#eab308] bg-transparent px-5 py-2.5 font-medium text-[#eab308] hover:bg-[rgba(234,179,8,0.15)]"
+                  onClick={() => resumeFileInputRef.current?.click()}
+                >
+                  アップロードを再開
+                </button>
+              </>
+            )}
+            {uploadState.phase === "error" && (
+              <div className="error-message">{uploadState.error}</div>
+            )}
+          </div>
+        )}
+        <input
+          ref={resumeFileInputRef}
+          type="file"
+          accept="video/*"
+          onChange={(e) => void handleResumeFileChange(e)}
+          hidden
+        />
+
         {variant?.status === "FAILED" && (
           <div className="encode-failed">
             ❌
@@ -272,17 +349,25 @@ function EditVideoPage() {
             <select
               id="visibility"
               value={visibility}
-              onChange={(e) =>
-                setVisibility(
-                  e.target.value as "PUBLIC" | "UNLISTED" | "PRIVATE",
-                )
-              }
+              onChange={(e) => setVisibility(e.target.value as Visibility)}
             >
               <option value="PUBLIC">公開</option>
               <option value="UNLISTED">限定公開</option>
+              <option value="LIMITED">指定ユーザー公開</option>
               <option value="PRIVATE">非公開</option>
             </select>
           </div>
+
+          {visibility === "LIMITED" && (
+            <div className="form-group">
+              <label htmlFor="viewers">公開するユーザー</label>
+              <UserPicker
+                id="viewers"
+                selected={viewers}
+                onChange={setViewers}
+              />
+            </div>
+          )}
 
           {error && <div className="error-message">{error}</div>}
 

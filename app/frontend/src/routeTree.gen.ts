@@ -15,6 +15,8 @@ import { Route as AppIndexRouteImport } from "./routes/_app.index";
 import { Route as AppDashboardRouteImport } from "./routes/_app.dashboard";
 import { Route as AppHistoryRouteImport } from "./routes/_app.history";
 import { Route as ApiHealthzRouteImport } from "./routes/api.healthz";
+import { Route as AuthCallbackRouteImport } from "./routes/auth.callback";
+import { Route as AuthLinkRouteImport } from "./routes/auth.link";
 import { Route as AppDashboardIndexRouteImport } from "./routes/_app.dashboard.index";
 import { Route as AppMoviesMovieRouteImport } from "./routes/_app.movies.$movie";
 import { Route as AppSearchQueryRouteImport } from "./routes/_app.search.$query";
@@ -63,6 +65,16 @@ const AppHistoryRoute = AppHistoryRouteImport.update({
 const ApiHealthzRoute = ApiHealthzRouteImport.update({
   id: "/api/healthz",
   path: "/api/healthz",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: "/auth/callback",
+  path: "/auth/callback",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AuthLinkRoute = AuthLinkRouteImport.update({
+  id: "/auth/link",
+  path: "/auth/link",
   getParentRoute: () => rootRouteImport,
 } as any);
 const AppDashboardIndexRoute = AppDashboardIndexRouteImport.update({
@@ -154,6 +166,8 @@ export interface FileRoutesByFullPath {
   "/dashboard": typeof AppDashboardRouteWithChildren;
   "/history": typeof AppHistoryRoute;
   "/api/healthz": typeof ApiHealthzRoute;
+  "/auth/callback": typeof AuthCallbackRoute;
+  "/auth/link": typeof AuthLinkRoute;
   "/movies/$movie": typeof AppMoviesMovieRoute;
   "/search/$query": typeof AppSearchQueryRoute;
   "/series/$series": typeof AppSeriesSeriesRoute;
@@ -175,6 +189,8 @@ export interface FileRoutesByTo {
   "/register": typeof RegisterRoute;
   "/history": typeof AppHistoryRoute;
   "/api/healthz": typeof ApiHealthzRoute;
+  "/auth/callback": typeof AuthCallbackRoute;
+  "/auth/link": typeof AuthLinkRoute;
   "/": typeof AppIndexRoute;
   "/movies/$movie": typeof AppMoviesMovieRoute;
   "/search/$query": typeof AppSearchQueryRoute;
@@ -200,6 +216,8 @@ export interface FileRoutesById {
   "/_app/dashboard": typeof AppDashboardRouteWithChildren;
   "/_app/history": typeof AppHistoryRoute;
   "/api/healthz": typeof ApiHealthzRoute;
+  "/auth/callback": typeof AuthCallbackRoute;
+  "/auth/link": typeof AuthLinkRoute;
   "/_app/": typeof AppIndexRoute;
   "/_app/movies/$movie": typeof AppMoviesMovieRoute;
   "/_app/search/$query": typeof AppSearchQueryRoute;
@@ -226,6 +244,8 @@ export interface FileRouteTypes {
     | "/dashboard"
     | "/history"
     | "/api/healthz"
+    | "/auth/callback"
+    | "/auth/link"
     | "/movies/$movie"
     | "/search/$query"
     | "/series/$series"
@@ -247,6 +267,8 @@ export interface FileRouteTypes {
     | "/register"
     | "/history"
     | "/api/healthz"
+    | "/auth/callback"
+    | "/auth/link"
     | "/"
     | "/movies/$movie"
     | "/search/$query"
@@ -271,6 +293,8 @@ export interface FileRouteTypes {
     | "/_app/dashboard"
     | "/_app/history"
     | "/api/healthz"
+    | "/auth/callback"
+    | "/auth/link"
     | "/_app/"
     | "/_app/movies/$movie"
     | "/_app/search/$query"
@@ -294,6 +318,8 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute;
   RegisterRoute: typeof RegisterRoute;
   ApiHealthzRoute: typeof ApiHealthzRoute;
+  AuthCallbackRoute: typeof AuthCallbackRoute;
+  AuthLinkRoute: typeof AuthLinkRoute;
 }
 
 declare module "@tanstack/react-router" {
@@ -345,6 +371,20 @@ declare module "@tanstack/react-router" {
       path: "/api/healthz";
       fullPath: "/api/healthz";
       preLoaderRoute: typeof ApiHealthzRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/auth/callback": {
+      id: "/auth/callback";
+      path: "/auth/callback";
+      fullPath: "/auth/callback";
+      preLoaderRoute: typeof AuthCallbackRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/auth/link": {
+      id: "/auth/link";
+      path: "/auth/link";
+      fullPath: "/auth/link";
+      preLoaderRoute: typeof AuthLinkRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/_app/dashboard/": {
@@ -514,6 +554,8 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
   ApiHealthzRoute: ApiHealthzRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
+  AuthLinkRoute: AuthLinkRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

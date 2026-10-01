@@ -5,11 +5,15 @@ import type { Env, HonoApp } from "@/@types/hono";
 import {
   type FormattedMovie,
   type PaginatedResponse,
-  ZVisibility,
+  ZBasicVisibility,
 } from "@/@types/models";
 import { filterMovie, filterSeries } from "@/lib/filter";
 import { formatMovie, formatSeries } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
+import {
+  buildMovieAccessWhere,
+  canViewOwnedEntity,
+} from "@/utils/buildVisibilityFilter";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { isSystemAccount } from "@/utils/systemAccountCache";
@@ -22,7 +26,7 @@ const MAX_MOVIES_LIMIT = 100;
 const SeriesPatchSchema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
-  visibility: ZVisibility.optional(),
+  visibility: ZBasicVisibility.optional(),
 });
 
 const AddMovieSchema = z.object({
@@ -52,6 +56,9 @@ export const seriesDetailRoute = app
     const includeMoviesCount =
       (c.req.queries("includeMoviesCount")?.length ?? 0) > 0;
 
+    const user = c.get("user");
+    const movieAccessWhere = buildMovieAccessWhere(user);
+
     const series = await prisma.series.findFirst({
       where: {
         id: seriesId,
@@ -59,6 +66,7 @@ export const seriesDetailRoute = app
       include: {
         author: true,
         movies: {
+          where: movieAccessWhere,
           orderBy: [
             {
               order: "asc",
@@ -81,17 +89,17 @@ export const seriesDetailRoute = app
       notFound("Series not found");
     }
 
-    if (series.visibility === "PRIVATE") {
-      const user = c.get("user");
-      if (!user || (user.id !== series.authorId && user.role !== "ADMIN")) {
-        notFound("Series not found");
-      }
+    if (!canViewOwnedEntity(series, user)) {
+      notFound("Series not found");
     }
 
-    // If pagination metadata is requested, get total count
-    if (includeMoviesCount && series.movies.length > 0) {
+    // If pagination metadata is requested, get total count. This must not
+    // depend on the current page being non-empty: an out-of-range offset
+    // returns zero rows while totalPages/hasNext/hasPrev still describe the
+    // filtered result set.
+    if (includeMoviesCount) {
       const totalMoviesCount = await prisma.movie.count({
-        where: { seriesId: seriesId },
+        where: { seriesId: seriesId, ...movieAccessWhere },
       });
 
       const totalPages = Math.ceil(totalMoviesCount / moviesLimit);
@@ -151,6 +159,7 @@ export const seriesDetailRoute = app
       include: {
         author: true,
         movies: {
+          where: buildMovieAccessWhere(user),
           orderBy: {
             createdAt: "asc",
           },
@@ -218,6 +227,7 @@ export const seriesDetailRoute = app
     );
 
     // First check if series exists and user has access
+    const user = c.get("user");
     const series = await prisma.series.findFirst({
       where: { id: seriesId },
     });
@@ -226,20 +236,19 @@ export const seriesDetailRoute = app
       notFound("Series not found");
     }
 
-    if (series.visibility === "PRIVATE") {
-      const user = c.get("user");
-      if (!user || (user.id !== series.authorId && user.role !== "ADMIN")) {
-        notFound("Series not found");
-      }
+    if (!canViewOwnedEntity(series, user)) {
+      notFound("Series not found");
     }
+
+    const moviesWhere = { seriesId, ...buildMovieAccessWhere(user) };
 
     // Get total count and movies
     const totalCount = await prisma.movie.count({
-      where: { seriesId: seriesId },
+      where: moviesWhere,
     });
 
     const movies = await prisma.movie.findMany({
-      where: { seriesId: seriesId },
+      where: moviesWhere,
       include: {
         author: true,
         series: {
@@ -341,6 +350,7 @@ export const seriesDetailRoute = app
       include: {
         author: true,
         movies: {
+          where: buildMovieAccessWhere(user),
           orderBy: { order: "asc" },
           include: { author: true, variants: true },
         },
@@ -435,6 +445,7 @@ export const seriesDetailRoute = app
         include: {
           author: true,
           movies: {
+            where: buildMovieAccessWhere(user),
             orderBy: { order: "asc" },
             include: { author: true, variants: true },
           },

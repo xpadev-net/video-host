@@ -127,7 +127,7 @@ describe("authRateLimiter", () => {
 
     expect(res.status).toBe(200);
     expect(spy).toHaveBeenCalledWith(
-      "Rate limiter initialization failed:",
+      "Rate limiter failed, allowing request:",
       expect.any(Error),
     );
     spy.mockRestore();

@@ -3,6 +3,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   Activity,
   AppWindow,
+  AudioLines,
   Gauge,
   MessageSquareText,
   PictureInPicture2,
@@ -15,6 +16,9 @@ import type {
   SettingPageConfig,
 } from "@/@types/Player";
 import {
+  AudioTrackIdAtom,
+  AudioTracksAtom,
+  HlsRefAtom,
   NiconicommentsConfigAtom,
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
@@ -58,6 +62,9 @@ export const useSettingDefinitions = (): Record<
   const videoRef = useAtomValue(VideoRefAtom);
   const setPlayerSetting = useSetAtom(PlayerSettingAtom);
   const [playbackRate, setPlaybackRate] = useAtom(PlayerPlaybackRateAtom);
+  const audioTracks = useAtomValue(AudioTracksAtom);
+  const audioTrackId = useAtomValue(AudioTrackIdAtom);
+  const hls = useAtomValue(HlsRefAtom);
 
   const toggleWindowFullscreen = (windowFullscreen: boolean) => {
     setPlayerConfig((pv) => ({
@@ -79,6 +86,16 @@ export const useSettingDefinitions = (): Record<
     setPlaybackRate(rate);
     if (videoRef) videoRef.playbackRate = rate;
     setPlayerSetting((prev) => prev.filter((page) => page !== "playbackRate"));
+  };
+
+  const audioTrackLabel = (id: number) =>
+    audioTracks.find((track) => track.id === id)?.name ||
+    audioTracks.find((track) => track.id === id)?.lang ||
+    `トラック ${id + 1}`;
+
+  const updateAudioTrack = (id: number) => {
+    if (hls) hls.audioTrack = id;
+    setPlayerSetting((prev) => prev.filter((page) => page !== "audioTrack"));
   };
 
   const toggleCommentActive = (isNiconicommentsEnable: boolean) => {
@@ -111,6 +128,18 @@ export const useSettingDefinitions = (): Record<
       targetPage: "playbackRate",
       getValue: () => playbackRate,
     },
+    ...(audioTracks.length > 1
+      ? [
+          {
+            type: "navigation" as const,
+            id: "audioTrack",
+            label: "音声トラック",
+            icon: AudioLines,
+            targetPage: "audioTrack" as SettingKey,
+            getValue: () => audioTrackLabel(audioTrackId),
+          },
+        ]
+      : []),
     ...(EnableComments
       ? [
           {
@@ -146,6 +175,24 @@ export const useSettingDefinitions = (): Record<
       suggestedRate.map((value) => ({ value, label: value })),
       () => playbackRate,
       updatePlaybackRate,
+    ),
+  ];
+
+  const audioTrackConfig: SettingPageConfig = [
+    {
+      type: "back",
+      label: "音声トラック",
+      targetPage: "audioTrack",
+    },
+    createSelectionItem(
+      "audioTrack",
+      "音声トラック",
+      audioTracks.map((track) => ({
+        value: track.id,
+        label: track.name || track.lang || `トラック ${track.id + 1}`,
+      })),
+      () => audioTrackId,
+      updateAudioTrack,
     ),
   ];
 
@@ -203,5 +250,6 @@ export const useSettingDefinitions = (): Record<
     main: mainConfig,
     playbackRate: playbackRateConfig,
     comments: commentsConfig,
+    audioTrack: audioTrackConfig,
   };
 };

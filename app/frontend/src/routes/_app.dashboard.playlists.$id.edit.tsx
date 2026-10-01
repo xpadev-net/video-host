@@ -3,6 +3,7 @@ import {
   useNavigate,
   useRouter,
 } from "@tanstack/react-router";
+import type { BasicVisibility } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { type FormEvent, useEffect, useState } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
@@ -33,9 +34,7 @@ function EditPlaylistPage() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<
-    "PUBLIC" | "UNLISTED" | "PRIVATE"
-  >("PUBLIC");
+  const [visibility, setVisibility] = useState<BasicVisibility>("PUBLIC");
   const [movies, setMovies] = useState<PlaylistMovie[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -60,7 +59,7 @@ function EditPlaylistPage() {
         const data = json.data;
         setTitle(data.title);
         setDescription(data.description || "");
-        setVisibility(data.visibility);
+        setVisibility(data.visibility as BasicVisibility);
         // Assuming backend returns matching structure.
         const playlistMovies: PlaylistMovie[] = (data.movies || []).map(
           (m: unknown, index: number) => ({
@@ -138,11 +137,7 @@ function EditPlaylistPage() {
             <select
               id="visibility"
               value={visibility}
-              onChange={(e) =>
-                setVisibility(
-                  e.target.value as "PUBLIC" | "UNLISTED" | "PRIVATE",
-                )
-              }
+              onChange={(e) => setVisibility(e.target.value as BasicVisibility)}
             >
               <option value="PUBLIC">公開</option>
               <option value="UNLISTED">限定公開</option>

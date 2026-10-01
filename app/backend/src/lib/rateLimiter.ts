@@ -13,8 +13,21 @@ async function getMiddleware(): Promise<MiddlewareHandler> {
       limit: 5, // Maximum 5 requests per window
       standardHeaders: "draft-6", // Return rate limit info in headers
       store: new RedisStore({
-        // @ts-expect-error - node-redis client type compatibility
-        client: client,
+        // RedisStore expects an ioredis-style API; adapt node-redis methods.
+        client: {
+          scriptLoad: (script: string) => client.scriptLoad(script),
+          evalsha: <TArgs extends unknown[], TData>(
+            sha1: string,
+            keys: string[],
+            args: TArgs,
+          ) =>
+            client.evalSha(sha1, {
+              keys,
+              arguments: args as string[],
+            }) as Promise<TData>,
+          decr: (key: string) => client.decr(key),
+          del: (key: string) => client.del(key),
+        },
         prefix: "rate-limit:",
       }),
       keyGenerator: (c: Context): string => {
@@ -47,9 +60,10 @@ async function getMiddleware(): Promise<MiddlewareHandler> {
 export const authRateLimiter: MiddlewareHandler = async (c, next) => {
   try {
     const handler = await getMiddleware();
-    return handler(c, next);
+    // Await so async store failures hit the fail-safe below instead of 500s.
+    return await handler(c, next);
   } catch (error) {
-    console.error("Rate limiter initialization failed:", error);
+    console.error("Rate limiter failed, allowing request:", error);
     // Fail-safe: allow request but log error
     return next();
   }

@@ -32,6 +32,7 @@ export type FilteredMovie = {
   author: FilteredUser;
   series?: FilteredSeries | null;
   createdAt: Date;
+  viewers?: FilteredUser[];
 };
 
 export type FormattedMovie = Omit<FilteredMovie, "createdAt" | "series"> & {
@@ -42,7 +43,7 @@ export type FormattedMovie = Omit<FilteredMovie, "createdAt" | "series"> & {
 export type FilteredMovieVariant = {
   variantId: string;
   contentUrl: string;
-  status: "PROCESSING" | "READY" | "FAILED";
+  status: "UPLOADING" | "PROCESSING" | "READY" | "FAILED";
 };
 
 export type FilteredPlaylist = {
@@ -54,13 +55,26 @@ export type FilteredPlaylist = {
   movies?: FilteredMovie[];
 };
 
-export const ZVisibility = z.union([
+export const ZBasicVisibility = z.union([
   z.literal("PUBLIC"),
   z.literal("UNLISTED"),
   z.literal("PRIVATE"),
 ]);
 
+// Movies additionally support LIMITED: visible only to the author, admins,
+// and users listed in the movie's viewers.
+export const ZVisibility = z.union([
+  z.literal("PUBLIC"),
+  z.literal("UNLISTED"),
+  z.literal("PRIVATE"),
+  z.literal("LIMITED"),
+]);
+
 export type Visibility = z.infer<typeof ZVisibility>;
+
+// Series and playlists do not support viewer lists (yet), so their API
+// accepts only the basic visibility set.
+export type BasicVisibility = z.infer<typeof ZBasicVisibility>;
 
 export type PaginationMeta = {
   page: number;

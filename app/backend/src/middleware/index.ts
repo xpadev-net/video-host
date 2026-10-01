@@ -3,6 +3,7 @@ import { trimTrailingSlash } from "hono/trailing-slash";
 import type { HonoApp } from "@/@types/hono";
 import { handleAuth } from "./auth";
 import { handleCors } from "./cors";
+import { handleMetrics } from "./metrics";
 
 export const registerMiddleware = (app: HonoApp) => {
   // Error handler - convert HTTPException to JSON response
@@ -29,6 +30,7 @@ export const registerMiddleware = (app: HonoApp) => {
     );
   });
 
+  handleMetrics(app);
   handleCors(app);
   handleAuth(app);
   app.use(trimTrailingSlash());

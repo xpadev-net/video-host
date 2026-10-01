@@ -26,7 +26,9 @@ export default defineConfig({
         enabled: true,
       },
     }),
-    nitro(),
+    nitro({
+      serverDir: "./src/server",
+    }),
     viteReact(),
     tailwindcss(),
   ],

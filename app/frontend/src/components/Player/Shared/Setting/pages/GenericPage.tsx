@@ -35,6 +35,17 @@ const GenericPage: FC<GenericPageProps> = ({
     updateScale?.(ref.current);
   }, [state.isSetting, updateScale]);
 
+  // Remeasure the container when the page content resizes
+  // (e.g. a settings row appearing after data loads)
+  useEffect(() => {
+    if (!ref.current) return;
+    const observer = new ResizeObserver(() => {
+      if (ref.current) updateScale?.(ref.current);
+    });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [updateScale]);
+
   const handleNavigation = (targetPage: string) => {
     setPlayerSetting((prev) => [...prev, targetPage as SettingKey]);
   };

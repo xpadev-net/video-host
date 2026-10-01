@@ -1,6 +1,11 @@
 import type { User } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { buildVisibilityFilter } from "../utils/buildVisibilityFilter";
+import {
+  buildMovieAccessWhere,
+  buildVisibilityFilter,
+  canViewMovie,
+  readyOrOwnMovieFilter,
+} from "../utils/buildVisibilityFilter";
 
 /**
  * Tests for authorization and visibility filtering.
@@ -312,6 +317,201 @@ describe("Authorization - Visibility Filtering", () => {
       expect(filter).toHaveProperty("AND");
       expect(Array.isArray(filter.AND)).toBe(true);
       expect(filter.AND?.length).toBe(2);
+    });
+  });
+
+  describe("LIMITED visibility (movies)", () => {
+    it("should include LIMITED viewer clause when includeLimitedViewers is true", () => {
+      const filter = buildVisibilityFilter(
+        regularUser,
+        undefined,
+        undefined,
+        true,
+      );
+
+      expect(filter).toEqual({
+        OR: [
+          { visibility: "PUBLIC" },
+          { authorId: "user-123" },
+          {
+            visibility: "LIMITED",
+            viewers: { some: { userId: "user-123" } },
+          },
+        ],
+      });
+    });
+
+    it("should not include viewer clause when includeLimitedViewers is false", () => {
+      const filter = buildVisibilityFilter(regularUser);
+
+      expect(filter).toEqual({
+        OR: [{ visibility: "PUBLIC" }, { authorId: "user-123" }],
+      });
+    });
+
+    it("should keep PUBLIC-only filter for anonymous users", () => {
+      const filter = buildVisibilityFilter(
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+
+      expect(filter).toEqual({ visibility: "PUBLIC" });
+    });
+
+    it("should apply no filter for admins even with includeLimitedViewers", () => {
+      const filter = buildVisibilityFilter(
+        adminUser,
+        undefined,
+        undefined,
+        true,
+      );
+
+      expect(filter).toEqual({});
+    });
+
+    it("should combine viewer clause with query for regular users", () => {
+      const filter = buildVisibilityFilter(
+        regularUser,
+        "shared",
+        undefined,
+        true,
+      );
+
+      expect(filter).toEqual({
+        AND: [
+          {
+            OR: [
+              { visibility: "PUBLIC" },
+              { authorId: "user-123" },
+              {
+                visibility: "LIMITED",
+                viewers: { some: { userId: "user-123" } },
+              },
+            ],
+          },
+          {
+            OR: [
+              { title: { contains: "shared" } },
+              { description: { contains: "shared" } },
+            ],
+          },
+        ],
+      });
+    });
+  });
+
+  describe("buildMovieAccessWhere", () => {
+    it("should restrict anonymous users to PUBLIC and UNLISTED", () => {
+      expect(buildMovieAccessWhere(undefined)).toEqual({
+        visibility: { in: ["PUBLIC", "UNLISTED"] },
+        variants: { some: { status: "READY" } },
+      });
+    });
+
+    it("should allow regular users PUBLIC, UNLISTED, own, and shared LIMITED movies", () => {
+      expect(buildMovieAccessWhere(regularUser)).toEqual({
+        OR: [
+          {
+            visibility: { in: ["PUBLIC", "UNLISTED"] },
+            variants: { some: { status: "READY" } },
+          },
+          { authorId: "user-123" },
+          {
+            visibility: "LIMITED",
+            viewers: { some: { userId: "user-123" } },
+            variants: { some: { status: "READY" } },
+          },
+        ],
+      });
+    });
+
+    it("should allow admins everything", () => {
+      expect(buildMovieAccessWhere(adminUser)).toEqual({});
+    });
+  });
+
+  describe("readyOrOwnMovieFilter", () => {
+    it("should restrict anonymous users to READY movies", () => {
+      expect(readyOrOwnMovieFilter(undefined)).toEqual({
+        OR: [{ variants: { some: { status: "READY" } } }],
+      });
+    });
+
+    it("should allow regular users READY or own movies", () => {
+      expect(readyOrOwnMovieFilter(regularUser)).toEqual({
+        OR: [
+          { variants: { some: { status: "READY" } } },
+          { authorId: "user-123" },
+        ],
+      });
+    });
+
+    it("should allow admins everything", () => {
+      expect(readyOrOwnMovieFilter(adminUser)).toEqual({});
+    });
+  });
+
+  describe("canViewMovie", () => {
+    const publicMovie = {
+      visibility: "PUBLIC" as const,
+      authorId: "other-789",
+    };
+    const unlistedMovie = {
+      visibility: "UNLISTED" as const,
+      authorId: "other-789",
+    };
+    const privateMovie = {
+      visibility: "PRIVATE" as const,
+      authorId: "other-789",
+    };
+    const limitedMovie = {
+      visibility: "LIMITED" as const,
+      authorId: "other-789",
+      viewers: [{ userId: "user-123" }],
+    };
+
+    it("should allow anyone to view PUBLIC movies", () => {
+      expect(canViewMovie(publicMovie, undefined)).toBe(true);
+      expect(canViewMovie(publicMovie, regularUser)).toBe(true);
+    });
+
+    it("should allow anyone to view UNLISTED movies", () => {
+      expect(canViewMovie(unlistedMovie, undefined)).toBe(true);
+    });
+
+    it("should restrict PRIVATE movies to author and admin", () => {
+      expect(canViewMovie(privateMovie, undefined)).toBe(false);
+      expect(canViewMovie(privateMovie, regularUser)).toBe(false);
+      expect(canViewMovie(privateMovie, otherUser)).toBe(true);
+      expect(canViewMovie(privateMovie, adminUser)).toBe(true);
+    });
+
+    it("should restrict LIMITED movies to author, admin, and listed viewers", () => {
+      expect(canViewMovie(limitedMovie, undefined)).toBe(false);
+      expect(canViewMovie(limitedMovie, regularUser)).toBe(true);
+      expect(canViewMovie(limitedMovie, otherUser)).toBe(true);
+      expect(canViewMovie(limitedMovie, adminUser)).toBe(true);
+    });
+
+    it("should deny LIMITED movies to non-viewers", () => {
+      const movieSharedWithSomeoneElse = {
+        visibility: "LIMITED" as const,
+        authorId: "other-789",
+        viewers: [{ userId: "someone-else" }],
+      };
+      expect(canViewMovie(movieSharedWithSomeoneElse, regularUser)).toBe(false);
+    });
+
+    it("should deny LIMITED movies with empty viewer list to non-owners", () => {
+      const movieNoViewers = {
+        visibility: "LIMITED" as const,
+        authorId: "other-789",
+        viewers: [],
+      };
+      expect(canViewMovie(movieNoViewers, regularUser)).toBe(false);
+      expect(canViewMovie(movieNoViewers, adminUser)).toBe(true);
     });
   });
 });

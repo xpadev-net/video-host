@@ -1,9 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 
 import { AuthForm, AuthLayout, FormField } from "@/components/Auth";
 import { RequireSignupCode, SiteName } from "@/contexts/env";
 import { useAuth } from "@/hooks/useAuth";
+import { type AuthConfig, getAuthConfig } from "@/service/getAuthConfig";
 import { postUsers } from "@/service/postUsers";
 import {
   validatePassword,
@@ -18,23 +19,30 @@ export const Route = createFileRoute("/register")({
 function RegisterRoute() {
   const { loading, error, startAuth, handleAuthSuccess, handleAuthError } =
     useAuth();
-
   const [username, setUsername] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [signupCode, setSignupCode] = useState("");
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const passwordAuthEnabled = authConfig?.passwordAuthEnabled ?? true;
+
+  useEffect(() => {
+    void getAuthConfig().then((config) => {
+      setAuthConfig(config);
+      setConfigLoaded(true);
+    });
+  }, []);
 
   const handleRegister = async (event: React.FormEvent) => {
     event.preventDefault();
     startAuth();
-
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.isValid) {
       handleAuthError(passwordValidation.error);
       return;
     }
-
     const passwordMatchValidation = validatePasswordMatch(
       password,
       confirmPassword,
@@ -43,7 +51,6 @@ function RegisterRoute() {
       handleAuthError(passwordMatchValidation.error);
       return;
     }
-
     try {
       const body = await postUsers(
         username,
@@ -51,11 +58,8 @@ function RegisterRoute() {
         password,
         RequireSignupCode ? signupCode : "",
       );
-      if (body.status === "ok") {
-        handleAuthSuccess(body.data.token);
-      } else {
-        handleAuthError("登録に失敗しました");
-      }
+      if (body.status === "ok") handleAuthSuccess(body.data.token);
+      else handleAuthError("登録に失敗しました");
     } catch {
       handleAuthError("ネットワークエラーが発生しました");
     }
@@ -67,7 +71,32 @@ function RegisterRoute() {
     password &&
     confirmPassword &&
     (!RequireSignupCode || signupCode);
-
+  if (!configLoaded) {
+    return (
+      <AuthLayout title="新規登録" description="読み込み中...">
+        <div className="flex justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        </div>
+      </AuthLayout>
+    );
+  }
+  if (!passwordAuthEnabled) {
+    return (
+      <AuthLayout
+        title="新規登録"
+        description="このインスタンスではパスワード登録は無効です"
+      >
+        <p className="text-sm text-muted-foreground text-center">
+          アカウントはSSOログイン時に自動で作成されます。
+        </p>
+        <div className="text-center text-sm">
+          <Link to="/login" className="text-primary hover:underline">
+            ログインページへ
+          </Link>
+        </div>
+      </AuthLayout>
+    );
+  }
   return (
     <AuthLayout
       title="新規登録"

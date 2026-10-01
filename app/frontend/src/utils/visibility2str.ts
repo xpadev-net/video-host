@@ -8,5 +8,7 @@ export const visibility2str = (input: Visibility): string => {
       return "公開";
     case "UNLISTED":
       return "限定公開";
+    case "LIMITED":
+      return "指定ユーザー公開";
   }
 };

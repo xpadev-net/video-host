@@ -1,12 +1,7 @@
-import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 
-export const forbidden = (c: Context, message: string) => {
-  return c.json(
-    {
-      status: "error",
-      code: 403,
-      message,
-    },
-    403,
-  );
+export const forbidden: (message: string) => never = (
+  message: string,
+): never => {
+  throw new HTTPException(403, { message });
 };

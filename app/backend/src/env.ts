@@ -91,6 +91,57 @@ const EnvSchema = z
       .default(false),
     SIGNUP_CODE: z.string().optional(),
 
+    // Password authentication - set to "false" to disable username/password
+    // login and signup (e.g. when only SSO should be usable)
+    PASSWORD_AUTH_ENABLED: z
+      .string()
+      .optional()
+      .transform((val) => val !== "false")
+      .default(true),
+
+    // OIDC SSO configuration
+    OIDC_ENABLED: z
+      .string()
+      .optional()
+      .transform((val) => val === "true")
+      .default(false),
+    OIDC_ISSUER_URL: z
+      .union([z.url(), z.literal("")])
+      .optional()
+      .transform((val) => val || undefined),
+    OIDC_CLIENT_ID: z.string().optional(),
+    OIDC_CLIENT_SECRET: z.string().optional(),
+    OIDC_REDIRECT_URI: z
+      .union([z.url(), z.literal("")])
+      .optional()
+      .transform((val) => val || undefined),
+    OIDC_SCOPE: z
+      .string()
+      .optional()
+      .transform((val) => val || "openid profile email"),
+    OIDC_DISPLAY_NAME: z
+      .string()
+      .optional()
+      .transform((val) => val || "SSO"),
+    OIDC_AUTO_PROVISION: z
+      .string()
+      .optional()
+      .transform((val) => val !== "false")
+      .default(true),
+    // Allow plain-HTTP issuers (e.g. a provider on localhost during
+    // development). Never enable this against untrusted networks.
+    OIDC_ALLOW_HTTP: z
+      .string()
+      .optional()
+      .transform((val) => val === "true")
+      .default(false),
+
+    // Frontend base URL used for post-login redirects (SSO callback)
+    FRONTEND_URL: z
+      .union([z.url(), z.literal("")])
+      .default("")
+      .transform((val) => (val === "" ? "http://localhost:3000" : val)),
+
     // CORS and endpoints
     PUBLIC_ENDPOINTS: z
       .string()
@@ -124,6 +175,11 @@ const EnvSchema = z
 
     // Video Processing
     VOD_BASE_URL: z.string().default(""),
+
+    // OpenTelemetry metrics export (disabled when the endpoint is unset)
+    OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: z.string().optional(),
+    OTEL_SERVICE_NAME: z.string().optional(),
   })
   .refine(
     (env) => {
@@ -142,6 +198,31 @@ const EnvSchema = z
       message:
         "Production environment cannot use development default secrets. " +
         "Please set JWT_SECRET, PASSWORD_SALT, CALLBACK_SECRET, and VOD_INTERNAL_SECRET to non-default values.",
+    },
+  )
+  .refine(
+    (env) =>
+      !env.OIDC_ENABLED ||
+      (env.OIDC_ISSUER_URL && env.OIDC_CLIENT_ID && env.OIDC_REDIRECT_URI),
+    {
+      message:
+        "OIDC_ISSUER_URL, OIDC_CLIENT_ID, and OIDC_REDIRECT_URI are required " +
+        "when OIDC_ENABLED is true",
+    },
+  )
+  .refine((env) => env.PASSWORD_AUTH_ENABLED || env.OIDC_ENABLED, {
+    message:
+      "At least one authentication method must be enabled: set " +
+      "PASSWORD_AUTH_ENABLED=true or configure OIDC_ENABLED=true",
+  })
+  .refine(
+    (env) =>
+      !(env.OIDC_ENABLED && env.NODE_ENV === "production") ||
+      env.FRONTEND_URL.startsWith("https://"),
+    {
+      message:
+        "FRONTEND_URL must be set to an https:// URL in production when " +
+        "OIDC_ENABLED is true (the SSO callback carries the session token)",
     },
   );
 
@@ -198,8 +279,31 @@ export const REDIS_SENTINEL_PASSWORD = env.REDIS_SENTINEL_PASSWORD;
 
 // Video Processing
 export const VOD_BASE_URL = env.VOD_BASE_URL;
+
+// OpenTelemetry
+export const OTEL_EXPORTER_OTLP_ENDPOINT = env.OTEL_EXPORTER_OTLP_ENDPOINT;
+export const OTEL_EXPORTER_OTLP_METRICS_ENDPOINT =
+  env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
+export const OTEL_SERVICE_NAME = env.OTEL_SERVICE_NAME;
 export const CALLBACK_SECRET = env.CALLBACK_SECRET;
 export const VOD_INTERNAL_SECRET = env.VOD_INTERNAL_SECRET;
+
+// Authentication methods
+export const PASSWORD_AUTH_ENABLED = env.PASSWORD_AUTH_ENABLED;
+
+// OIDC SSO
+export const OIDC_ENABLED = env.OIDC_ENABLED;
+export const OIDC_ISSUER_URL = env.OIDC_ISSUER_URL;
+export const OIDC_CLIENT_ID = env.OIDC_CLIENT_ID;
+export const OIDC_CLIENT_SECRET = env.OIDC_CLIENT_SECRET;
+export const OIDC_REDIRECT_URI = env.OIDC_REDIRECT_URI;
+export const OIDC_SCOPE = env.OIDC_SCOPE;
+export const OIDC_DISPLAY_NAME = env.OIDC_DISPLAY_NAME;
+export const OIDC_AUTO_PROVISION = env.OIDC_AUTO_PROVISION;
+export const OIDC_ALLOW_HTTP = env.OIDC_ALLOW_HTTP;
+
+// Frontend
+export const FRONTEND_URL = env.FRONTEND_URL;
 
 // Legacy export for backward compatibility
 // Note: New code should import specific values directly

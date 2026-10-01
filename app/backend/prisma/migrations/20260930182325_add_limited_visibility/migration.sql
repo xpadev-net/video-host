@@ -1,0 +1,23 @@
+-- AlterTable
+ALTER TABLE `Movie` MODIFY COLUMN `visibility` ENUM('PUBLIC', 'UNLISTED', 'PRIVATE', 'LIMITED') NOT NULL DEFAULT 'PUBLIC';
+
+-- AlterTable
+ALTER TABLE `Playlist` MODIFY COLUMN `visibility` ENUM('PUBLIC', 'UNLISTED', 'PRIVATE', 'LIMITED') NOT NULL DEFAULT 'PUBLIC';
+
+-- AlterTable
+ALTER TABLE `Series` MODIFY COLUMN `visibility` ENUM('PUBLIC', 'UNLISTED', 'PRIVATE', 'LIMITED') NOT NULL DEFAULT 'PUBLIC';
+
+-- CreateTable
+CREATE TABLE `MovieViewer` (
+    `movieId` VARCHAR(191) NOT NULL,
+    `userId` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    PRIMARY KEY (`movieId`, `userId`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- AddForeignKey
+ALTER TABLE `MovieViewer` ADD CONSTRAINT `MovieViewer_movieId_fkey` FOREIGN KEY (`movieId`) REFERENCES `Movie`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `MovieViewer` ADD CONSTRAINT `MovieViewer_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

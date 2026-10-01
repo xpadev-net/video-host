@@ -11,6 +11,9 @@ import {
 } from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import {
+  AudioTrackIdAtom,
+  AudioTracksAtom,
+  HlsRefAtom,
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
   PlayerStateAtom,
@@ -34,9 +37,13 @@ const Video = ({ className, videoRef, movie }: props) => {
   const playbackRate = useAtomValue(PlayerPlaybackRateAtom);
   const [configVolume, setConfigVolume] = useAtom(PlayerVolumeAtom);
   const setWatchedHistory = useSetAtom(watchedHistoryAtom);
+  const setHls = useSetAtom(HlsRefAtom);
+  const setAudioTracks = useSetAtom(AudioTracksAtom);
+  const setAudioTrackId = useSetAtom(AudioTrackIdAtom);
   const [url, setUrl] = useState<string>("");
 
   const hlsRef = useRef<Hls | null>(null);
+  const selectedAudioTrackRef = useRef(-1);
 
   const navigate = useNavigate();
 
@@ -105,7 +112,7 @@ const Video = ({ className, videoRef, movie }: props) => {
   const onVideoSeeking = () => setState((pv) => ({ ...pv, isLoading: true }));
 
   const loadVideo = useCallback(
-    (video: HTMLVideoElement, url: string) => {
+    (video: HTMLVideoElement, url: string, restoreAudioTrackId?: number) => {
       if (Hls.isSupported()) {
         if (hlsRef.current) {
           hlsRef.current.destroy();
@@ -121,9 +128,30 @@ const Video = ({ className, videoRef, movie }: props) => {
           enableWorker: true,
           lowLatencyMode: true,
         });
+        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
+          setAudioTracks(
+            data.audioTracks.map((track) => ({
+              id: track.id,
+              name: track.name,
+              lang: track.lang,
+            })),
+          );
+          if (
+            restoreAudioTrackId !== undefined &&
+            restoreAudioTrackId >= 0 &&
+            data.audioTracks.some((track) => track.id === restoreAudioTrackId)
+          ) {
+            hls.audioTrack = restoreAudioTrackId;
+          }
+        });
+        hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
+          selectedAudioTrackRef.current = data.id;
+          setAudioTrackId(data.id);
+        });
         hls.loadSource(url);
         hls.attachMedia(video);
         hlsRef.current = hls;
+        setHls(hls);
         video.crossOrigin = "anonymous";
         video.disableRemotePlayback = true;
       } else {
@@ -133,7 +161,7 @@ const Video = ({ className, videoRef, movie }: props) => {
       }
       setPlayerConfig((pv) => ({ ...pv }));
     },
-    [token, setPlayerConfig],
+    [token, setPlayerConfig, setHls, setAudioTracks, setAudioTrackId],
   );
 
   useEffect(() => {
@@ -151,14 +179,23 @@ const Video = ({ className, videoRef, movie }: props) => {
     const variant = movie?.variants[0];
     if (!variant) {
       videoRef.current.srcObject = null;
+      selectedAudioTrackRef.current = -1;
+      setAudioTracks([]);
+      setAudioTrackId(-1);
+      setHls(null);
       return;
     }
 
     if (variant.contentUrl === url) {
       const currentTime = videoRef.current.currentTime;
-      void loadVideo(videoRef.current, variant.contentUrl);
+      void loadVideo(
+        videoRef.current,
+        variant.contentUrl,
+        selectedAudioTrackRef.current,
+      );
       videoRef.current.currentTime = currentTime;
     } else {
+      selectedAudioTrackRef.current = -1;
       setWatchedHistory((pv) => ({
         ...pv,
         [movie.id]: {
@@ -171,8 +208,21 @@ const Video = ({ className, videoRef, movie }: props) => {
     setUrl(variant.contentUrl);
     return () => {
       hlsRef.current?.destroy();
+      hlsRef.current = null;
+      setHls(null);
+      setAudioTracks([]);
+      setAudioTrackId(-1);
     };
-  }, [videoRef.current, movie, setWatchedHistory, url, loadVideo]);
+  }, [
+    videoRef.current,
+    movie,
+    setWatchedHistory,
+    url,
+    loadVideo,
+    setHls,
+    setAudioTracks,
+    setAudioTrackId,
+  ]);
 
   return (
     <video

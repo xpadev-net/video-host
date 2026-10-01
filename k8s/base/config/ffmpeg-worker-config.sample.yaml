@@ -23,3 +23,6 @@ data:
   min-disk-space-gb: "1"
   job-timeout-seconds: "7200"
   ffmpeg-threads: ""  # Optional: limit FFmpeg CPU threads (empty = use all available)
+  # OpenTelemetry (メトリクス送信先。空の場合は無効)
+  otel-endpoint: ""  # 例: "http://otel-collector.otel-collector.svc.cluster.local:4318"
+  otel-service-name: "video-host-ffmpeg-worker"
