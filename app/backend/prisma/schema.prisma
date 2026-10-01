@@ -11,6 +11,7 @@ enum Visibility {
   PUBLIC
   UNLISTED
   PRIVATE
+  LIMITED
 }
 
 enum Role {
@@ -26,19 +27,20 @@ enum MovieStatus {
 }
 
 model User {
-  id         String     @id @default(uuid())
-  name       String
-  username   String     @unique
-  password   String? // if null, it means the user is using by system
-  role       Role       @default(USER)
-  avatarUrl  String?
-  series     Series[]
-  movies     Movie[]
-  externalId String?    @unique @db.VarChar(512)
-  sessions   Session[]
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  playlists  Playlist[]
+  id             String        @id @default(uuid())
+  name           String
+  username       String        @unique
+  password       String? // if null, it means the user is using by system
+  role           Role          @default(USER)
+  avatarUrl      String?
+  series         Series[]
+  movies         Movie[]
+  externalId     String?       @unique @db.VarChar(512)
+  sessions       Session[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  playlists      Playlist[]
+  viewableMovies MovieViewer[]
 }
 
 model Session {
@@ -76,6 +78,16 @@ model Playlist {
   movies      MovieOnPlaylist[]
 }
 
+model MovieViewer {
+  movie     Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  movieId   String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@id([movieId, userId])
+}
+
 model MovieOnPlaylist {
   playlist   Playlist @relation(fields: [playlistId], references: [id])
   playlistId String
@@ -103,6 +115,7 @@ model Movie {
   updatedAt    DateTime          @updatedAt
   variants     MovieVariant[]
   playlists    MovieOnPlaylist[]
+  viewers      MovieViewer[]
 }
 
 model MovieVariant {
@@ -117,4 +130,3 @@ model MovieVariant {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 }
-

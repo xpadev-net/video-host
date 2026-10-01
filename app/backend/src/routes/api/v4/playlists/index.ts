@@ -6,13 +6,13 @@ import type { Env, HonoApp } from "@/@types/hono";
 import {
   type FilteredPlaylist,
   type PaginatedResponse,
-  ZVisibility,
+  ZBasicVisibility,
 } from "@/@types/models";
 import { filterPlaylist } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
 import {
+  buildMovieAccessWhere,
   buildVisibilityFilter,
-  readyOrOwnMovieFilter,
 } from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
@@ -40,7 +40,7 @@ const QuerySchema = z.object({
 const PostPlaylistSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  visibility: ZVisibility.optional().default("PUBLIC"),
+  visibility: ZBasicVisibility.optional().default("PUBLIC"),
   asUserId: z.string().optional(),
 });
 
@@ -74,9 +74,7 @@ export const playlistsRoute = app
           }
         : {
             movies: {
-              where: {
-                movie: { is: readyOrOwnMovieFilter(c.get("user")) },
-              },
+              where: { movie: buildMovieAccessWhere(user) },
               orderBy: { order: "asc" },
               include: {
                 movie: {
@@ -148,6 +146,7 @@ export const playlistsRoute = app
       include: {
         author: true,
         movies: {
+          where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
           include: {
             movie: {

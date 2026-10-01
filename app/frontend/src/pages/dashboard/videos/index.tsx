@@ -8,6 +8,7 @@ import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { useMyMovies } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
+import { visibility2str } from "@/utils/visibility2str";
 
 const VideosPage: FC = () => {
   const token = useAtomValue(AuthTokenAtom);
@@ -100,11 +101,7 @@ const VideosPage: FC = () => {
                     <span
                       className={`visibility-badge ${movie.visibility.toLowerCase()}`}
                     >
-                      {movie.visibility === "PUBLIC"
-                        ? "公開"
-                        : movie.visibility === "UNLISTED"
-                          ? "限定公開"
-                          : "非公開"}
+                      {visibility2str(movie.visibility)}
                     </span>
                     {movie.variants?.[0]?.status === "UPLOADING" && (
                       <span className="status-badge uploading">
@@ -240,6 +237,10 @@ const VideosPage: FC = () => {
         .visibility-badge.private {
           background: rgba(239, 68, 68, 0.2);
           color: #ef4444;
+        }
+        .visibility-badge.limited {
+          background: rgba(168, 85, 247, 0.2);
+          color: #a855f7;
         }
         .status-badge {
           padding: 0.25rem 0.5rem;

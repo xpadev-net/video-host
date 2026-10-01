@@ -6,14 +6,14 @@ import type { Env, HonoApp } from "@/@types/hono";
 import {
   type FilteredSeries,
   type PaginatedResponse,
-  ZVisibility,
+  ZBasicVisibility,
 } from "@/@types/models";
 import { filterSeries } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
 import { seriesDetailRoute } from "@/routes/api/v4/series/[series]";
 import {
+  buildMovieAccessWhere,
   buildVisibilityFilter,
-  readyOrOwnMovieFilter,
 } from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
@@ -41,7 +41,7 @@ const QuerySchema = z.object({
 const PostSeriesSchema = z.object({
   title: z.string(),
   description: z.string(),
-  visibility: ZVisibility.optional().default("PUBLIC"),
+  visibility: ZBasicVisibility.optional().default("PUBLIC"),
   asUserId: z.string().optional(),
 });
 
@@ -49,11 +49,12 @@ const app = new Hono<Env>();
 
 export const seriesRoute = app
   .get("/", zValidator("query", QuerySchema), async (c) => {
+    const user = c.get("user");
     const { page, limit, query, author } = c.req.valid("query");
     const suggest = c.req.query("suggest") !== undefined; // Check presence
 
     const where: Prisma.SeriesWhereInput = buildVisibilityFilter(
-      c.get("user"),
+      user,
       query,
       author,
     );
@@ -68,7 +69,7 @@ export const seriesRoute = app
           }
         : {
             movies: {
-              where: readyOrOwnMovieFilter(c.get("user")),
+              where: buildMovieAccessWhere(user),
               orderBy: [
                 {
                   order: "asc",
@@ -148,6 +149,7 @@ export const seriesRoute = app
       include: {
         author: true,
         movies: {
+          where: buildMovieAccessWhere(user),
           include: {
             author: true,
             variants: true,

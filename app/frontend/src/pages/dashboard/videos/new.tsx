@@ -1,3 +1,4 @@
+import type { FilteredUser, Visibility } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import Link from "next/link";
@@ -13,6 +14,7 @@ import {
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
+import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { useUpload } from "@/hooks/useUpload";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
@@ -34,9 +36,8 @@ const NewVideoPage: FC = () => {
   const [movieId, setMovieId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<
-    "PUBLIC" | "UNLISTED" | "PRIVATE"
-  >("PUBLIC");
+  const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
+  const [viewers, setViewers] = useState<FilteredUser[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savePending, setSavePending] = useState(false);
@@ -46,8 +47,8 @@ const NewVideoPage: FC = () => {
   // Latest form values for the auto-save that fires when the upload lands;
   // the .then callback registered at file-select time would otherwise save
   // stale values and clobber whatever the user typed while uploading.
-  const metadataRef = useRef({ title, description, visibility });
-  metadataRef.current = { title, description, visibility };
+  const metadataRef = useRef({ title, description, visibility, viewers });
+  metadataRef.current = { title, description, visibility, viewers };
   const movieIdRef = useRef<string | null>(null);
   movieIdRef.current = movieId;
 
@@ -95,6 +96,7 @@ const NewVideoPage: FC = () => {
           title: current.title.trim(),
           description: current.description.trim(),
           visibility: current.visibility,
+          viewerIds: current.viewers.map((viewer) => viewer.id),
         },
       },
       {
@@ -361,20 +363,33 @@ const NewVideoPage: FC = () => {
                   id="visibility"
                   value={visibility}
                   onChange={(e) => {
-                    setVisibility(
-                      e.target.value as "PUBLIC" | "UNLISTED" | "PRIVATE",
-                    );
+                    setVisibility(e.target.value as Visibility);
                     setSaved(false);
                   }}
                 >
                   <option value="PUBLIC">公開</option>
                   <option value="UNLISTED">限定公開</option>
+                  <option value="LIMITED">指定ユーザー公開</option>
                   <option value="PRIVATE">非公開</option>
                 </select>
                 <p className="visibility-note">
                   エンコードが完了するまでは設定に関わらず非公開になります
                 </p>
               </div>
+
+              {visibility === "LIMITED" && (
+                <div className="form-group">
+                  <label htmlFor="viewers">公開するユーザー</label>
+                  <UserPicker
+                    id="viewers"
+                    selected={viewers}
+                    onChange={(next) => {
+                      setViewers(next);
+                      setSaved(false);
+                    }}
+                  />
+                </div>
+              )}
 
               {error && <div className="error-message">{error}</div>}
 
