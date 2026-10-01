@@ -94,9 +94,9 @@ export const seriesDetailRoute = app
     }
 
     // If pagination metadata is requested, get total count. This must not
-    // depend on the current page being non-empty: a page containing only
-    // not-yet-READY movies returns zero rows while earlier pages may hold
-    // ready ones, and the metadata must still describe the filtered totals.
+    // depend on the current page being non-empty: an out-of-range offset
+    // returns zero rows while totalPages/hasNext/hasPrev still describe the
+    // filtered result set.
     if (includeMoviesCount) {
       const totalMoviesCount = await prisma.movie.count({
         where: { seriesId: seriesId, ...movieAccessWhere },
