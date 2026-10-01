@@ -7,6 +7,7 @@ interface FormFieldProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   required?: boolean;
+  autoComplete?: string;
 }
 
 export function FormField({
@@ -16,11 +17,14 @@ export function FormField({
   onChange,
   disabled = false,
   required = false,
+  autoComplete,
 }: FormFieldProps) {
   return (
     <div className="space-y-2">
       <Input
         type={type}
+        aria-label={placeholder}
+        autoComplete={autoComplete}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}

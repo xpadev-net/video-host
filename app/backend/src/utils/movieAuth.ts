@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { badRequest, unauthorized } from "@/utils/response";
 import { isSystemAccount } from "@/utils/systemAccountCache";
 
-// Admins may act on behalf of a system account (a user row with no password).
+// Admins may act on behalf of a system account (a user row explicitly marked SYSTEM).
 // Mirrors the asUserId handling used when creating movies.
 export const resolveAuthorId = async (
   user: User,
@@ -18,7 +18,7 @@ export const resolveAuthorId = async (
   const targetUser = await prisma.user.findUnique({
     where: { id: asUserId },
   });
-  if (!targetUser || targetUser.password !== null) {
+  if (!targetUser || targetUser.kind !== "SYSTEM") {
     badRequest("Target user must be a system account");
   }
   return asUserId;

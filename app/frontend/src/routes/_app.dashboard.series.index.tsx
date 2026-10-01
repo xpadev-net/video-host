@@ -1,7 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useAtomValue } from "jotai";
 import { useState } from "react";
-import { AuthTokenAtom } from "@/atoms/Auth";
 import { useMySeries } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
@@ -12,7 +10,6 @@ export const Route = createFileRoute("/_app/dashboard/series/")({
 });
 
 function SeriesPage() {
-  const token = useAtomValue(AuthTokenAtom);
   const { data: user, isLoading: isUserLoading } = useSelf();
   const { data: seriesData, mutate } = useMySeries();
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -22,14 +19,9 @@ function SeriesPage() {
 
     setDeletingId(id);
     try {
-      const res = await client.api.v4.series[":series"].$delete(
-        {
-          param: { series: id },
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const res = await client.api.v4.series[":series"].$delete({
+        param: { series: id },
+      });
 
       if (!res.ok) {
         throw new Error("Failed to delete");

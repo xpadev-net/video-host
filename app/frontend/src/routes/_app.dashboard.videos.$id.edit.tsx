@@ -8,7 +8,6 @@ import type {
   FormattedMovie,
   Visibility,
 } from "@video-host/backend";
-import { useAtomValue } from "jotai";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -17,9 +16,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { AuthTokenAtom } from "@/atoms/Auth";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
+import { ApiEndpoint } from "@/contexts/env";
 import { useUpload } from "@/hooks/useUpload";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
 export const Route = createFileRoute("/_app/dashboard/videos/$id/edit")({
@@ -39,7 +39,8 @@ function EditVideoPage() {
   const router = useRouter();
   const navigate = useNavigate();
   const { id } = Route.useParams();
-  const token = useAtomValue(AuthTokenAtom);
+  const { data: authSession } = authClient.useSession();
+  const session = authSession?.user.id;
 
   const [movie, setMovie] = useState<FormattedMovie | null>(null);
   const [title, setTitle] = useState("");
@@ -56,17 +57,12 @@ function EditVideoPage() {
   const resumeFileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchMovie = useCallback(async () => {
-    if (!token) return;
+    if (!session) return;
 
     try {
-      const res = await client.api.v4.movies[":movie"].$get(
-        {
-          param: { movie: id },
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const res = await client.api.v4.movies[":movie"].$get({
+        param: { movie: id },
+      });
 
       if (!res.ok) {
         throw new Error("Failed to fetch");
@@ -85,7 +81,7 @@ function EditVideoPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [id, token]);
+  }, [id, session]);
 
   useEffect(() => {
     void fetchMovie();
@@ -104,7 +100,7 @@ function EditVideoPage() {
 
   // SSE for encoding progress with authentication
   useEffect(() => {
-    if (!movie || !token) return;
+    if (!movie || !session) return;
 
     const variant = movie.variants?.[0];
     if (!variant || variant.status !== "PROCESSING") {
@@ -112,22 +108,20 @@ function EditVideoPage() {
     }
 
     // Use dynamic import to avoid SSR issues
-    let controller: AbortController | null = null;
+    const controller = new AbortController();
+    let disposed = false;
 
     const setupSSE = async () => {
       const { EventSourcePlus } = await import("event-source-plus");
-      controller = new AbortController();
+      if (controller.signal.aborted) return;
 
-      const url = client.api.v4.progress[":movieId"]
-        .$url({
-          param: { movieId: id },
-        })
-        .toString();
+      const url = new URL(
+        `${ApiEndpoint}/api/v4/progress/${encodeURIComponent(id)}`,
+        window.location.origin,
+      ).href;
 
       const eventSource = new EventSourcePlus(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        credentials: "include",
         signal: controller.signal,
       });
 
@@ -142,21 +136,20 @@ function EditVideoPage() {
               controller?.abort();
               // Refresh movie data
               client.api.v4.movies[":movie"]
-                .$get(
-                  {
-                    param: { movie: id },
-                  },
-                  {
-                    headers: { Authorization: `Bearer ${token}` },
-                  },
-                )
+                .$get({
+                  param: { movie: id },
+                })
                 .then(async (res) => {
-                  if (res.ok) {
+                  if (!disposed && res.ok) {
                     const json = await res.json();
                     // biome-ignore lint/suspicious/noExplicitAny: loose typing
                     setMovie(json.data as any);
                     setEncodeProgress(null);
                   }
+                })
+                .catch(() => {
+                  if (!disposed)
+                    setError("動画の更新状況を取得できませんでした");
                 });
             }
           } catch (_e) {
@@ -169,12 +162,17 @@ function EditVideoPage() {
       });
     };
 
-    setupSSE();
+    void setupSSE().catch(() => {
+      if (!controller.signal.aborted) {
+        setError("エンコード状況の取得に失敗しました");
+      }
+    });
 
     return () => {
-      controller?.abort();
+      disposed = true;
+      controller.abort();
     };
-  }, [id, movie, token]);
+  }, [id, movie, session]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -184,20 +182,15 @@ function EditVideoPage() {
     setError(null);
 
     try {
-      const res = await client.api.v4.movies[":movie"].$patch(
-        {
-          param: { movie: id },
-          json: {
-            title: title.trim(),
-            description: description.trim(),
-            visibility,
-            viewerIds: viewers.map((viewer) => viewer.id),
-          },
+      const res = await client.api.v4.movies[":movie"].$patch({
+        param: { movie: id },
+        json: {
+          title: title.trim(),
+          description: description.trim(),
+          visibility,
+          viewerIds: viewers.map((viewer) => viewer.id),
         },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      });
 
       if (!res.ok) {
         throw new Error("Failed to update");

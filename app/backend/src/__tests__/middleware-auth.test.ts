@@ -1,383 +1,227 @@
-import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import jwt from "jsonwebtoken";
+import { HTTPException } from "hono/http-exception";
+import { trimTrailingSlash } from "hono/trailing-slash";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Env, HonoApp } from "@/@types/hono";
+import type { Env } from "@/@types/hono";
 
-const TEST_JWT_SECRET = "test-jwt-secret";
-
-// Mock env module before other imports
+const mocks = vi.hoisted(() => ({ getSession: vi.fn(), findUnique: vi.fn() }));
 vi.mock("@/env", () => ({
-  JWT_SECRET: "test-jwt-secret",
-  PUBLIC_ENDPOINTS: [],
+  AUTH_TRUSTED_ORIGINS: ["https://video.example.com"],
+  PUBLIC_ENDPOINTS: ["/api/v4/public"],
+  OIDC_DISPLAY_NAME: "SSO",
+  OIDC_ENABLED: false,
+  PASSWORD_AUTH_ENABLED: true,
+  SIGNUP_CODE: undefined,
+  SIGNUP_ENABLED: false,
 }));
-
-// Mock Prisma before imports
-const mockPrisma = {
-  session: {
-    findFirst: vi.fn(),
-  },
-};
-
+vi.mock("@/lib/auth", () => ({
+  auth: { api: { getSession: mocks.getSession } },
+  accountLinkingEnabled: false,
+  ssoProviderId: null,
+}));
 vi.mock("@/lib/prisma", () => ({
-  prisma: mockPrisma,
+  prisma: { user: { findUnique: mocks.findUnique } },
 }));
 
-// Mock rate limiter to bypass for integration tests
-vi.mock("@/lib/rateLimiter", () => ({
-  authRateLimiter: ((_, next) => next()) as MiddlewareHandler,
-}));
+import { handleAuth } from "@/middleware/auth";
+import { authRoute } from "@/routes/api/v4/auth";
 
-/**
- * Integration tests for the Auth Middleware.
- * These tests verify that the authentication middleware correctly validates
- * JWT tokens, checks session validity, and grants/denies access appropriately.
- */
-describe("Auth Middleware", () => {
-  const testUser = {
-    id: "user-123",
-    username: "testuser",
-    name: "Test User",
-    role: "USER" as const,
-    avatarUrl: null,
-    password: "hashed-password",
-    externalId: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
+const profile = {
+  id: "domain-id",
+  authUserId: "auth-id",
+  kind: "HUMAN",
+  role: "ADMIN",
+};
+function appUnderTest(withAuthConfigRoute = false) {
+  const app = new Hono<Env>();
+  app.onError((error, c) =>
+    c.json(
+      { error: error.message },
+      error instanceof HTTPException ? error.status : 500,
+    ),
+  );
+  handleAuth(app);
+  if (withAuthConfigRoute) {
+    // Match production ordering: authentication precedes Hono's 404-based
+    // trailing-slash redirect, then the actual public config route.
+    app.use(trimTrailingSlash());
+    app.route("/api/v4/auth", authRoute);
+  } else {
+    app.all("*", (c) => c.json({ user: c.get("user") ?? null }));
+  }
+  return app;
+}
 
-  const testSession = {
-    id: "session-123",
-    token: "valid-session-token",
-    userId: "user-123",
-    expiredAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    user: testUser,
-  };
-
-  let app: HonoApp;
-
-  beforeEach(async () => {
+describe("cookie-backed domain authentication", () => {
+  beforeEach(() => {
     vi.clearAllMocks();
-    vi.resetModules();
-
-    // Re-import auth middleware and create test app
-    const { handleAuth } = await import("../middleware/auth");
-    const { HTTPException } = await import("hono/http-exception");
-    app = new Hono<Env>();
-
-    // Add error handler for HTTPException
-    app.onError((err, c) => {
-      if (err instanceof HTTPException) {
-        return c.json(
-          {
-            status: "error",
-            code: err.status,
-            message: err.message,
+    mocks.getSession.mockResolvedValue({
+      response: null,
+      headers: new Headers(),
+    });
+    mocks.findUnique.mockResolvedValue(profile);
+  });
+  it("rejects missing, expired or revoked sessions", async () => {
+    expect((await appUnderTest().request("/api/v4/users")).status).toBe(401);
+  });
+  it("does not accept a legacy bearer token as authentication", async () => {
+    expect(
+      (
+        await appUnderTest().request("/api/v4/users", {
+          headers: { authorization: "Bearer legacy-jwt" },
+        })
+      ).status,
+    ).toBe(401);
+  });
+  it("resolves fresh domain IDs and role data by auth user ID", async () => {
+    mocks.getSession.mockResolvedValue({
+      response: { user: { id: "auth-id" } },
+      headers: new Headers(),
+    });
+    const res = await appUnderTest().request("/api/v4/users", {
+      headers: { cookie: "better-auth.session_token=signed" },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).user).toEqual(profile);
+    expect(mocks.findUnique).toHaveBeenCalledWith({
+      where: { authUserId: "auth-id" },
+    });
+    expect(mocks.getSession.mock.calls[0][0].headers.get("cookie")).toContain(
+      "session_token",
+    );
+  });
+  it("forwards renewed session cookies and disables caching on authenticated reads", async () => {
+    mocks.getSession.mockResolvedValue({
+      response: { user: { id: "auth-id" } },
+      headers: new Headers({ "set-cookie": "session=renewed; HttpOnly" }),
+    });
+    const response = await appUnderTest().request("/api/v4/users");
+    expect(response.headers.get("set-cookie")).toContain("session=renewed");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+  it("rejects SYSTEM profiles and missing domain mappings", async () => {
+    mocks.getSession.mockResolvedValue({
+      response: { user: { id: "auth-id" } },
+      headers: new Headers(),
+    });
+    for (const user of [{ ...profile, kind: "SYSTEM" }, null]) {
+      mocks.findUnique.mockResolvedValue(user);
+      expect((await appUnderTest().request("/api/v4/users")).status).toBe(401);
+    }
+  });
+  it("allows configured public reads and exact auth config only", async () => {
+    for (const path of [
+      "/api/v4/public",
+      "/api/v4/public/movies",
+      "/api/v4/auth/config",
+    ]) {
+      expect((await appUnderTest().request(path)).status).toBe(200);
+    }
+    for (const path of [
+      "/api/v4/publicity",
+      "/api/v4/auth/configuration",
+      "/api/v4/auth/sso/login",
+    ]) {
+      expect((await appUnderTest().request(path)).status).toBe(401);
+    }
+  });
+  it.each([
+    "GET",
+    "HEAD",
+  ])("redirects anonymous %s config/ requests to a successful config response", async (method) => {
+    const app = appUnderTest(true);
+    const redirect = await app.request("/api/v4/auth/config/?from=login", {
+      method,
+    });
+    expect(redirect.status).toBe(301);
+    const location = redirect.headers.get("location");
+    expect(location).toBe("http://localhost/api/v4/auth/config?from=login");
+    if (!location) throw new Error("Missing config redirect location");
+    const response = await app.request(location, { method });
+    expect(response.status).toBe(200);
+    if (method === "GET") {
+      expect(await response.json()).toMatchObject({
+        status: "ok",
+        data: { passwordAuthEnabled: true, signupEnabled: false },
+      });
+    }
+    expect(mocks.findUnique).not.toHaveBeenCalled();
+  });
+  it("keeps trailing-slash lookalikes and private paths protected", async () => {
+    const app = appUnderTest(true);
+    for (const path of [
+      "/api/v4/auth/configuration/",
+      "/api/v4/auth/config/private/",
+      "/api/v4/auth/config//",
+      "/api/v4/auth/config//private",
+      "/api/v4/auth/sso/login/",
+      "/api/v4/users/me/",
+    ]) {
+      const response = await app.request(path);
+      expect(response.status, path).toBe(401);
+      expect(response.headers.get("location"), path).toBeNull();
+    }
+  });
+  it("leaves Better Auth and secret-authenticated machine routes to their own guards", async () => {
+    for (const path of [
+      "/api/auth/sign-in/email",
+      "/api/v4/callback/complete",
+      "/api/v4/vod/mapping",
+    ]) {
+      expect(
+        (await appUnderTest().request(path, { method: "POST" })).status,
+      ).toBe(200);
+    }
+    expect(mocks.getSession).not.toHaveBeenCalled();
+    expect(
+      (
+        await appUnderTest().request("/api/v4/callback-forged", {
+          method: "POST",
+        })
+      ).status,
+    ).toBe(403);
+  });
+  it("requires exact trusted origin for every application mutation", async () => {
+    mocks.getSession.mockResolvedValue({
+      response: { user: { id: "auth-id" } },
+      headers: new Headers(),
+    });
+    for (const origin of [
+      undefined,
+      "null",
+      "https://evil.example.com",
+      "https://video.example.com.evil.com",
+    ]) {
+      expect(
+        (
+          await appUnderTest().request("/api/v4/users/me", {
+            method: "PATCH",
+            headers: origin ? { origin } : {},
+          })
+        ).status,
+      ).toBe(403);
+    }
+    expect(
+      (
+        await appUnderTest().request("/api/v4/users/me", {
+          method: "PATCH",
+          headers: { origin: "https://video.example.com" },
+        })
+      ).status,
+    ).toBe(200);
+  });
+  it("protects public mutations against cross-site form posts", async () => {
+    expect(
+      (
+        await appUnderTest().request("/api/v4/public", {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            origin: "https://evil.example.com",
           },
-          err.status,
-        );
-      }
-      return c.json(
-        {
-          status: "error",
-          code: 500,
-          message: "Internal Server Error",
-        },
-        500,
-      );
-    });
-
-    // Apply auth middleware
-    handleAuth(app);
-
-    // Add test routes
-    app.get("/api/v4/users", (c) => {
-      const user = c.get("user");
-      return c.json({ status: "ok", user });
-    });
-
-    // Add a public endpoint for testing
-    app.get("/api/v4/public", (c) => {
-      return c.json({ status: "ok", message: "public" });
-    });
-  });
-
-  describe("Protected endpoints without authentication", () => {
-    it("should reject request without Authorization header", async () => {
-      const res = await app.request("/api/v4/users");
-
-      expect(res.status).toBe(401);
-      const json = await res.json();
-      expect(json.status).toBe("error");
-      expect(json.message).toBe("Unauthorized");
-    });
-
-    it("should reject request with malformed Authorization header (missing Bearer)", async () => {
-      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
-
-      const res = await app.request("/api/v4/users", {
-        headers: {
-          Authorization: token, // Missing "Bearer " prefix
-        },
-      });
-
-      expect(res.status).toBe(401);
-      const json = await res.json();
-      expect(json.status).toBe("error");
-      expect(json.message).toBe("Unauthorized");
-    });
-
-    it("should reject request with extra spaces in Authorization header when session not found", async () => {
-      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
-      mockPrisma.session.findFirst.mockResolvedValue(null);
-
-      const res = await app.request("/api/v4/users", {
-        headers: {
-          Authorization: `Bearer  ${token}`, // Two spaces after Bearer
-        },
-      });
-
-      // The regex /^Bearer\s+(\S+)$/i allows multiple whitespace characters
-      // but should still fail because no session exists
-      expect(res.status).toBe(401);
-      const json = await res.json();
-      expect(json.status).toBe("error");
-      expect(json.message).toBe("Unauthorized");
-    });
-
-    it("should reject request with empty Authorization header", async () => {
-      const res = await app.request("/api/v4/users", {
-        headers: {
-          Authorization: "",
-        },
-      });
-
-      expect(res.status).toBe(401);
-      const json = await res.json();
-      expect(json.status).toBe("error");
-      expect(json.message).toBe("Unauthorized");
-    });
-  });
-
-  describe("Token signature validation", () => {
-    it("should reject token signed with wrong secret", async () => {
-      const token = jwt.sign({ userId: "user-123" }, "wrong-secret");
-
-      const res = await app.request("/api/v4/users", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      expect(res.status).toBe(401);
-      const json = await res.json();
-      expect(json.status).toBe("error");
-      expect(json.message).toBe("Invalid token signature");
-    });
-
-    it("should reject malformed JWT token", async () => {
-      const res = await app.request("/api/v4/users", {
-        headers: {
-          Authorization: "Bearer not-a-valid-jwt",
-        },
-      });
-
-      expect(res.status).toBe(401);
-      const json = await res.json();
-      expect(json.status).toBe("error");
-      expect(json.message).toBe("Invalid token signature");
-    });
-
-    it("should reject token with modified signature", async () => {
-      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
-      const modifiedToken = `${token.slice(0, -5)}XXXXX`;
-
-      const res = await app.request("/api/v4/users", {
-        headers: {
-          Authorization: `Bearer ${modifiedToken}`,
-        },
-      });
-
-      expect(res.status).toBe(401);
-      const json = await res.json();
-      expect(json.status).toBe("error");
-      expect(json.message).toBe("Invalid token signature");
-    });
-  });
-
-  describe("Session validation", () => {
-    it("should reject valid JWT token with no matching session in database", async () => {
-      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
-      mockPrisma.session.findFirst.mockResolvedValue(null);
-
-      const res = await app.request("/api/v4/users", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      expect(res.status).toBe(401);
-      const json = await res.json();
-      expect(json.status).toBe("error");
-      expect(json.message).toBe("Unauthorized");
-    });
-
-    it("should reject valid JWT token with expired session in database", async () => {
-      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
-      const _expiredSession = {
-        ...testSession,
-        expiredAt: new Date(Date.now() - 1000), // Expired 1 second ago
-      };
-      mockPrisma.session.findFirst.mockResolvedValue(null); // findFirst returns null for expired sessions
-
-      const res = await app.request("/api/v4/users", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      expect(res.status).toBe(401);
-      const json = await res.json();
-      expect(json.status).toBe("error");
-      expect(json.message).toBe("Unauthorized");
-    });
-  });
-
-  describe("Successful authentication", () => {
-    it("should accept valid token with matching active session", async () => {
-      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
-      mockPrisma.session.findFirst.mockResolvedValue(testSession);
-
-      const res = await app.request("/api/v4/users", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      expect(res.status).toBe(200);
-      const json = await res.json();
-      expect(json.status).toBe("ok");
-      expect(json.user).toBeDefined();
-      expect(json.user.id).toBe("user-123");
-      expect(json.user.username).toBe("testuser");
-    });
-
-    it("should set user context from session data", async () => {
-      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
-      mockPrisma.session.findFirst.mockResolvedValue(testSession);
-
-      const res = await app.request("/api/v4/users", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      expect(res.status).toBe(200);
-      const json = await res.json();
-      expect(json.user.id).toBe(testUser.id);
-      expect(json.user.username).toBe(testUser.username);
-      expect(json.user.name).toBe(testUser.name);
-    });
-
-    it("should verify session token matches Authorization header", async () => {
-      const token = jwt.sign({ userId: "user-123" }, TEST_JWT_SECRET);
-      mockPrisma.session.findFirst.mockResolvedValue(testSession);
-
-      await app.request("/api/v4/users", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      expect(mockPrisma.session.findFirst).toHaveBeenCalledWith({
-        where: {
-          token,
-          expiredAt: {
-            gte: expect.any(Date),
-          },
-        },
-        include: {
-          user: true,
-        },
-      });
-    });
-  });
-
-  describe("Public endpoints", () => {
-    it("should allow access to /api/v4/callback without authentication", async () => {
-      app.post("/api/v4/callback/test", (c) => {
-        return c.json({ status: "ok" });
-      });
-
-      const res = await app.request("/api/v4/callback/test", {
-        method: "POST",
-      });
-
-      expect(res.status).toBe(200);
-      const json = await res.json();
-      expect(json.status).toBe("ok");
-    });
-
-    it("should allow access to /api/v4/vod without authentication", async () => {
-      app.get("/api/v4/vod/mapping", (c) => {
-        return c.json({ status: "ok" });
-      });
-
-      const res = await app.request("/api/v4/vod/mapping");
-
-      expect(res.status).toBe(200);
-      const json = await res.json();
-      expect(json.status).toBe("ok");
-    });
-
-    it("should allow access to /api/v4/auth endpoints without authentication", async () => {
-      app.get("/api/v4/auth/config", (c) => {
-        return c.json({ status: "ok" });
-      });
-      app.get("/api/v4/auth/sso/login", (c) => {
-        return c.json({ status: "ok" });
-      });
-
-      const res = await app.request("/api/v4/auth/config");
-      expect(res.status).toBe(200);
-
-      const ssoRes = await app.request("/api/v4/auth/sso/login");
-      expect(ssoRes.status).toBe(200);
-    });
-
-    it("should allow callback endpoints even with invalid token", async () => {
-      app.post("/api/v4/callback/webhook", (c) => {
-        return c.json({ status: "ok" });
-      });
-
-      const res = await app.request("/api/v4/callback/webhook", {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer invalid-token",
-        },
-      });
-
-      expect(res.status).toBe(200);
-      const json = await res.json();
-      expect(json.status).toBe("ok");
-    });
-
-    it("should allow vod endpoints even with invalid token", async () => {
-      app.get("/api/v4/vod/stream", (c) => {
-        return c.json({ status: "ok" });
-      });
-
-      const res = await app.request("/api/v4/vod/stream", {
-        headers: {
-          Authorization: "Bearer invalid-token",
-        },
-      });
-
-      expect(res.status).toBe(200);
-      const json = await res.json();
-      expect(json.status).toBe("ok");
-    });
+          body: "title=csrf",
+        })
+      ).status,
+    ).toBe(403);
   });
 });

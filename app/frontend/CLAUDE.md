@@ -22,6 +22,10 @@ pnpm -F @video-host/frontend lint:fix
 pnpm -F @video-host/frontend format
 pnpm -F @video-host/frontend format:check
 pnpm -F @video-host/frontend typecheck
+pnpm -F @video-host/frontend test
+pnpm -F @video-host/frontend test:proxy
+# After a build using docker/.env.placeholder:
+pnpm -F @video-host/frontend test:runtime-env
 pnpm -F @video-host/frontend build
 pnpm -F @video-host/frontend start
 ```
@@ -68,11 +72,11 @@ VITE_ENABLE_COMMENTS
 VITE_REQUIRE_SIGNUP_CODE
 ```
 
-`VITE_API_ENDPOINT` is required. Container builds embed placeholder values from `docker/.env.placeholder`; `docker/env-replacer.sh` replaces those placeholders in `.output/public` and `.output/server` at startup so client assets and server-rendered HTML use the deployment's runtime values.
+`VITE_API_ENDPOINT` is optional; leave it empty to use the same-origin API proxy. Set server-only `API_UPSTREAM_URL` to the backend origin (`http://127.0.0.1:3001` locally, `http://backend:3000` in the container). Never expose that upstream or auth secrets as VITE_ values. The Vite/Nitro proxy forwards only `/api/auth/*` and `/api/v4/*`, preserves cookies/Origin/streaming responses, and does not follow redirects. Container builds embed placeholder values from `docker/.env.placeholder`; `docker/env-replacer.sh` replaces those placeholders in `.output/public` and `.output/server` at startup so client assets and server-rendered HTML use the deployment's runtime values.
 
 ## Implementation notes
 
 - Add pages and server handlers under `src/routes` using TanStack file routing.
 - The health endpoint is the `GET /api/healthz` TanStack server route and returns `{ "message": "OK" }`.
-- Use the typed client in `src/lib/client.ts` when calling the Hono backend.
+- Use the typed client in `src/lib/client.ts` when calling the Hono backend. Browser sessions use Better Auth HttpOnly cookies; never reintroduce localStorage bearer auth.
 - Prefer Tailwind utilities for new styling and keep shared global styles in `src/styles/global.css`.

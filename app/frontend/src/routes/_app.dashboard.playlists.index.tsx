@@ -1,7 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useAtomValue } from "jotai";
 import { useState } from "react";
-import { AuthTokenAtom } from "@/atoms/Auth";
 import { useMyPlaylists } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
@@ -12,7 +10,6 @@ export const Route = createFileRoute("/_app/dashboard/playlists/")({
 });
 
 function PlaylistsPage() {
-  const token = useAtomValue(AuthTokenAtom);
   const { data: user, isLoading: isUserLoading } = useSelf();
   const { data: playlistsData, mutate } = useMyPlaylists();
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -21,14 +18,9 @@ function PlaylistsPage() {
     if (!confirm("このプレイリストを削除しますか？")) return;
     setDeletingId(id);
     try {
-      const res = await client.api.v4.playlists[":playlist"].$delete(
-        {
-          param: { playlist: id },
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const res = await client.api.v4.playlists[":playlist"].$delete({
+        param: { playlist: id },
+      });
 
       if (!res.ok) {
         throw new Error("Failed to delete");

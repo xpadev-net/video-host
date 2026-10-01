@@ -4,13 +4,15 @@ export type AuthConfig = {
   passwordAuthEnabled: boolean;
   ssoEnabled: boolean;
   ssoDisplayName: string;
+  ssoProviderId: string | null;
+  accountLinkingEnabled: boolean;
   signupEnabled: boolean;
+  requireSignupCode: boolean;
 };
 
 /**
  * Fetches the public auth configuration.
- * Returns null when unavailable (e.g. older backend); callers should treat
- * that as password-auth-only for backward compatibility.
+ * Returns null when unavailable; the UI reports configuration failure.
  */
 export const getAuthConfig = async (): Promise<AuthConfig | null> => {
   try {

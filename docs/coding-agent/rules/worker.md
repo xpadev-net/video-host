@@ -2,7 +2,7 @@
 rule_schema_version: 2
 suite_id: "rules-20260831-tanstack-start"
 rule_file: "worker"
-last_updated: "2026-09-01"
+last_updated: "2026-10-01"
 ---
 
 # Worker Repository Rules
@@ -20,9 +20,9 @@ last_updated: "2026-09-01"
 
 | Change Type | Required Checks | Notes |
 |---|---|---|
-| Frontend TS/TSX/CSS | frontend lint, typecheck, build | Build backend declarations first. |
-| Frontend dependencies/config | frozen install, backend build, frontend typecheck and build | Confirm generated route-tree handling. |
-| Routes/navigation/player | frontend checks plus browser probe | Verify dynamic params, auth callback, and player continuity. |
+| Frontend TS/TSX/CSS | frontend lint, typecheck, build, test | Build backend declarations first. |
+| Frontend dependencies/config | frozen install, backend build, frontend typecheck, build, test:proxy and test:runtime-env | Confirm generated route-tree handling. |
+| Routes/navigation/player | frontend checks, frontend test, backend auth tests plus browser probe | Verify dynamic params, auth callback, and player continuity. |
 | Docker/env/start | image build, container start, runtime env replacement, health request | Confirm port 3000 and `/api/healthz`. |
 | CI/release | workflow review plus representative local commands | CI format checks must not mutate files. |
 

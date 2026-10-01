@@ -1,7 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useAtomValue } from "jotai";
 import { useState } from "react";
-import { AuthTokenAtom } from "@/atoms/Auth";
 import { useMyMovies } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
@@ -13,7 +11,6 @@ export const Route = createFileRoute("/_app/dashboard/videos/")({
 });
 
 function VideosPage() {
-  const token = useAtomValue(AuthTokenAtom);
   const { data: user, isLoading: isUserLoading } = useSelf();
   const { data: moviesData, mutate } = useMyMovies();
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -23,14 +20,9 @@ function VideosPage() {
 
     setDeletingId(id);
     try {
-      const res = await client.api.v4.movies[":movie"].$delete(
-        {
-          param: { movie: id },
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const res = await client.api.v4.movies[":movie"].$delete({
+        param: { movie: id },
+      });
 
       if (!res.ok) {
         throw new Error("Failed to delete");

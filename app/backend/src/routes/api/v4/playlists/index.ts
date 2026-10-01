@@ -130,7 +130,7 @@ export const playlistsRoute = app
       if (!targetUser) {
         badRequest("Target user not found");
       }
-      if (targetUser.password !== null) {
+      if (targetUser.kind !== "SYSTEM") {
         badRequest("Can only create playlists for system accounts");
       }
       authorId = asUserId;

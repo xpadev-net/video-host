@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        task: [lint, format:check, typecheck, build]
+        task: [lint, format:check, typecheck, build, test]
     
     steps:
       - name: Checkout repository
@@ -69,6 +69,12 @@ jobs:
 
       - name: Run ${{ matrix.task }} (frontend)
         run: pnpm -F @video-host/frontend ${{ matrix.task }}
+
+      - name: Verify production API proxy
+        if: matrix.task == 'build'
+        run: |
+          pnpm -F @video-host/frontend test:proxy
+          pnpm -F @video-host/frontend test:runtime-env
 
   # Worker CI
   ffmpeg-worker-ci:

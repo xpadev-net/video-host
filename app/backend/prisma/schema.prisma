@@ -19,6 +19,11 @@ enum Role {
   ADMIN
 }
 
+enum UserKind {
+  HUMAN
+  SYSTEM
+}
+
 enum MovieStatus {
   UPLOADING
   PROCESSING
@@ -30,27 +35,85 @@ model User {
   id             String        @id @default(uuid())
   name           String
   username       String        @unique
-  password       String? // if null, it means the user is using by system
+  kind           UserKind      @default(HUMAN)
+  authUserId     String?       @unique
+  authUser       AuthUser?     @relation(fields: [authUserId], references: [id], onDelete: SetNull)
   role           Role          @default(USER)
   avatarUrl      String?
   series         Series[]
   movies         Movie[]
   externalId     String?       @unique @db.VarChar(512)
-  sessions       Session[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   playlists      Playlist[]
   viewableMovies MovieViewer[]
 }
 
-model Session {
-  id        String   @id @default(uuid())
-  user      User     @relation(fields: [userId], references: [id])
-  userId    String
-  token     String   @unique @db.VarChar(512)
-  expiredAt DateTime
+// Better Auth owns credentials, provider identities and sessions. Domain User
+// IDs, roles, ownership and visibility relations remain application-owned.
+model AuthUser {
+  id            String        @id
+  name          String
+  email         String        @unique @db.VarChar(320)
+  emailVerified Boolean       @default(false)
+  image         String?       @db.Text
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  sessions      AuthSession[]
+  accounts      AuthAccount[]
+  profile       User?
+}
+
+model AuthSession {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?  @db.Text
+  userId    String
+  user      AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuthAccount {
+  id                    String    @id
+  accountId             String    @db.VarChar(512)
+  providerId            String
+  userId                String
+  user                  AuthUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?   @db.Text
+  password              String?   @db.Text
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model AuthVerification {
+  id         String   @id
+  identifier String
+  value      String   @db.Text
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model AuthRateLimit {
+  id          String @id
+  key         String @unique
+  count       Int
+  lastRequest BigInt
 }
 
 model Series {

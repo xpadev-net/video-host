@@ -4,10 +4,9 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import type { BasicVisibility } from "@video-host/backend";
-import { useAtomValue } from "jotai";
 import { type FormEvent, useEffect, useState } from "react";
-import { AuthTokenAtom } from "@/atoms/Auth";
 import { MovieManager } from "@/components/Dashboard/MovieManager";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
 export const Route = createFileRoute("/_app/dashboard/playlists/$id/edit")({
@@ -30,7 +29,8 @@ function EditPlaylistPage() {
   const router = useRouter();
   const navigate = useNavigate();
   const { id } = Route.useParams();
-  const token = useAtomValue(AuthTokenAtom);
+  const { data: authSession } = authClient.useSession();
+  const session = authSession?.user.id;
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -41,17 +41,12 @@ function EditPlaylistPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) return;
+    if (!session) return;
     const fetchPlaylist = async () => {
       try {
-        const res = await client.api.v4.playlists[":playlist"].$get(
-          {
-            param: { playlist: id },
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
+        const res = await client.api.v4.playlists[":playlist"].$get({
+          param: { playlist: id },
+        });
 
         if (!res.ok) throw new Error("Failed to fetch");
 
@@ -75,7 +70,7 @@ function EditPlaylistPage() {
       }
     };
     fetchPlaylist();
-  }, [id, token]);
+  }, [id, session]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -85,17 +80,14 @@ function EditPlaylistPage() {
     setError(null);
 
     try {
-      const res = await client.api.v4.playlists[":playlist"].$patch(
-        {
-          param: { playlist: id },
-          json: {
-            title: title.trim(),
-            description: description.trim(),
-            visibility,
-          },
+      const res = await client.api.v4.playlists[":playlist"].$patch({
+        param: { playlist: id },
+        json: {
+          title: title.trim(),
+          description: description.trim(),
+          visibility,
         },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      });
 
       if (!res.ok) throw new Error("Failed to update");
 

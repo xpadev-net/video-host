@@ -22,9 +22,7 @@ export const systemAccountsRoute = app
 
     const systemAccounts = await prisma.user.findMany({
       where: {
-        password: null,
-        // SSO users are regular users without a password, not system accounts
-        externalId: null,
+        kind: "SYSTEM",
       },
       select: {
         id: true,
@@ -60,7 +58,7 @@ export const systemAccountsRoute = app
       data: {
         username,
         name,
-        password: null, // System account has no password
+        kind: "SYSTEM",
       },
       select: {
         id: true,
@@ -92,13 +90,12 @@ export const systemAccountsRoute = app
       badRequest("System account not found");
     }
 
-    if (systemAccount.password !== null || systemAccount.externalId !== null) {
+    if (systemAccount.kind !== "SYSTEM" || systemAccount.authUserId !== null) {
       badRequest("Cannot delete a regular user account");
     }
 
     // Delete associated data in a transaction to ensure atomicity
     await prisma.$transaction([
-      prisma.session.deleteMany({ where: { userId: id } }),
       prisma.movieOnPlaylist.deleteMany({
         where: {
           OR: [{ playlist: { authorId: id } }, { movie: { authorId: id } }],

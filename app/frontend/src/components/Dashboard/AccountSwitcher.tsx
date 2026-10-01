@@ -15,7 +15,6 @@ export const AccountSwitcher: FC = () => {
   // biome-ignore lint/suspicious/noExplicitAny: complex type inference
   const user = response?.status === "ok" ? (response as any).data : null;
   const isAdmin = user && "role" in user && user.role === "ADMIN";
-  console.log(isAdmin);
 
   const { data: accounts } = useSystemAccounts();
   const [selectedAccountId, setSelectedAccountId] = useAtom(
@@ -24,6 +23,10 @@ export const AccountSwitcher: FC = () => {
 
   // Reset selected account if it's no longer valid
   useEffect(() => {
+    if (user && !isAdmin) {
+      setSelectedAccountId(null);
+      return;
+    }
     if (selectedAccountId && accounts) {
       const accountExists = (accounts as SystemAccount[]).some(
         (acc) => acc.id === selectedAccountId,
@@ -32,7 +35,7 @@ export const AccountSwitcher: FC = () => {
         setSelectedAccountId(null);
       }
     }
-  }, [selectedAccountId, accounts, setSelectedAccountId]);
+  }, [selectedAccountId, accounts, setSelectedAccountId, isAdmin, user]);
 
   if (!isAdmin) {
     return null;

@@ -23,6 +23,11 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: API_UPSTREAM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: api-upstream-url
             - name: VITE_API_ENDPOINT
               valueFrom:
                 configMapKeyRef:

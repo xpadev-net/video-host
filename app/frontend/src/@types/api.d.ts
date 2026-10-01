@@ -26,32 +26,6 @@ type SuggestRes = {
 
 export type SuggestResponse = SuggestRes | authenticationError;
 
-type authorized = {
-  status: "success";
-  code: "200";
-};
-
-type nonAuthorized = {
-  status: "fail";
-  code: "401";
-  message: "invalid token";
-};
-
-export type tryAuthResponse = authorized | nonAuthorized;
-
-type authSuccess = {
-  status: "success";
-  code: "200";
-};
-
-type authFail = {
-  status: "fail";
-  code: "401";
-  message: "incorrect username or password";
-};
-
-export type authResponse = authSuccess | authFail;
-
 export type SeriesListApiType =
   typeof import("@/lib/client").client.api.v4.series.$get;
 export type SeriesListResponse = InferResponseType<SeriesListApiType>;

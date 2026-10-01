@@ -1,10 +1,10 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
 import { useEffect } from "react";
-
-import { AuthTokenAtom } from "@/atoms/Auth";
+import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { AuthLayout } from "@/components/Auth";
 import { getSafeCallback } from "@/hooks/useAuth";
+import { authClient } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/auth/callback")({
   component: AuthCallbackRoute,
@@ -12,22 +12,32 @@ export const Route = createFileRoute("/auth/callback")({
 
 function AuthCallbackRoute() {
   const router = useRouter();
-  const setAuthToken = useSetAtom(AuthTokenAtom);
+  const setSelectedAccount = useSetAtom(selectedAccountIdAtom);
 
   useEffect(() => {
-    const hash = window.location.hash.replace(/^#/, "");
-    const params = hash
-      ? new URLSearchParams(hash)
-      : new URLSearchParams(window.location.search);
-    const token = params.get("token");
-    if (!token) {
-      const error = params.get("error") ?? "sso_failed";
-      router.history.replace(`/login?error=${encodeURIComponent(error)}`);
-      return;
-    }
-    setAuthToken(token);
-    router.history.replace(getSafeCallback(params.get("callback")) ?? "/");
-  }, [router, setAuthToken]);
+    let cancelled = false;
+    const params = new URLSearchParams(window.location.search);
+    const callback = getSafeCallback(params.get("callback")) ?? "/";
+    void (async () => {
+      try {
+        const { data, error } = await authClient.getSession();
+        if (cancelled) return;
+        if (data && !error) {
+          setSelectedAccount(null);
+          router.history.replace(callback);
+          return;
+        }
+      } catch {
+        if (cancelled) return;
+      }
+      router.history.replace(
+        `/login?error=sso_failed&callback=${encodeURIComponent(callback)}`,
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router, setSelectedAccount]);
 
   return (
     <AuthLayout title="SSOログイン" description="ログイン処理中です...">

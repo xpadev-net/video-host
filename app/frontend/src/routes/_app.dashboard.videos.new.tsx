@@ -2,7 +2,6 @@ import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
 import type { FilteredUser, Visibility } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { type ChangeEvent, type FormEvent, useRef, useState } from "react";
-import { AuthTokenAtom } from "@/atoms/Auth";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { useUpload } from "@/hooks/useUpload";
@@ -15,7 +14,6 @@ export const Route = createFileRoute("/_app/dashboard/videos/new")({
 });
 
 function NewVideoPage() {
-  const token = useAtomValue(AuthTokenAtom);
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const { data: user, isLoading: isUserLoading } = useSelf();
   const {
@@ -69,20 +67,15 @@ function NewVideoPage() {
     const id = movieIdRef.current;
     const current = metadataRef.current;
     if (!id || !current.title.trim()) return false;
-    const res = await client.api.v4.movies[":movie"].$patch(
-      {
-        param: { movie: id },
-        json: {
-          title: current.title.trim(),
-          description: current.description.trim(),
-          visibility: current.visibility,
-          viewerIds: current.viewers.map((viewer) => viewer.id),
-        },
+    const res = await client.api.v4.movies[":movie"].$patch({
+      param: { movie: id },
+      json: {
+        title: current.title.trim(),
+        description: current.description.trim(),
+        visibility: current.visibility,
+        viewerIds: current.viewers.map((viewer) => viewer.id),
       },
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
+    });
     if (!res.ok) {
       throw new Error("Failed to update");
     }
@@ -196,10 +189,7 @@ function NewVideoPage() {
       // Discard the record created for this upload; a leftover UPLOADING
       // movie would sit in the dashboard forever otherwise.
       await client.api.v4.movies[":movie"]
-        .$delete(
-          { param: { movie: movieId } },
-          { headers: { Authorization: `Bearer ${token}` } },
-        )
+        .$delete({ param: { movie: movieId } })
         .catch(() => {});
     }
     setFile(null);

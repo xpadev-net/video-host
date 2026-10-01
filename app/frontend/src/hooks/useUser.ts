@@ -1,7 +1,6 @@
-import { useAtom } from "jotai";
-import { useEffect } from "react";
-import { AuthTokenAtom } from "@/atoms/Auth";
+import useSWR from "swr";
 import { useStickySWR } from "@/hooks/useStickySWR";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
 const fetcher = async (key?: string) => {
@@ -17,37 +16,21 @@ const fetcher = async (key?: string) => {
       ? await client.api.v4.users.me.$get()
       : await client.api.v4.users[":user"].$get({ param: { user: key } });
 
-  // Always return JSON, whether ok or not, as previous code returned error body
   return await res.json();
 };
 
-export const useUser = (query?: string) => {
-  return useStickySWR(query, fetcher, {});
-};
+export const useUser = (query?: string) => useStickySWR(query, fetcher, {});
 
 export const useSelf = () => {
-  const swr = useStickySWR("me", fetcher, {});
-  const [token, setToken] = useAtom(AuthTokenAtom);
-  useEffect(() => {
-    void swr.mutate();
-  }, [swr.mutate]);
-
-  useEffect(() => {
-    if (swr.data && swr.data.code === 401 && token) {
-      setToken(null);
-      location.reload();
-    }
-    // Check for success code and null data usage?
-    // Using simple cast to avoid complex type guard for now given the inference issues.
-    if (
-      swr.data?.code === 200 &&
-      (swr.data as { data: unknown }).data === null &&
-      token
-    ) {
-      setToken(null);
-      location.reload();
-    }
-  }, [swr.data, setToken, token]);
-
-  return swr;
+  const { data: session, isPending } = authClient.useSession();
+  // Better Auth identifies the login; domain profile, roles and system-account
+  // permissions must continue to come from the application API.
+  const swr = useSWR(session ? ["self", session.user.id] : null, () =>
+    fetcher("me"),
+  );
+  return {
+    ...swr,
+    data: session ? swr.data : undefined,
+    isLoading: isPending || (Boolean(session) && swr.isLoading),
+  };
 };
