@@ -5,6 +5,7 @@ import type { Env, HonoApp } from "@/@types/hono";
 import { ZVisibility } from "@/@types/models";
 import { filterPlaylist } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
+import { readyOrOwnMovieFilter } from "@/utils/buildVisibilityFilter";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { isSystemAccount } from "@/utils/systemAccountCache";
@@ -39,6 +40,9 @@ export const playlistDetailRoute = app
       include: {
         author: true,
         movies: {
+          where: {
+            movie: { is: readyOrOwnMovieFilter(c.get("user")) },
+          },
           orderBy: { order: "asc" },
           include: {
             movie: {

@@ -19,6 +19,7 @@ enum Role {
 }
 
 enum MovieStatus {
+  UPLOADING
   PROCESSING
   READY
   FAILED

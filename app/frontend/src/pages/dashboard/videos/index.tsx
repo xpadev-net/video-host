@@ -106,6 +106,11 @@ const VideosPage: FC = () => {
                           ? "限定公開"
                           : "非公開"}
                     </span>
+                    {movie.variants?.[0]?.status === "UPLOADING" && (
+                      <span className="status-badge uploading">
+                        アップロード中
+                      </span>
+                    )}
                     {movie.variants?.[0]?.status === "PROCESSING" && (
                       <span className="status-badge encoding">
                         エンコード中
@@ -241,6 +246,11 @@ const VideosPage: FC = () => {
           border-radius: 4px;
           font-size: 0.75rem;
           font-weight: 500;
+        }
+        .status-badge.uploading {
+          background: rgba(234, 179, 8, 0.2);
+          color: #eab308;
+          animation: pulse 2s infinite;
         }
         .status-badge.encoding {
           background: rgba(59, 130, 246, 0.2);

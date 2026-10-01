@@ -2,9 +2,18 @@ import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { type FC, type FormEvent, useEffect, useState } from "react";
+import {
+  type ChangeEvent,
+  type FC,
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
+import { useUpload } from "@/hooks/useUpload";
 import { client } from "@/lib/client";
 
 interface EncodeProgress {
@@ -32,41 +41,54 @@ const EditVideoPage: FC = () => {
   const [encodeProgress, setEncodeProgress] = useState<EncodeProgress | null>(
     null,
   );
+  const { resume, state: uploadState } = useUpload();
+  const resumeFileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const fetchMovie = useCallback(async () => {
     if (!id || !token || typeof id !== "string") return;
 
-    const fetchMovie = async () => {
-      try {
-        const res = await client.api.v4.movies[":movie"].$get(
-          {
-            param: { movie: id },
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
+    try {
+      const res = await client.api.v4.movies[":movie"].$get(
+        {
+          param: { movie: id },
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
 
-        if (!res.ok) {
-          throw new Error("Failed to fetch");
-        }
-
-        const json = await res.json();
-        // biome-ignore lint/suspicious/noExplicitAny: loose typing
-        const movieData = json.data as any;
-        setMovie(movieData);
-        setTitle(movieData.title);
-        setDescription(movieData.description || "");
-        setVisibility(movieData.visibility);
-      } catch {
-        setError("動画の取得に失敗しました");
-      } finally {
-        setIsLoading(false);
+      if (!res.ok) {
+        throw new Error("Failed to fetch");
       }
-    };
 
-    fetchMovie();
+      const json = await res.json();
+      // biome-ignore lint/suspicious/noExplicitAny: loose typing
+      const movieData = json.data as any;
+      setMovie(movieData);
+      setTitle(movieData.title);
+      setDescription(movieData.description || "");
+      setVisibility(movieData.visibility);
+    } catch {
+      setError("動画の取得に失敗しました");
+    } finally {
+      setIsLoading(false);
+    }
   }, [id, token]);
+
+  useEffect(() => {
+    void fetchMovie();
+  }, [fetchMovie]);
+
+  const handleResumeFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    e.target.value = "";
+    if (!selectedFile || typeof id !== "string") return;
+    const succeeded = await resume(id, selectedFile);
+    if (succeeded) {
+      // Variant flipped to PROCESSING; the SSE effect picks it up.
+      await fetchMovie();
+    }
+  };
 
   // SSE for encoding progress with authentication
   useEffect(() => {
@@ -193,6 +215,11 @@ const EditVideoPage: FC = () => {
 
   const variant = movie.variants?.[0];
   const isEncoding = variant?.status === "PROCESSING";
+  const isUploadPending = variant?.status === "UPLOADING";
+  const isResuming =
+    uploadState.phase === "uploading" ||
+    uploadState.phase === "completing" ||
+    uploadState.phase === "creating";
 
   return (
     <DashboardLayout>
@@ -240,6 +267,48 @@ const EditVideoPage: FC = () => {
               )}
           </div>
         )}
+
+        {/* Upload resume: record exists but the file never fully landed */}
+        {isUploadPending && (
+          <div className="upload-pending" aria-live="polite">
+            {isResuming ? (
+              <>
+                <div className="progress-status">
+                  アップロード中 ({uploadState.progress}%)
+                </div>
+                <div className="progress-bar-container">
+                  <div
+                    className="progress-bar-fill"
+                    style={{ width: `${uploadState.progress}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <span>
+                  この動画はアップロードが完了していません。ファイルを選択するとアップロードを再開できます。
+                </span>
+                <button
+                  type="button"
+                  className="resume-button"
+                  onClick={() => resumeFileInputRef.current?.click()}
+                >
+                  アップロードを再開
+                </button>
+              </>
+            )}
+            {uploadState.phase === "error" && (
+              <div className="error-message">{uploadState.error}</div>
+            )}
+          </div>
+        )}
+        <input
+          ref={resumeFileInputRef}
+          type="file"
+          accept="video/*"
+          onChange={(e) => void handleResumeFileChange(e)}
+          hidden
+        />
 
         {variant?.status === "FAILED" && (
           <div className="encode-failed">
@@ -422,6 +491,47 @@ const EditVideoPage: FC = () => {
           color: #ef4444;
           margin-bottom: 1.5rem;
           max-width: 600px;
+        }
+        .upload-pending {
+          padding: 1.5rem;
+          background: rgba(234, 179, 8, 0.1);
+          border: 1px solid rgba(234, 179, 8, 0.3);
+          border-radius: 12px;
+          margin-bottom: 1.5rem;
+          max-width: 600px;
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          color: #eab308;
+        }
+        .upload-pending .progress-status {
+          color: #eab308;
+          font-weight: 500;
+        }
+        .upload-pending .progress-bar-container {
+          height: 8px;
+          background: rgba(234, 179, 8, 0.2);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+        .upload-pending .progress-bar-fill {
+          height: 100%;
+          background: #eab308;
+          border-radius: 4px;
+          transition: width 0.3s ease;
+        }
+        .resume-button {
+          align-self: flex-start;
+          padding: 0.6rem 1.25rem;
+          background: transparent;
+          border: 1px solid #eab308;
+          border-radius: 8px;
+          color: #eab308;
+          font-weight: 500;
+          cursor: pointer;
+        }
+        .resume-button:hover {
+          background: rgba(234, 179, 8, 0.15);
         }
       `}</style>
     </DashboardLayout>

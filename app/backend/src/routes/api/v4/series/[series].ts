@@ -10,6 +10,7 @@ import {
 import { filterMovie, filterSeries } from "@/lib/filter";
 import { formatMovie, formatSeries } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
+import { readyOrOwnMovieFilter } from "@/utils/buildVisibilityFilter";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { isSystemAccount } from "@/utils/systemAccountCache";
@@ -59,6 +60,7 @@ export const seriesDetailRoute = app
       include: {
         author: true,
         movies: {
+          where: readyOrOwnMovieFilter(c.get("user")),
           orderBy: [
             {
               order: "asc",
@@ -91,7 +93,10 @@ export const seriesDetailRoute = app
     // If pagination metadata is requested, get total count
     if (includeMoviesCount && series.movies.length > 0) {
       const totalMoviesCount = await prisma.movie.count({
-        where: { seriesId: seriesId },
+        where: {
+          seriesId: seriesId,
+          AND: [readyOrOwnMovieFilter(c.get("user"))],
+        },
       });
 
       const totalPages = Math.ceil(totalMoviesCount / moviesLimit);
@@ -234,12 +239,16 @@ export const seriesDetailRoute = app
     }
 
     // Get total count and movies
+    const movieWhere = {
+      seriesId: seriesId,
+      AND: [readyOrOwnMovieFilter(c.get("user"))],
+    };
     const totalCount = await prisma.movie.count({
-      where: { seriesId: seriesId },
+      where: movieWhere,
     });
 
     const movies = await prisma.movie.findMany({
-      where: { seriesId: seriesId },
+      where: movieWhere,
       include: {
         author: true,
         series: {

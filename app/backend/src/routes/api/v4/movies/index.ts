@@ -9,7 +9,11 @@ import { formatMovie } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import { addEncodeJob, setEncodeProgress } from "@/lib/redis";
 import { movieRoute } from "@/routes/api/v4/movies/[movie]";
-import { buildVisibilityFilter } from "@/utils/buildVisibilityFilter";
+import {
+  buildVisibilityFilter,
+  readyOrOwnMovieFilter,
+} from "@/utils/buildVisibilityFilter";
+import { resolveAuthorId } from "@/utils/movieAuth";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
@@ -48,7 +52,11 @@ export const moviesRoute = app
   .get("/", zValidator("query", QuerySchema), async (c) => {
     const { page, limit, query, author } = c.req.valid("query");
 
-    const where = buildVisibilityFilter(c.get("user"), query, author);
+    // requireReadyVariant keeps not-yet-encoded movies out of public lists
+    // even when their stored visibility is already PUBLIC.
+    const where = buildVisibilityFilter(c.get("user"), query, author, {
+      requireReadyVariant: true,
+    });
 
     // Get total count for pagination metadata
     const totalCount = await prisma.movie.count({ where });
@@ -102,20 +110,7 @@ export const moviesRoute = app
     }
 
     // Handle asUserId for admin proxy
-    let authorId = user.id;
-    if (data.asUserId) {
-      if (user.role !== "ADMIN") {
-        unauthorized("Only admins can post as other users");
-      }
-      // Verify target user is a system account (password is null)
-      const targetUser = await prisma.user.findUnique({
-        where: { id: data.asUserId },
-      });
-      if (!targetUser || targetUser.password !== null) {
-        badRequest("Target user must be a system account");
-      }
-      authorId = data.asUserId;
-    }
+    const authorId = await resolveAuthorId(user, data.asUserId);
 
     const movie = await prisma.movie.create({
       data: {
@@ -139,6 +134,7 @@ export const moviesRoute = app
           include: {
             author: true,
             movies: {
+              where: readyOrOwnMovieFilter(user),
               orderBy: {
                 createdAt: "asc",
               },

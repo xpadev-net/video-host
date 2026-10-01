@@ -7,9 +7,10 @@ import { filterMovie } from "@/lib/filter";
 import { formatMovie } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import { deleteProdFile, deleteTmpFile } from "@/lib/s3";
+import { readyOrOwnMovieFilter } from "@/utils/buildVisibilityFilter";
+import { canManageMovie } from "@/utils/movieAuth";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
-import { isSystemAccount } from "@/utils/systemAccountCache";
 
 const MoviePatchSchema = z.object({
   title: z.string().optional(),
@@ -37,6 +38,7 @@ export const movieRoute = app
           include: {
             author: true,
             movies: {
+              where: readyOrOwnMovieFilter(c.get("user")),
               orderBy: [
                 {
                   order: "asc",
@@ -59,7 +61,10 @@ export const movieRoute = app
       notFound("Movie not found");
     }
 
-    if (movie.visibility === "PRIVATE") {
+    // Until a variant is READY the movie is private for everyone but its
+    // author and admins, whatever its stored visibility says.
+    const isReady = movie.variants.some((v) => v.status === "READY");
+    if (movie.visibility === "PRIVATE" || !isReady) {
       const user = c.get("user");
       if (!user || (user.id !== movie.authorId && user.role !== "ADMIN")) {
         notFound("Movie not found");
@@ -89,11 +94,7 @@ export const movieRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    const isOwner = existingMovie.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(existingMovie.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
+    if (!(await canManageMovie(user, existingMovie.authorId))) {
       unauthorized("Not authorized to edit this movie");
     }
 
@@ -117,6 +118,7 @@ export const movieRoute = app
           include: {
             author: true,
             movies: {
+              where: readyOrOwnMovieFilter(user),
               orderBy: {
                 createdAt: "asc",
               },
@@ -151,11 +153,7 @@ export const movieRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    const isOwner = movie.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(movie.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
+    if (!(await canManageMovie(user, movie.authorId))) {
       unauthorized("Not authorized to delete this movie");
     }
 

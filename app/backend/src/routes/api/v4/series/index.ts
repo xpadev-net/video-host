@@ -11,7 +11,10 @@ import {
 import { filterSeries } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
 import { seriesDetailRoute } from "@/routes/api/v4/series/[series]";
-import { buildVisibilityFilter } from "@/utils/buildVisibilityFilter";
+import {
+  buildVisibilityFilter,
+  readyOrOwnMovieFilter,
+} from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
@@ -65,6 +68,7 @@ export const seriesRoute = app
           }
         : {
             movies: {
+              where: readyOrOwnMovieFilter(c.get("user")),
               orderBy: [
                 {
                   order: "asc",

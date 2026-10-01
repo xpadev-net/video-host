@@ -10,7 +10,10 @@ import {
 } from "@/@types/models";
 import { filterPlaylist } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
-import { buildVisibilityFilter } from "@/utils/buildVisibilityFilter";
+import {
+  buildVisibilityFilter,
+  readyOrOwnMovieFilter,
+} from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { playlistDetailRoute } from "./[playlist]";
@@ -71,6 +74,9 @@ export const playlistsRoute = app
           }
         : {
             movies: {
+              where: {
+                movie: { is: readyOrOwnMovieFilter(c.get("user")) },
+              },
               orderBy: { order: "asc" },
               include: {
                 movie: {

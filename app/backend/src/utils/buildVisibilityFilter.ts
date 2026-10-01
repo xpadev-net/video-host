@@ -1,4 +1,4 @@
-import type { User } from "@prisma/client";
+import type { Prisma, User } from "@prisma/client";
 import type { Visibility } from "@/@types/models";
 
 type FilterSchema = {
@@ -10,25 +10,54 @@ type FilterSchema = {
     contains?: string;
   };
   authorId?: string;
+  variants?: {
+    some: {
+      status: "UPLOADING" | "PROCESSING" | "READY" | "FAILED";
+    };
+  };
   OR?: FilterSchema[];
   AND?: FilterSchema[];
+};
+
+// A movie only becomes watchable once at least one variant is READY: from the
+// moment an upload starts until encoding finishes it behaves as private for
+// everyone except its author and admins, regardless of the stored visibility.
+// Admins see everything and get no extra constraint.
+export const readyOrOwnMovieFilter = (user?: User): Prisma.MovieWhereInput => {
+  if (user?.role === "ADMIN") {
+    return {};
+  }
+  const conditions: Prisma.MovieWhereInput[] = [
+    { variants: { some: { status: "READY" } } },
+  ];
+  if (user) {
+    conditions.push({ authorId: user.id });
+  }
+  return { OR: conditions };
 };
 
 export const buildVisibilityFilter = (
   user?: User,
   query?: string,
   authorId?: string,
+  options?: { requireReadyVariant?: boolean },
 ) => {
   const where: FilterSchema = {};
   const or: FilterSchema[] = [];
+  const readyVariant: Pick<FilterSchema, "variants"> =
+    options?.requireReadyVariant
+      ? { variants: { some: { status: "READY" } } }
+      : {};
 
   if (!user) {
     where.visibility = "PUBLIC";
+    Object.assign(where, readyVariant);
   } else if (user.role !== "ADMIN") {
     or.push({
       OR: [
         {
           visibility: "PUBLIC",
+          ...readyVariant,
         },
         {
           authorId: user.id,
