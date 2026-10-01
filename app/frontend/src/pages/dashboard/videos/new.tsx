@@ -1,3 +1,4 @@
+import type { FilteredUser, Visibility } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
@@ -11,6 +12,7 @@ import {
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
+import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { useUpload } from "@/hooks/useUpload";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
@@ -25,9 +27,8 @@ const NewVideoPage: FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<
-    "PUBLIC" | "UNLISTED" | "PRIVATE"
-  >("PUBLIC");
+  const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
+  const [viewers, setViewers] = useState<FilteredUser[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,6 +68,7 @@ const NewVideoPage: FC = () => {
             description: description.trim(),
             s3Key,
             visibility,
+            viewerIds: viewers.map((viewer) => viewer.id),
             asUserId: selectedAccountId || undefined,
           },
         },
@@ -183,17 +185,25 @@ const NewVideoPage: FC = () => {
             <select
               id="visibility"
               value={visibility}
-              onChange={(e) =>
-                setVisibility(
-                  e.target.value as "PUBLIC" | "UNLISTED" | "PRIVATE",
-                )
-              }
+              onChange={(e) => setVisibility(e.target.value as Visibility)}
             >
               <option value="PUBLIC">公開</option>
               <option value="UNLISTED">限定公開</option>
+              <option value="LIMITED">指定ユーザー公開</option>
               <option value="PRIVATE">非公開</option>
             </select>
           </div>
+
+          {visibility === "LIMITED" && (
+            <div className="form-group">
+              <label htmlFor="viewers">公開するユーザー</label>
+              <UserPicker
+                id="viewers"
+                selected={viewers}
+                onChange={setViewers}
+              />
+            </div>
+          )}
 
           {error && <div className="error-message">{error}</div>}
 

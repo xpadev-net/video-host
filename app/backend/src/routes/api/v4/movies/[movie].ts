@@ -7,6 +7,11 @@ import { filterMovie } from "@/lib/filter";
 import { formatMovie } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import { deleteProdFile, deleteTmpFile } from "@/lib/s3";
+import {
+  buildMovieAccessWhere,
+  canViewMovie,
+  canViewOwnedEntity,
+} from "@/utils/buildVisibilityFilter";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { isSystemAccount } from "@/utils/systemAccountCache";
@@ -16,6 +21,7 @@ const MoviePatchSchema = z.object({
   description: z.string().optional(),
   seriesId: z.string().optional().nullable(),
   visibility: ZVisibility.optional(),
+  viewerIds: z.array(z.string()).optional(),
   order: z.number().optional(),
 });
 
@@ -27,6 +33,7 @@ export const movieRoute = app
     if (!param) {
       badRequest("No movie provided");
     }
+    const user = c.get("user");
     const movie = await prisma.movie.findUnique({
       where: {
         id: param,
@@ -37,6 +44,7 @@ export const movieRoute = app
           include: {
             author: true,
             movies: {
+              where: buildMovieAccessWhere(user),
               orderBy: [
                 {
                   order: "asc",
@@ -53,22 +61,38 @@ export const movieRoute = app
           },
         },
         variants: true,
+        viewers: {
+          include: {
+            user: true,
+          },
+        },
       },
     });
     if (!movie) {
       notFound("Movie not found");
     }
 
-    if (movie.visibility === "PRIVATE") {
-      const user = c.get("user");
-      if (!user || (user.id !== movie.authorId && user.role !== "ADMIN")) {
-        notFound("Movie not found");
-      }
+    if (!canViewMovie(movie, user)) {
+      notFound("Movie not found");
     }
 
+    const canSeeViewers =
+      !!user && (user.id === movie.authorId || user.role === "ADMIN");
+
     return ok(c, {
-      ...formatMovie(filterMovie(movie)),
-      isOwner: c.get("user")?.id === movie.authorId,
+      ...formatMovie(
+        filterMovie({
+          ...movie,
+          series:
+            movie.series && canViewOwnedEntity(movie.series, user)
+              ? movie.series
+              : undefined,
+          viewers: canSeeViewers
+            ? movie.viewers.map((viewer) => viewer.user)
+            : undefined,
+        }),
+      ),
+      isOwner: user?.id === movie.authorId,
     });
   })
   .patch("/:movie", zValidator("json", MoviePatchSchema), async (c) => {
@@ -97,8 +121,20 @@ export const movieRoute = app
       unauthorized("Not authorized to edit this movie");
     }
 
-    const { title, description, seriesId, visibility, order } =
+    const { title, description, seriesId, visibility, viewerIds, order } =
       c.req.valid("json");
+
+    const uniqueViewerIds = viewerIds ? [...new Set(viewerIds)] : undefined;
+    if (uniqueViewerIds && uniqueViewerIds.length > 0) {
+      const existing = await prisma.user.findMany({
+        where: { id: { in: uniqueViewerIds } },
+        select: { id: true },
+      });
+      if (existing.length !== uniqueViewerIds.length) {
+        badRequest("viewerIds contains unknown users");
+      }
+    }
+
     const movie = await prisma.movie.update({
       where: {
         id: param,
@@ -110,6 +146,12 @@ export const movieRoute = app
           seriesId === null ? null : (seriesId ?? existingMovie.seriesId),
         visibility: visibility ?? existingMovie.visibility,
         order: order ?? existingMovie.order,
+        viewers: uniqueViewerIds
+          ? {
+              deleteMany: {},
+              create: uniqueViewerIds.map((userId) => ({ userId })),
+            }
+          : undefined,
       },
       include: {
         author: true,
@@ -117,6 +159,7 @@ export const movieRoute = app
           include: {
             author: true,
             movies: {
+              where: buildMovieAccessWhere(user),
               orderBy: {
                 createdAt: "asc",
               },
@@ -128,9 +171,20 @@ export const movieRoute = app
           },
         },
         variants: true,
+        viewers: {
+          include: {
+            user: true,
+          },
+        },
       },
     });
-    return ok(c, filterMovie(movie));
+    return ok(
+      c,
+      filterMovie({
+        ...movie,
+        viewers: movie.viewers.map((viewer) => viewer.user),
+      }),
+    );
   })
   .delete("/:movie", async (c) => {
     const user = c.get("user");

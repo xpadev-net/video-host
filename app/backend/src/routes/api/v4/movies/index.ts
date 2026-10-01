@@ -9,7 +9,11 @@ import { formatMovie } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import { addEncodeJob, setEncodeProgress } from "@/lib/redis";
 import { movieRoute } from "@/routes/api/v4/movies/[movie]";
-import { buildVisibilityFilter } from "@/utils/buildVisibilityFilter";
+import {
+  buildMovieAccessWhere,
+  buildVisibilityFilter,
+  canViewOwnedEntity,
+} from "@/utils/buildVisibilityFilter";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
@@ -38,6 +42,7 @@ const MovieBodySchema = z.object({
   seriesId: z.string().optional(),
   s3Key: z.string(),
   visibility: ZVisibility.optional().default("PUBLIC"),
+  viewerIds: z.array(z.string()).optional(),
   asUserId: z.string().optional(), // Admin only
   order: z.number().optional(),
 });
@@ -47,8 +52,9 @@ const app = new Hono<Env>();
 export const moviesRoute = app
   .get("/", zValidator("query", QuerySchema), async (c) => {
     const { page, limit, query, author } = c.req.valid("query");
+    const user = c.get("user");
 
-    const where = buildVisibilityFilter(c.get("user"), query, author);
+    const where = buildVisibilityFilter(user, query, author, true);
 
     // Get total count for pagination metadata
     const totalCount = await prisma.movie.count({ where });
@@ -76,7 +82,17 @@ export const moviesRoute = app
     const hasPrev = page > 1;
 
     const response: PaginatedResponse<FormattedMovie> = {
-      items: movies.map((v) => formatMovie(filterMovie(v))),
+      items: movies.map((v) =>
+        formatMovie(
+          filterMovie({
+            ...v,
+            series:
+              v.series && canViewOwnedEntity(v.series, user)
+                ? v.series
+                : undefined,
+          }),
+        ),
+      ),
       pagination: {
         page,
         limit,
@@ -117,6 +133,17 @@ export const moviesRoute = app
       authorId = data.asUserId;
     }
 
+    const viewerIds = [...new Set(data.viewerIds ?? [])];
+    if (viewerIds.length > 0) {
+      const existing = await prisma.user.findMany({
+        where: { id: { in: viewerIds } },
+        select: { id: true },
+      });
+      if (existing.length !== viewerIds.length) {
+        badRequest("viewerIds contains unknown users");
+      }
+    }
+
     const movie = await prisma.movie.create({
       data: {
         title: data.title,
@@ -133,12 +160,16 @@ export const moviesRoute = app
             status: "PROCESSING",
           },
         },
+        viewers: {
+          create: viewerIds.map((userId) => ({ userId })),
+        },
       },
       include: {
         series: {
           include: {
             author: true,
             movies: {
+              where: buildMovieAccessWhere(user),
               orderBy: {
                 createdAt: "asc",
               },
@@ -151,6 +182,11 @@ export const moviesRoute = app
         },
         author: true,
         variants: true,
+        viewers: {
+          include: {
+            user: true,
+          },
+        },
       },
     });
 
@@ -175,6 +211,14 @@ export const moviesRoute = app
         },
       });
     }
-    return ok(c, formatMovie(filterMovie(movie)));
+    return ok(
+      c,
+      formatMovie(
+        filterMovie({
+          ...movie,
+          viewers: movie.viewers.map((viewer) => viewer.user),
+        }),
+      ),
+    );
   })
   .route("/", movieRoute);

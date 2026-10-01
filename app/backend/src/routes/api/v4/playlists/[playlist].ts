@@ -2,9 +2,13 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
-import { ZVisibility } from "@/@types/models";
+import { ZBasicVisibility } from "@/@types/models";
 import { filterPlaylist } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
+import {
+  buildMovieAccessWhere,
+  canViewOwnedEntity,
+} from "@/utils/buildVisibilityFilter";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { isSystemAccount } from "@/utils/systemAccountCache";
@@ -14,7 +18,7 @@ const app = new Hono<Env>();
 const PlaylistPatchSchema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
-  visibility: ZVisibility.optional(),
+  visibility: ZBasicVisibility.optional(),
 });
 
 const AddMovieSchema = z.object({
@@ -32,6 +36,7 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
+    const user = c.get("user");
     const playlist = await prisma.playlist.findUnique({
       where: {
         id: playlistId,
@@ -39,6 +44,7 @@ export const playlistDetailRoute = app
       include: {
         author: true,
         movies: {
+          where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
           include: {
             movie: {
@@ -56,16 +62,13 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
-    if (playlist.visibility === "PRIVATE") {
-      const user = c.get("user");
-      if (!user || user.id !== playlist.authorId) {
-        notFound("Playlist not found");
-      }
+    if (!canViewOwnedEntity(playlist, user)) {
+      notFound("Playlist not found");
     }
 
     return ok(c, {
       ...filterPlaylist(playlist),
-      isOwner: c.get("user")?.id === playlist.authorId,
+      isOwner: user?.id === playlist.authorId,
     });
   })
   .patch("/:playlist", zValidator("json", PlaylistPatchSchema), async (c) => {
@@ -107,6 +110,7 @@ export const playlistDetailRoute = app
       include: {
         author: true,
         movies: {
+          where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
           include: {
             movie: {
@@ -220,6 +224,7 @@ export const playlistDetailRoute = app
       include: {
         author: true,
         movies: {
+          where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
           include: {
             movie: {
@@ -323,6 +328,7 @@ export const playlistDetailRoute = app
         include: {
           author: true,
           movies: {
+            where: { movie: buildMovieAccessWhere(user) },
             orderBy: { order: "asc" },
             include: {
               movie: {
