@@ -15,6 +15,11 @@ type FilterSchema = {
       userId?: string;
     };
   };
+  variants?: {
+    some?: {
+      status?: "UPLOADING" | "PROCESSING" | "READY" | "FAILED";
+    };
+  };
   OR?: FilterSchema[];
   AND?: FilterSchema[];
 };
@@ -22,12 +27,20 @@ type FilterSchema = {
 type AccessFilterOptions = {
   includeLimitedViewers?: boolean;
   includeUnlisted?: boolean;
+  // Require a READY variant on non-author clauses: from upload start until
+  // encoding finishes a movie is private for everyone but its author and
+  // admins, regardless of the stored visibility. FAILED is not READY.
+  requireReadyVariant?: boolean;
 };
 
-const anyoneClause = (includeUnlisted?: boolean): FilterSchema => {
-  return includeUnlisted
-    ? { visibility: { in: ["PUBLIC", "UNLISTED"] } }
-    : { visibility: "PUBLIC" };
+const readyVariantClause = (requireReadyVariant?: boolean): FilterSchema =>
+  requireReadyVariant ? { variants: { some: { status: "READY" } } } : {};
+
+const anyoneClause = (opts?: AccessFilterOptions): FilterSchema => {
+  const ready = readyVariantClause(opts?.requireReadyVariant);
+  return opts?.includeUnlisted
+    ? { visibility: { in: ["PUBLIC", "UNLISTED"] }, ...ready }
+    : { visibility: "PUBLIC", ...ready };
 };
 
 /**
@@ -39,22 +52,39 @@ const anyoneClause = (includeUnlisted?: boolean): FilterSchema => {
  */
 const buildAccessFilter = (user?: User, opts?: AccessFilterOptions) => {
   if (!user) {
-    return anyoneClause(opts?.includeUnlisted);
+    return anyoneClause(opts);
   }
   if (user.role === "ADMIN") {
     return {};
   }
-  const or: FilterSchema[] = [
-    anyoneClause(opts?.includeUnlisted),
-    { authorId: user.id },
-  ];
+  const or: FilterSchema[] = [anyoneClause(opts), { authorId: user.id }];
   if (opts?.includeLimitedViewers) {
     or.push({
       visibility: "LIMITED",
       viewers: { some: { userId: user.id } },
+      ...readyVariantClause(opts?.requireReadyVariant),
     });
   }
   return { OR: or };
+};
+
+/**
+ * Movies only become watchable once a variant is READY: from upload start
+ * until encoding finishes they behave as private for everyone except their
+ * author and admins, regardless of the stored visibility. FAILED is treated
+ * the same way (not READY). Admins see everything.
+ */
+export const readyOrOwnMovieFilter = (user?: User): FilterSchema => {
+  if (user?.role === "ADMIN") {
+    return {};
+  }
+  const conditions: FilterSchema[] = [
+    { variants: { some: { status: "READY" } } },
+  ];
+  if (user) {
+    conditions.push({ authorId: user.id });
+  }
+  return { OR: conditions };
 };
 
 /**
@@ -62,12 +92,14 @@ const buildAccessFilter = (user?: User, opts?: AccessFilterOptions) => {
  * container: nested `movies` includes (series detail, playlist detail, etc.)
  * and per-series movie listings. UNLISTED movies are included here (they are
  * link-shared and shown inside their container, like YouTube playlists)
- * while PRIVATE and non-shared LIMITED movies stay hidden.
+ * while PRIVATE and non-shared LIMITED movies stay hidden. Others' movies
+ * also need a READY variant, so in-flight uploads never leak through embeds.
  */
 export const buildMovieAccessWhere = (user?: User): FilterSchema => {
   return buildAccessFilter(user, {
     includeLimitedViewers: true,
     includeUnlisted: true,
+    requireReadyVariant: true,
   });
 };
 

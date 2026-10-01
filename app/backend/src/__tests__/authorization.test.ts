@@ -4,6 +4,7 @@ import {
   buildMovieAccessWhere,
   buildVisibilityFilter,
   canViewMovie,
+  readyOrOwnMovieFilter,
 } from "../utils/buildVisibilityFilter";
 
 /**
@@ -405,17 +406,22 @@ describe("Authorization - Visibility Filtering", () => {
     it("should restrict anonymous users to PUBLIC and UNLISTED", () => {
       expect(buildMovieAccessWhere(undefined)).toEqual({
         visibility: { in: ["PUBLIC", "UNLISTED"] },
+        variants: { some: { status: "READY" } },
       });
     });
 
     it("should allow regular users PUBLIC, UNLISTED, own, and shared LIMITED movies", () => {
       expect(buildMovieAccessWhere(regularUser)).toEqual({
         OR: [
-          { visibility: { in: ["PUBLIC", "UNLISTED"] } },
+          {
+            visibility: { in: ["PUBLIC", "UNLISTED"] },
+            variants: { some: { status: "READY" } },
+          },
           { authorId: "user-123" },
           {
             visibility: "LIMITED",
             viewers: { some: { userId: "user-123" } },
+            variants: { some: { status: "READY" } },
           },
         ],
       });
@@ -423,6 +429,27 @@ describe("Authorization - Visibility Filtering", () => {
 
     it("should allow admins everything", () => {
       expect(buildMovieAccessWhere(adminUser)).toEqual({});
+    });
+  });
+
+  describe("readyOrOwnMovieFilter", () => {
+    it("should restrict anonymous users to READY movies", () => {
+      expect(readyOrOwnMovieFilter(undefined)).toEqual({
+        OR: [{ variants: { some: { status: "READY" } } }],
+      });
+    });
+
+    it("should allow regular users READY or own movies", () => {
+      expect(readyOrOwnMovieFilter(regularUser)).toEqual({
+        OR: [
+          { variants: { some: { status: "READY" } } },
+          { authorId: "user-123" },
+        ],
+      });
+    });
+
+    it("should allow admins everything", () => {
+      expect(readyOrOwnMovieFilter(adminUser)).toEqual({});
     });
   });
 

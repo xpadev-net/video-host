@@ -13,7 +13,9 @@ import {
   buildMovieAccessWhere,
   buildVisibilityFilter,
   canViewOwnedEntity,
+  readyOrOwnMovieFilter,
 } from "@/utils/buildVisibilityFilter";
+import { resolveAuthorId } from "@/utils/movieAuth";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
@@ -54,7 +56,14 @@ export const moviesRoute = app
     const { page, limit, query, author } = c.req.valid("query");
     const user = c.get("user");
 
-    const where = buildVisibilityFilter(user, query, author, true);
+    // Others' movies additionally require a READY variant — in-flight
+    // uploads stay private regardless of their stored visibility.
+    const where = {
+      AND: [
+        buildVisibilityFilter(user, query, author, true),
+        readyOrOwnMovieFilter(user),
+      ],
+    };
 
     // Get total count for pagination metadata
     const totalCount = await prisma.movie.count({ where });
@@ -118,20 +127,7 @@ export const moviesRoute = app
     }
 
     // Handle asUserId for admin proxy
-    let authorId = user.id;
-    if (data.asUserId) {
-      if (user.role !== "ADMIN") {
-        unauthorized("Only admins can post as other users");
-      }
-      // Verify target user is a system account (password is null)
-      const targetUser = await prisma.user.findUnique({
-        where: { id: data.asUserId },
-      });
-      if (!targetUser || targetUser.password !== null) {
-        badRequest("Target user must be a system account");
-      }
-      authorId = data.asUserId;
-    }
+    const authorId = await resolveAuthorId(user, data.asUserId);
 
     const viewerIds = [...new Set(data.viewerIds ?? [])];
     if (viewerIds.length > 0) {

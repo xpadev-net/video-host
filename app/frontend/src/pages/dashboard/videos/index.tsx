@@ -103,6 +103,11 @@ const VideosPage: FC = () => {
                     >
                       {visibility2str(movie.visibility)}
                     </span>
+                    {movie.variants?.[0]?.status === "UPLOADING" && (
+                      <span className="animate-pulse rounded bg-[rgba(234,179,8,0.2)] px-2 py-1 text-xs font-medium text-[#eab308]">
+                        アップロード中
+                      </span>
+                    )}
                     {movie.variants?.[0]?.status === "PROCESSING" && (
                       <span className="status-badge encoding">
                         エンコード中

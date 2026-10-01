@@ -12,9 +12,9 @@ import {
   canViewMovie,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
+import { canManageMovie } from "@/utils/movieAuth";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
-import { isSystemAccount } from "@/utils/systemAccountCache";
 
 const MoviePatchSchema = z.object({
   title: z.string().optional(),
@@ -76,6 +76,16 @@ export const movieRoute = app
       notFound("Movie not found");
     }
 
+    // Until a variant is READY the movie is private for everyone but its
+    // author and admins, whatever its stored visibility says — this also
+    // covers LIMITED viewers.
+    const isReady = movie.variants.some((v) => v.status === "READY");
+    if (!isReady) {
+      if (!user || (user.id !== movie.authorId && user.role !== "ADMIN")) {
+        notFound("Movie not found");
+      }
+    }
+
     const canSeeViewers =
       !!user && (user.id === movie.authorId || user.role === "ADMIN");
 
@@ -113,11 +123,7 @@ export const movieRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    const isOwner = existingMovie.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(existingMovie.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
+    if (!(await canManageMovie(user, existingMovie.authorId))) {
       unauthorized("Not authorized to edit this movie");
     }
 
@@ -205,11 +211,7 @@ export const movieRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    const isOwner = movie.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(movie.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
+    if (!(await canManageMovie(user, movie.authorId))) {
       unauthorized("Not authorized to delete this movie");
     }
 

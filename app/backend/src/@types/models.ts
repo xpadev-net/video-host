@@ -43,7 +43,7 @@ export type FormattedMovie = Omit<FilteredMovie, "createdAt" | "series"> & {
 export type FilteredMovieVariant = {
   variantId: string;
   contentUrl: string;
-  status: "PROCESSING" | "READY" | "FAILED";
+  status: "UPLOADING" | "PROCESSING" | "READY" | "FAILED";
 };
 
 export type FilteredPlaylist = {

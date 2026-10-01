@@ -6,10 +6,19 @@ import type {
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { type FC, type FormEvent, useEffect, useState } from "react";
+import {
+  type ChangeEvent,
+  type FC,
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { DashboardLayout } from "@/components/Dashboard/DashboardLayout";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
+import { useUpload } from "@/hooks/useUpload";
 import { client } from "@/lib/client";
 
 interface EncodeProgress {
@@ -36,42 +45,55 @@ const EditVideoPage: FC = () => {
   const [encodeProgress, setEncodeProgress] = useState<EncodeProgress | null>(
     null,
   );
+  const { resume, state: uploadState } = useUpload();
+  const resumeFileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const fetchMovie = useCallback(async () => {
     if (!id || !token || typeof id !== "string") return;
 
-    const fetchMovie = async () => {
-      try {
-        const res = await client.api.v4.movies[":movie"].$get(
-          {
-            param: { movie: id },
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
+    try {
+      const res = await client.api.v4.movies[":movie"].$get(
+        {
+          param: { movie: id },
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
 
-        if (!res.ok) {
-          throw new Error("Failed to fetch");
-        }
-
-        const json = await res.json();
-        // biome-ignore lint/suspicious/noExplicitAny: loose typing
-        const movieData = json.data as any;
-        setMovie(movieData);
-        setTitle(movieData.title);
-        setDescription(movieData.description || "");
-        setVisibility(movieData.visibility);
-        setViewers(movieData.viewers ?? []);
-      } catch {
-        setError("動画の取得に失敗しました");
-      } finally {
-        setIsLoading(false);
+      if (!res.ok) {
+        throw new Error("Failed to fetch");
       }
-    };
 
-    fetchMovie();
+      const json = await res.json();
+      // biome-ignore lint/suspicious/noExplicitAny: loose typing
+      const movieData = json.data as any;
+      setMovie(movieData);
+      setTitle(movieData.title);
+      setDescription(movieData.description || "");
+      setVisibility(movieData.visibility);
+      setViewers(movieData.viewers ?? []);
+    } catch {
+      setError("動画の取得に失敗しました");
+    } finally {
+      setIsLoading(false);
+    }
   }, [id, token]);
+
+  useEffect(() => {
+    void fetchMovie();
+  }, [fetchMovie]);
+
+  const handleResumeFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    e.target.value = "";
+    if (!selectedFile || typeof id !== "string") return;
+    const succeeded = await resume(id, selectedFile);
+    if (succeeded) {
+      // Variant flipped to PROCESSING; the SSE effect picks it up.
+      await fetchMovie();
+    }
+  };
 
   // SSE for encoding progress with authentication
   useEffect(() => {
@@ -199,6 +221,11 @@ const EditVideoPage: FC = () => {
 
   const variant = movie.variants?.[0];
   const isEncoding = variant?.status === "PROCESSING";
+  const isUploadPending = variant?.status === "UPLOADING";
+  const isResuming =
+    uploadState.phase === "uploading" ||
+    uploadState.phase === "completing" ||
+    uploadState.phase === "creating";
 
   return (
     <DashboardLayout>
@@ -246,6 +273,51 @@ const EditVideoPage: FC = () => {
               )}
           </div>
         )}
+
+        {/* Upload resume: record exists but the file never fully landed */}
+        {isUploadPending && (
+          <div
+            className="mb-6 flex max-w-[600px] flex-col gap-3 rounded-xl border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.1)] p-6 text-[#eab308]"
+            aria-live="polite"
+          >
+            {isResuming ? (
+              <>
+                <div className="font-medium text-[#eab308]">
+                  アップロード中 ({uploadState.progress}%)
+                </div>
+                <div className="h-2 overflow-hidden rounded bg-[rgba(234,179,8,0.2)]">
+                  <div
+                    className="h-full rounded bg-[#eab308] transition-[width]"
+                    style={{ width: `${uploadState.progress}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <span>
+                  この動画はアップロードが完了していません。ファイルを選択するとアップロードを再開できます。
+                </span>
+                <button
+                  type="button"
+                  className="self-start cursor-pointer rounded-lg border border-[#eab308] bg-transparent px-5 py-2.5 font-medium text-[#eab308] hover:bg-[rgba(234,179,8,0.15)]"
+                  onClick={() => resumeFileInputRef.current?.click()}
+                >
+                  アップロードを再開
+                </button>
+              </>
+            )}
+            {uploadState.phase === "error" && (
+              <div className="error-message">{uploadState.error}</div>
+            )}
+          </div>
+        )}
+        <input
+          ref={resumeFileInputRef}
+          type="file"
+          accept="video/*"
+          onChange={(e) => void handleResumeFileChange(e)}
+          hidden
+        />
 
         {variant?.status === "FAILED" && (
           <div className="encode-failed">

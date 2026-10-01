@@ -93,8 +93,11 @@ export const seriesDetailRoute = app
       notFound("Series not found");
     }
 
-    // If pagination metadata is requested, get total count
-    if (includeMoviesCount && series.movies.length > 0) {
+    // If pagination metadata is requested, get total count. This must not
+    // depend on the current page being non-empty: an out-of-range offset
+    // returns zero rows while totalPages/hasNext/hasPrev still describe the
+    // filtered result set.
+    if (includeMoviesCount) {
       const totalMoviesCount = await prisma.movie.count({
         where: { seriesId: seriesId, ...movieAccessWhere },
       });
