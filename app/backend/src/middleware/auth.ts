@@ -56,6 +56,10 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
 });
 
 function isPublicEndpoint(path: string): boolean {
-  if (path === "/api/v4/auth/config") return true;
+  // Authentication runs before trailing-slash redirects. Allow only this
+  // exact alias so anonymous clients can reach the canonical config route.
+  if (path === "/api/v4/auth/config" || path === "/api/v4/auth/config/") {
+    return true;
+  }
   return PUBLIC_ENDPOINTS.some((prefix) => isPathWithin(path, prefix));
 }

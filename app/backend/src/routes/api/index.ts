@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import type { Env, HonoApp } from "@/@types/hono";
-import { auth } from "@/lib/auth";
+import { handleAuthRequest } from "@/lib/auth-handler";
 import { v4Route } from "./v4";
 
 const app = new Hono<Env>();
 
 export const apiRoute = app
-  .on(["GET", "POST"], "/auth/*", (c) => auth.handler(c.req.raw))
+  .on(["GET", "POST"], "/auth/*", handleAuthRequest)
   .route("/v4", v4Route);
 
 export const registerApiRoute = (parent: HonoApp) => {

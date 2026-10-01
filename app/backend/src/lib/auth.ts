@@ -27,6 +27,7 @@ import {
   signupCodeMatches,
 } from "@/lib/auth-policy";
 import { provisionAuthProfile } from "@/lib/auth-profile";
+import { AUTH_CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { prisma } from "@/lib/prisma";
 
 // Permit at most 60 seconds of IdP clock skew for issued-at, while expiration
@@ -53,7 +54,7 @@ export const auth = betterAuth({
     database: { generateId: "uuid" },
     disableCSRFCheck: false,
     disableOriginCheck: false,
-    ipAddress: { ipAddressHeaders: [] },
+    ipAddress: { ipAddressHeaders: [AUTH_CLIENT_IP_HEADER] },
     useSecureCookies: new URL(BETTER_AUTH_URL).protocol === "https:",
     defaultCookieAttributes: { httpOnly: true, sameSite: "lax", path: "/" },
   },

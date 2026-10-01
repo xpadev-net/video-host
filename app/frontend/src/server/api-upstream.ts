@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 /** Only the fixed backend's API namespaces may be proxied. */
 export function getApiProxyTarget(path: string, upstream: string): string {
   const base = new URL(upstream);
@@ -22,4 +24,16 @@ export function getApiProxyTarget(path: string, upstream: string): string {
     throw new Error("Unsupported API proxy path");
   }
   return target.href;
+}
+
+/** Append the real socket peer, never a runtime IP getter that may trust XFF. */
+export function appendForwardedPeer(
+  value: string | null | undefined,
+  peer: string | undefined,
+): string {
+  if (!peer || peer.includes("%") || !isIP(peer))
+    throw new Error("Transport peer IP is unavailable");
+  if (value && (value.length > 4000 || value.split(",").length >= 32))
+    throw new Error("Too many forwarding hops");
+  return value ? `${value}, ${peer}` : peer;
 }

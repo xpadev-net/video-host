@@ -1,6 +1,7 @@
 import "dotenv/config";
 import * as process from "node:process";
 import { z } from "zod";
+import { createTrustedProxyList } from "./lib/client-ip";
 
 export const DEV_DEFAULTS = {
   BETTER_AUTH_SECRET: "development-only-better-auth-secret-do-not-deploy",
@@ -68,6 +69,26 @@ export const EnvSchema = z.preprocess(
       BETTER_AUTH_URL: origin,
       FRONTEND_URL: origin,
       AUTH_TRUSTED_ORIGINS: origins,
+      AUTH_TRUSTED_PROXY_CIDRS: z
+        .string()
+        .optional()
+        .transform((value, ctx) => {
+          const cidrs =
+            value
+              ?.split(",")
+              .map((item) => item.trim())
+              .filter(Boolean) ?? [];
+          try {
+            createTrustedProxyList(cidrs);
+          } catch {
+            ctx.addIssue({
+              code: "custom",
+              message:
+                "Expected explicit trusted proxy IPs/CIDRs (never wildcard or /0)",
+            });
+          }
+          return cidrs;
+        }),
       CALLBACK_SECRET: z.string().min(1),
       VOD_INTERNAL_SECRET: z.string().min(1),
       PORT: z.coerce.number().int().min(1).max(65535).default(3000),
@@ -135,6 +156,10 @@ export const EnvSchema = z.preprocess(
       const issue = (message: string) =>
         ctx.addIssue({ code: "custom", message });
       if (env.NODE_ENV === "production") {
+        if (env.AUTH_TRUSTED_PROXY_CIDRS.length === 0)
+          issue(
+            "Production same-origin auth requires explicit AUTH_TRUSTED_PROXY_CIDRS",
+          );
         for (const [key, value] of Object.entries(DEV_DEFAULTS)) {
           if (env[key as keyof typeof DEV_DEFAULTS] === value)
             issue("Production cannot use development default secrets");
@@ -234,6 +259,7 @@ export const {
   BETTER_AUTH_URL,
   FRONTEND_URL,
   AUTH_TRUSTED_ORIGINS,
+  AUTH_TRUSTED_PROXY_CIDRS,
   CORS_ORIGIN,
   PUBLIC_ENDPOINTS,
   PORT,

@@ -23,6 +23,7 @@ Provide your own disposable MySQL database and run `pnpm -F @video-host/backend 
 | `BETTER_AUTH_SECRET` | At least 32 random characters, identical on all replicas; production rejects development and CHANGE_ME defaults |
 | `BETTER_AUTH_URL` | Exact public browser origin, HTTPS in production; auth mounts at `/api/auth` |
 | `FRONTEND_URL` | Exact frontend origin, HTTPS in production |
+| `AUTH_TRUSTED_PROXY_CIDRS` | Required in production: comma-separated explicit frontend/ingress proxy IPs or CIDRs; no wildcard or /0; see cutover guide |
 | `AUTH_TRUSTED_ORIGINS` | Optional comma-separated exact additional browser origins; wildcard origins are rejected |
 | `CORS_ORIGIN` | Optional exact CORS origins; included in mutation/Better Auth trusted origins |
 | `PASSWORD_AUTH_ENABLED` | Defaults true; false disables email/password authentication |

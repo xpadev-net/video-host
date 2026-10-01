@@ -7,6 +7,9 @@ data:
   # Auth: public browser origin, including the same-origin frontend proxy
   better-auth-url: "https://your-frontend-domain.com"
   auth-trusted-origins: "https://your-frontend-domain.com"
+  # Replace with narrow frontend + ingress source CIDRs; never the whole cluster or internet.
+  # Placeholder deliberately fails application validation until reviewed for this deployment.
+  auth-trusted-proxy-cidrs: "CHANGE_ME_frontend_and_ingress_proxy_CIDRs"
   signup-enabled: "false"
   # パスワード認証の有効/無効 (false にするとログイン・サインアップはSSOのみ)
   password-auth-enabled: "true"

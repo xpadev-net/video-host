@@ -41,6 +41,7 @@ configMapGenerator:
     literals:
       - better-auth-url=https://your-frontend-domain.com
       - auth-trusted-origins=https://your-frontend-domain.com
+      - auth-trusted-proxy-cidrs=CHANGE_ME_frontend_and_ingress_proxy_CIDRs
       - signup-enabled=false
       - password-auth-enabled=true
       - oidc-enabled=false

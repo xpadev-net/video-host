@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { trimTrailingSlash } from "hono/trailing-slash";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "@/@types/hono";
 
@@ -7,15 +8,23 @@ const mocks = vi.hoisted(() => ({ getSession: vi.fn(), findUnique: vi.fn() }));
 vi.mock("@/env", () => ({
   AUTH_TRUSTED_ORIGINS: ["https://video.example.com"],
   PUBLIC_ENDPOINTS: ["/api/v4/public"],
+  OIDC_DISPLAY_NAME: "SSO",
+  OIDC_ENABLED: false,
+  PASSWORD_AUTH_ENABLED: true,
+  SIGNUP_CODE: undefined,
+  SIGNUP_ENABLED: false,
 }));
 vi.mock("@/lib/auth", () => ({
   auth: { api: { getSession: mocks.getSession } },
+  accountLinkingEnabled: false,
+  ssoProviderId: null,
 }));
 vi.mock("@/lib/prisma", () => ({
   prisma: { user: { findUnique: mocks.findUnique } },
 }));
 
 import { handleAuth } from "@/middleware/auth";
+import { authRoute } from "@/routes/api/v4/auth";
 
 const profile = {
   id: "domain-id",
@@ -23,7 +32,7 @@ const profile = {
   kind: "HUMAN",
   role: "ADMIN",
 };
-function appUnderTest() {
+function appUnderTest(withAuthConfigRoute = false) {
   const app = new Hono<Env>();
   app.onError((error, c) =>
     c.json(
@@ -32,7 +41,14 @@ function appUnderTest() {
     ),
   );
   handleAuth(app);
-  app.all("*", (c) => c.json({ user: c.get("user") ?? null }));
+  if (withAuthConfigRoute) {
+    // Match production ordering: authentication precedes Hono's 404-based
+    // trailing-slash redirect, then the actual public config route.
+    app.use(trimTrailingSlash());
+    app.route("/api/v4/auth", authRoute);
+  } else {
+    app.all("*", (c) => c.json({ user: c.get("user") ?? null }));
+  }
   return app;
 }
 
@@ -107,6 +123,43 @@ describe("cookie-backed domain authentication", () => {
       "/api/v4/auth/sso/login",
     ]) {
       expect((await appUnderTest().request(path)).status).toBe(401);
+    }
+  });
+  it.each([
+    "GET",
+    "HEAD",
+  ])("redirects anonymous %s config/ requests to a successful config response", async (method) => {
+    const app = appUnderTest(true);
+    const redirect = await app.request("/api/v4/auth/config/?from=login", {
+      method,
+    });
+    expect(redirect.status).toBe(301);
+    const location = redirect.headers.get("location");
+    expect(location).toBe("http://localhost/api/v4/auth/config?from=login");
+    if (!location) throw new Error("Missing config redirect location");
+    const response = await app.request(location, { method });
+    expect(response.status).toBe(200);
+    if (method === "GET") {
+      expect(await response.json()).toMatchObject({
+        status: "ok",
+        data: { passwordAuthEnabled: true, signupEnabled: false },
+      });
+    }
+    expect(mocks.findUnique).not.toHaveBeenCalled();
+  });
+  it("keeps trailing-slash lookalikes and private paths protected", async () => {
+    const app = appUnderTest(true);
+    for (const path of [
+      "/api/v4/auth/configuration/",
+      "/api/v4/auth/config/private/",
+      "/api/v4/auth/config//",
+      "/api/v4/auth/config//private",
+      "/api/v4/auth/sso/login/",
+      "/api/v4/users/me/",
+    ]) {
+      const response = await app.request(path);
+      expect(response.status, path).toBe(401);
+      expect(response.headers.get("location"), path).toBeNull();
     }
   });
   it("leaves Better Auth and secret-authenticated machine routes to their own guards", async () => {

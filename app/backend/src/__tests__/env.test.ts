@@ -6,6 +6,7 @@ const production = (changes: Record<string, string | undefined> = {}) => ({
   BETTER_AUTH_SECRET: "synthetic-test-secret-with-at-least-32-characters",
   BETTER_AUTH_URL: "https://video.example.com",
   FRONTEND_URL: "https://video.example.com",
+  AUTH_TRUSTED_PROXY_CIDRS: "10.0.0.2/32, 2001:db8:100::/48",
   CALLBACK_SECRET: "synthetic-callback-secret",
   VOD_INTERNAL_SECRET: "synthetic-vod-secret",
   ...changes,
@@ -21,6 +22,7 @@ describe("authentication environment", () => {
     expect(EnvSchema.safeParse(production()).success).toBe(true);
   });
   it.each([
+    "AUTH_TRUSTED_PROXY_CIDRS",
     "BETTER_AUTH_SECRET",
     "BETTER_AUTH_URL",
     "FRONTEND_URL",
@@ -30,6 +32,20 @@ describe("authentication environment", () => {
     expect(EnvSchema.safeParse(production({ [key]: undefined })).success).toBe(
       false,
     );
+  });
+  it.each([
+    "",
+    "*",
+    "0.0.0.0/0",
+    "::/0",
+    "::ffff:0.0.0.0/96",
+    "10.0.0.2/33",
+    "CHANGE_ME_proxy_CIDRs",
+  ])("rejects invalid production proxy trust %s", (value) => {
+    expect(
+      EnvSchema.safeParse(production({ AUTH_TRUSTED_PROXY_CIDRS: value }))
+        .success,
+    ).toBe(false);
   });
   it("rejects short auth secrets", () => {
     expect(

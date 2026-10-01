@@ -16,6 +16,10 @@ Users sign in with email/password or a configured OpenID Connect identity provid
 - [x] (2026-10-01 06:29Z) Independent security review completed; exact-sub hashing, strict token lifetime checks, placeholder/boolean runtime parsing and a single fail-closed session profile gate added and reviewed
 - [x] (2026-10-01 06:29Z) Recorded passing evidence and real-service limits in docs/validation/better-auth.md
 
+- [x] (2026-10-01 09:43Z) Published PR61 through connected GitHub APIs; exact remote tree verified and all 10 initial CI jobs passed
+- [x] (2026-10-01 10:16Z) Implemented transport-anchored per-client rate limiting and exact config trailing-slash regression; CodeRabbit withdrew the loading-guard false positive; 174 backend tests and updated frontend/proxy checks pass
+- [ ] Publish reviewed revision and verify subsequent CI/reviews until no actionable findings remain
+
 ## Surprises & Discoveries
 
 The checked-in frontend is TanStack Start/Router with Nitro, not Next.js. No `rtk` executable is installed, so commands use the underlying tools. The preinstalled pnpm is 11, while the repository pins 10.25.0; commands explicitly use Corepack's pinned pnpm and writable temporary caches. Node is 24.19.0. Docker, MySQL, Redis-server, kubectl, and kustomize were not found in PATH. Kustomize 5.7.1 was subsequently downloaded from the official Kubernetes SIG release into /tmp and verified against its published SHA-256 digest; the prod overlay rendered successfully. Real database and external provider checks must not be claimed from mock tests. Cloud browser navigation to the local app was blocked with net::ERR_BLOCKED_BY_CLIENT; no alternate browser route was used to bypass the restriction. Built Nitro HTTP smoke tests against a synthetic upstream cover proxy mechanics, not visual browser interaction.

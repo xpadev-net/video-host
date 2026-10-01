@@ -50,6 +50,11 @@ spec:
                   name: backend-config
                   key: auth-trusted-origins
                   optional: true
+            - name: AUTH_TRUSTED_PROXY_CIDRS
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: auth-trusted-proxy-cidrs
             - name: SIGNUP_ENABLED
               valueFrom:
                 configMapKeyRef:

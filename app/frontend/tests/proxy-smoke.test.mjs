@@ -33,6 +33,9 @@ test("production proxy preserves cookies, Origin, bodies, redirects and SSE", as
         cookie: request.headers.cookie,
         origin: request.headers.origin,
         forwardedHost: request.headers["x-forwarded-host"],
+        forwardedFor: request.headers["x-forwarded-for"],
+        realIp: request.headers["x-real-ip"],
+        internalIp: request.headers["x-video-host-client-ip"],
       }),
     );
   });
@@ -86,6 +89,9 @@ test("production proxy preserves cookies, Origin, bodies, redirects and SSE", as
       Origin: origin,
       Cookie: "session=sample",
       "X-Forwarded-Host": "attacker.invalid",
+      "X-Forwarded-For": "198.51.100.99",
+      "X-Real-Ip": "198.51.100.88",
+      "X-Video-Host-Client-Ip": "198.51.100.77",
       "Content-Type": "application/json",
     },
     body: '{"test":true}',
@@ -98,6 +104,7 @@ test("production proxy preserves cookies, Origin, bodies, redirects and SSE", as
     body: '{"test":true}',
     cookie: "session=sample",
     origin,
+    forwardedFor: "198.51.100.99, 127.0.0.1",
   });
   const redirect = await fetch(`${origin}/api/auth/redirect`, {
     redirect: "manual",
@@ -120,4 +127,73 @@ test("production proxy preserves cookies, Origin, bodies, redirects and SSE", as
     remaining += new TextDecoder().decode(chunk.value);
   }
   assert.match(remaining, /completed/);
+});
+
+test("Vite proxy anchors forged IP headers to the actual transport peer", async (t) => {
+  const upstream = http
+    .createServer((request, response) => {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(request.headers));
+    })
+    .listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  t.after(() => {
+    upstream.closeAllConnections();
+    upstream.close();
+  });
+  const reserve = http.createServer().listen(0, "127.0.0.1");
+  await once(reserve, "listening");
+  const port = reserve.address().port;
+  await new Promise((resolve) => reserve.close(resolve));
+  const server = spawn(
+    process.execPath,
+    ["node_modules/vite/bin/vite.js", "--port", String(port)],
+    {
+      cwd: new URL("..", import.meta.url),
+      env: {
+        ...process.env,
+        API_UPSTREAM_URL: `http://127.0.0.1:${upstream.address().port}`,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  t.after(() => server.kill());
+  let logs = "";
+  server.stdout.on("data", (chunk) => {
+    logs += chunk;
+  });
+  server.stderr.on("data", (chunk) => {
+    logs += chunk;
+  });
+  let headers;
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (server.exitCode !== null) throw new Error(logs);
+    try {
+      const result = await fetch(`http://127.0.0.1:${port}/api/auth/probe`, {
+        headers: {
+          "x-forwarded-for": "198.51.100.99",
+          "x-real-ip": "198.51.100.88",
+          "x-video-host-client-ip": "198.51.100.77",
+          "x-forwarded-host": "attacker.invalid",
+          "x-forwarded-proto": "https",
+          forwarded: "for=198.51.100.66",
+        },
+      });
+      assert.equal(result.status, 200);
+      headers = await result.json();
+      break;
+    } catch {
+      await delay(50);
+    }
+  }
+  assert.ok(headers, logs || "Vite proxy did not become ready");
+  assert.equal(headers["x-forwarded-for"], "198.51.100.99, 127.0.0.1");
+  for (const name of [
+    "x-real-ip",
+    "x-video-host-client-ip",
+    "forwarded",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+  ])
+    assert.equal(headers[name], undefined);
 });

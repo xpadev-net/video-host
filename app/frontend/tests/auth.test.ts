@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getApiProxyTarget } from "../src/server/api-upstream.ts";
+import {
+  appendForwardedPeer,
+  getApiProxyTarget,
+} from "../src/server/api-upstream.ts";
 import {
   validatePassword,
   validatePasswordMatch,
@@ -97,4 +100,18 @@ test("runtime flags remain configurable after placeholder builds", () => {
   assert.equal(resolveRuntimeFlag("_VITE_REQUIRE_SIGNUP_CODE_"), false);
   assert.equal(resolveRuntimeFlag("true"), true);
   assert.equal(resolveRuntimeFlag("false"), false);
+});
+
+test("proxy appends the transport peer rather than believing client IP headers", () => {
+  assert.equal(
+    appendForwardedPeer("198.51.100.99", "192.0.2.5"),
+    "198.51.100.99, 192.0.2.5",
+  );
+  assert.equal(
+    appendForwardedPeer(null, "::ffff:127.0.0.1"),
+    "::ffff:127.0.0.1",
+  );
+  for (const peer of [undefined, "", "invalid", "fe80::1%eth0"])
+    assert.throws(() => appendForwardedPeer("198.51.100.99", peer));
+  assert.throws(() => appendForwardedPeer("a".repeat(4001), "127.0.0.1"));
 });

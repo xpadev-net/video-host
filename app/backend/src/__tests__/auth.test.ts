@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createTrustedProxyList, requestWithClientIp } from "../lib/client-ip";
 
 const fixture = vi.hoisted(() => ({
   db: {} as Record<string, Record<string, unknown>[]>,
@@ -52,18 +53,31 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 let auth: typeof import("@/lib/auth")["auth"];
-function call(path: string, body?: unknown, cookie?: string) {
+const trustedProxies = createTrustedProxyList(["10.0.0.0/24"]);
+function call(
+  path: string,
+  body?: unknown,
+  cookie?: string,
+  peer = "192.0.2.5",
+  forwardedFor = "198.51.100.99",
+) {
   return auth.handler(
-    new Request(`https://video.example.com/api/auth${path}`, {
-      method: body === undefined ? "GET" : "POST",
-      headers: {
-        origin: "https://video.example.com",
-        "content-type": "application/json",
-        "x-forwarded-for": "192.0.2.5",
-        ...(cookie ? { cookie } : {}),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
+    requestWithClientIp(
+      new Request(`https://video.example.com/api/auth${path}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: {
+          origin: "https://video.example.com",
+          "content-type": "application/json",
+          "x-forwarded-for": forwardedFor,
+          "x-video-host-client-ip": forwardedFor,
+          "x-real-ip": forwardedFor,
+          ...(cookie ? { cookie } : {}),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }),
+      peer,
+      trustedProxies,
+    ),
   );
 }
 const credentials = {
@@ -210,6 +224,93 @@ describe("real Better Auth HTTP handler", () => {
       await call("/sign-in/email", credentials);
     expect((await call("/sign-in/email", credentials)).status).toBe(429);
     expect(fixture.db.AuthRateLimit.length).toBeGreaterThan(0);
+  });
+  it("isolates rate limits by actual client and ignores forged IP headers", async () => {
+    for (let attempt = 0; attempt < 5; attempt++)
+      expect(
+        (
+          await call(
+            "/sign-in/email",
+            credentials,
+            undefined,
+            "192.0.2.10",
+            `198.51.100.${attempt}`,
+          )
+        ).status,
+      ).toBe(401);
+    expect(
+      (
+        await call(
+          "/sign-in/email",
+          credentials,
+          undefined,
+          "192.0.2.10",
+          "198.51.100.250",
+        )
+      ).status,
+    ).toBe(429);
+    expect(
+      (await call("/sign-in/email", credentials, undefined, "192.0.2.11"))
+        .status,
+    ).toBe(401);
+  });
+  it("separates clients through a trusted frontend and ingress chain", async () => {
+    for (let attempt = 0; attempt < 5; attempt++)
+      await call(
+        "/sign-in/email",
+        credentials,
+        undefined,
+        "10.0.0.2",
+        `198.51.100.${attempt}, 192.0.2.20, 10.0.0.3`,
+      );
+    expect(
+      (
+        await call(
+          "/sign-in/email",
+          credentials,
+          undefined,
+          "10.0.0.2",
+          "198.51.100.250, 192.0.2.20, 10.0.0.3",
+        )
+      ).status,
+    ).toBe(429);
+    expect(
+      (
+        await call(
+          "/sign-in/email",
+          credentials,
+          undefined,
+          "10.0.0.2",
+          "192.0.2.21, 10.0.0.3",
+        )
+      ).status,
+    ).toBe(401);
+  });
+  it("also isolates signup limits without creating profiles for rejected attempts", async () => {
+    const invalid = { ...credentials, signupCode: "wrong" };
+    for (let attempt = 0; attempt < 5; attempt++)
+      expect(
+        (await call("/sign-up/email", invalid, undefined, "192.0.2.30")).status,
+      ).toBe(403);
+    expect(
+      (await call("/sign-up/email", invalid, undefined, "192.0.2.30")).status,
+    ).toBe(429);
+    expect(
+      (await call("/sign-up/email", invalid, undefined, "192.0.2.31")).status,
+    ).toBe(403);
+    expect(fixture.profiles.size).toBe(0);
+  });
+  it("retains Better Auth IPv6 /64 normalization instead of allowing address rotation", async () => {
+    for (let attempt = 0; attempt < 5; attempt++)
+      await call("/sign-in/email", credentials, undefined, "2001:db8:1::1");
+    expect(
+      (await call("/sign-in/email", credentials, undefined, "2001:db8:1::2"))
+        .status,
+    ).toBe(429);
+    expect(
+      (await call("/sign-in/email", credentials, undefined, "2001:db8:2::1"))
+        .status,
+    ).toBe(401);
   });
   it("can recover when profile provisioning fails during the first signup", async () => {
     const { prisma } = await import("../lib/prisma.js");

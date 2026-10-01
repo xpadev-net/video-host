@@ -33,4 +33,14 @@ A separate reviewer inspected authentication/authorization, provider mapping, ac
 - Visual desktop/mobile browser interaction: cloud browser localhost navigation failed with `net::ERR_BLOCKED_BY_CLIENT`; no workaround was used to bypass that restriction
 - Remote GitHub CI was not run at this local-validation checkpoint; consult the pull request checks for subsequent results. Merge and deployment are outside this record
 
-The default rate limiter deliberately trusts no client IP headers and uses a shared per-path database bucket. Email sign-in/signup are each limited globally to five attempts per minute, an acknowledged availability tradeoff until a trustworthy ingress IP mechanism is configured. Email delivery, verification and recovery are not configured. See `docs/better-auth-migration.md` before any staging/production cutover.
+The PR review revision replaces the global fallback with transport-bound client IP resolution through explicit proxy CIDRs. Synthetic tests cover independent client buckets, forged headers, trusted multi-hop chains, IPv6 /64 grouping, malformed metadata and actual Node socket handling. Both built Nitro and Vite forwarding must append the real peer; production CIDRs and real ingress isolation still require operator validation. Email delivery, verification and recovery are not configured. See `docs/better-auth-migration.md` before any staging/production cutover.
+
+## PR61 review revision (2026-10-01)
+
+- Exact anonymous GET/HEAD `/api/v4/auth/config/` now reaches Hono's 301 redirect, preserves query parameters, and returns config 200 after following the redirect; lookalike/private paths remain 401
+- Replaced global fallback rate limiting with a Node-socket-anchored trust chain and explicit production proxy CIDRs. Tests exercise direct header spoofing, trusted multi-hop forwarding, separate signin/signup buckets, IPv6 /64 grouping, malformed chains, and real Node socket metadata
+- Backend: 174 tests across 8 files passed. Frontend: 8 unit tests, 2 proxy smoke tests (built Nitro and Vite), and 4 optimized runtime-environment tests passed
+- Workspace lint/typecheck/build passed again with Node 24.19.0 / pnpm 10.25.0; placeholder build prerendered one page; Kustomize re-rendered 15 objects and all required environment references resolved
+- CodeRabbit withdrew the editor-loading finding after verifying the parent dashboard authentication guard; no unnecessary edit-page change was made
+
+The new IP tests use synthetic addresses and local HTTP servers. They do not establish the real deployment's proxy source CIDRs, ingress behavior or network isolation. Those remain explicit cutover checks. No real infrastructure, credentials, or database records were changed.

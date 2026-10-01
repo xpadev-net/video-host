@@ -3,7 +3,10 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { defineConfig, loadEnv } from "vite";
-import { getApiProxyTarget } from "./src/server/api-upstream";
+import {
+  appendForwardedPeer,
+  getApiProxyTarget,
+} from "./src/server/api-upstream";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "API_UPSTREAM_URL");
@@ -23,7 +26,24 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           followRedirects: false,
           configure: (proxy) => {
-            proxy.on("proxyReq", (request) => {
+            proxy.on("proxyReq", (request, incoming) => {
+              // Always anchor the forwarding chain in the actual TCP peer.
+              // The backend walks right-to-left through its explicit proxy CIDRs.
+              try {
+                request.setHeader(
+                  "x-forwarded-for",
+                  appendForwardedPeer(
+                    typeof incoming.headers["x-forwarded-for"] === "string"
+                      ? incoming.headers["x-forwarded-for"]
+                      : undefined,
+                    incoming.socket.remoteAddress,
+                  ),
+                );
+              } catch {
+                request.destroy(new Error("Proxy client address unavailable"));
+              }
+              request.removeHeader("x-real-ip");
+              request.removeHeader("x-video-host-client-ip");
               request.removeHeader("forwarded");
               request.removeHeader("x-forwarded-host");
               request.removeHeader("x-forwarded-proto");
