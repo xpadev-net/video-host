@@ -1,6 +1,7 @@
 import { useAtomValue } from "jotai";
 import Head from "next/head";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import {
   type ChangeEvent,
   type FC,
@@ -38,6 +39,7 @@ const NewVideoPage: FC = () => {
   >("PUBLIC");
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savePending, setSavePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,17 +57,32 @@ const NewVideoPage: FC = () => {
     uploadState.phase === "completing";
   const isDone = uploadState.phase === "done";
 
-  // Warn before leaving while the upload is in flight; once it lands, the
-  // encode keeps running server-side and leaving is safe.
+  // Warn before leaving while the upload (or the trailing metadata save) is
+  // in flight; once it lands, the encode keeps running server-side and leaving
+  // is safe. beforeunload only covers real navigation, so client-side route
+  // changes need their own confirm gate.
+  const router = useRouter();
+  const needsLeaveGuard = isBusy || savePending;
   useEffect(() => {
-    if (!isBusy) return;
+    if (!needsLeaveGuard) return;
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
+    const handleRouteChange = () => {
+      if (!window.confirm("アップロード中です。このページを離れますか？")) {
+        router.events.emit("routeChangeError");
+        // Next.js pages-router: throwing here aborts the route change.
+        throw "routeChange aborted";
+      }
+    };
     window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [isBusy]);
+    router.events.on("routeChangeStart", handleRouteChange);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      router.events.off("routeChangeStart", handleRouteChange);
+    };
+  }, [needsLeaveGuard, router]);
 
   const saveMetadata = async (): Promise<boolean> => {
     const id = movieIdRef.current;
@@ -114,15 +131,20 @@ const NewVideoPage: FC = () => {
     setTitle(result.title);
 
     // Upload in the background; when it lands, persist the metadata the user
-    // has typed so far and queue the encode. From here leaving is safe.
+    // has typed so far and queue the encode. savePending keeps the leave
+    // guard armed until the save resolves — an in-flight PATCH dies with the
+    // page and the movie would stay PRIVATE.
     void upload(result.movieId, result.uploadUrl, selectedFile).then(
       (succeeded) => {
         if (succeeded) {
-          void saveMetadata().catch(() => {
-            setError(
-              "メタデータの保存に失敗しました。「保存」で再度お試しください",
-            );
-          });
+          setSavePending(true);
+          void saveMetadata()
+            .catch(() => {
+              setError(
+                "メタデータの保存に失敗しました。「保存」で再度お試しください",
+              );
+            })
+            .finally(() => setSavePending(false));
         }
       },
     );
@@ -158,11 +180,14 @@ const NewVideoPage: FC = () => {
           return upload(result.movieId, result.uploadUrl, file);
         })();
     if (succeeded) {
-      void saveMetadata().catch(() => {
-        setError(
-          "メタデータの保存に失敗しました。「保存」で再度お試しください",
-        );
-      });
+      setSavePending(true);
+      void saveMetadata()
+        .catch(() => {
+          setError(
+            "メタデータの保存に失敗しました。「保存」で再度お試しください",
+          );
+        })
+        .finally(() => setSavePending(false));
     }
   };
 

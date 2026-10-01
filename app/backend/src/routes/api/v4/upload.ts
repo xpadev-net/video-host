@@ -7,6 +7,7 @@ import { formatMovie } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import { addEncodeJob, setEncodeProgress } from "@/lib/redis";
 import {
+  deleteTmpFile,
   generateUploadKey,
   getPresignedUploadUrl,
   tmpFileExists,
@@ -127,10 +128,23 @@ export const uploadRoute = app
 
     const { filename, contentType } = c.req.valid("json");
     const key = generateUploadKey(movie.authorId, filename);
-    await prisma.movieVariant.update({
-      where: { id: variant.id },
+
+    // Claim atomically: if /complete flipped the variant to PROCESSING between
+    // our find and this update, bail instead of swapping the key out from
+    // under the encode job that was just queued.
+    const updated = await prisma.movieVariant.updateMany({
+      where: { id: variant.id, status: "UPLOADING" },
       data: { s3Key: key },
     });
+    if (updated.count === 0) {
+      badRequest("Movie is not awaiting upload");
+    }
+
+    // A previous upload may have fully landed without /complete being called;
+    // drop that object so it isn't orphaned in the tmp bucket.
+    if (variant.s3Key && variant.s3Key !== key) {
+      await deleteTmpFile(variant.s3Key).catch(() => {});
+    }
 
     const uploadUrl = await getPresignedUploadUrl(key, contentType);
 
@@ -181,12 +195,22 @@ export const uploadRoute = app
       return ok(c, { success: true });
     }
 
-    await addEncodeJob({
-      movieId: movie.id,
-      s3Key: variant.s3Key,
-      userId: movie.authorId,
-      createdAt: new Date().toISOString(),
-    });
+    try {
+      await addEncodeJob({
+        movieId: movie.id,
+        s3Key: variant.s3Key,
+        userId: movie.authorId,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      // Revert so /complete can be retried — otherwise the movie would sit in
+      // PROCESSING forever with no encode job ever queued.
+      await prisma.movieVariant.updateMany({
+        where: { id: variant.id, status: "PROCESSING" },
+        data: { status: "UPLOADING" },
+      });
+      throw error;
+    }
     await setEncodeProgress(movie.id, { status: "queued" });
 
     return ok(c, { success: true });
