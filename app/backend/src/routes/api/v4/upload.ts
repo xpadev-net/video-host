@@ -186,12 +186,21 @@ export const uploadRoute = app
     }
 
     // Claim the transition atomically so a duplicate request can't queue a
-    // second encode job for the same movie.
+    // second encode job for the same movie. The s3Key guard also closes the
+    // race where /:movieId/url swaps the key after our read: completing then
+    // would queue the stale file while the retry uploads a different one.
     const updated = await prisma.movieVariant.updateMany({
-      where: { id: variant.id, status: "UPLOADING" },
+      where: { id: variant.id, status: "UPLOADING", s3Key: variant.s3Key },
       data: { status: "PROCESSING" },
     });
     if (updated.count === 0) {
+      const current = await prisma.movieVariant.findUnique({
+        where: { id: variant.id },
+      });
+      if (current?.status === "UPLOADING") {
+        // Key was swapped by a fresh upload — this completion is stale.
+        badRequest("Upload was restarted; complete the new upload instead");
+      }
       return ok(c, { success: true });
     }
 
