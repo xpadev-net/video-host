@@ -1,44 +1,49 @@
 import { useRouter } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { authClient } from "@/lib/auth-client";
 
-import { AuthTokenAtom } from "@/atoms/Auth";
+import { getSafeCallback } from "@/utils/safeCallback";
 
-export const getSafeCallback = (callback: string | null) => {
-  // Callers pass URLSearchParams.get() output — already URL-decoded. Do NOT
-  // decodeURIComponent again: a second decode corrupts literal "%" paths.
-  if (
-    callback?.startsWith("/") &&
-    !callback.startsWith("//") &&
-    !callback.includes("://")
-  ) {
-    return callback;
-  }
-  return null;
-};
+export { getSafeCallback } from "@/utils/safeCallback";
 
 export function useAuth() {
   const router = useRouter();
-  const setAuthToken = useSetAtom(AuthTokenAtom);
+  const setSelectedAccount = useSetAtom(selectedAccountIdAtom);
+  const pending = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleAuthSuccess = (token: string) => {
-    setAuthToken(token);
+  const handleAuthSuccess = async () => {
+    const { data, error } = await authClient.getSession();
+    if (error || !data) {
+      pending.current = false;
+      setLoading(false);
+      setError(
+        "セッションを確認できませんでした。もう一度ログインしてください",
+      );
+      return;
+    }
+    setSelectedAccount(null);
     const callback = getSafeCallback(
       new URLSearchParams(window.location.search).get("callback"),
     );
-    router.history.push(callback ?? "/");
+    router.history.replace(callback ?? "/");
   };
 
   const handleAuthError = (message?: string) => {
     setError(message || "認証に失敗しました");
+    pending.current = false;
     setLoading(false);
   };
 
   const startAuth = () => {
+    if (pending.current) return false;
+    pending.current = true;
     setLoading(true);
     setError("");
+    return true;
   };
 
   return {
@@ -46,7 +51,6 @@ export function useAuth() {
     error,
     setError,
     startAuth,
-    setLoading,
     handleAuthSuccess,
     handleAuthError,
   };

@@ -4,7 +4,8 @@ metadata:
   name: frontend-config
   namespace: video-host
 data:
-  api-endpoint: "https://api.your-domain.com"
+  api-endpoint: ""  # Same-origin /api proxy
+  api-upstream-url: "http://backend:3000"  # Server-only; never VITE_
   enable-comments: "true"
   require-signup-code: "false"
   site-name: "Video Host"

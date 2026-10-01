@@ -4,7 +4,9 @@ metadata:
   name: backend-config
   namespace: video-host
 data:
-  # Auth
+  # Auth: public browser origin, including the same-origin frontend proxy
+  better-auth-url: "https://your-frontend-domain.com"
+  auth-trusted-origins: "https://your-frontend-domain.com"
   signup-enabled: "false"
   # パスワード認証の有効/無効 (false にするとログイン・サインアップはSSOのみ)
   password-auth-enabled: "true"
@@ -12,7 +14,6 @@ data:
   oidc-enabled: "false"
   oidc-issuer-url: ""                                    # 例: https://authentik.example.com/application/o/video-host/
   oidc-client-id: ""
-  oidc-redirect-uri: "https://api.your-domain.com/api/v4/auth/sso/callback"
   oidc-scope: "openid profile email"
   oidc-display-name: "SSO"                               # ログインボタンの表示名
   oidc-auto-provision: "true"                            # 初回SSOログイン時にユーザーを自動作成

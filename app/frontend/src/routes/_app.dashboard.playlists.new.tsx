@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import { type FormEvent, useState } from "react";
-import { AuthTokenAtom } from "@/atoms/Auth";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
@@ -13,7 +12,6 @@ export const Route = createFileRoute("/_app/dashboard/playlists/new")({
 
 function NewPlaylistPage() {
   const navigate = useNavigate();
-  const token = useAtomValue(AuthTokenAtom);
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const { data: user, isLoading } = useSelf();
 
@@ -33,17 +31,14 @@ function NewPlaylistPage() {
     setError(null);
 
     try {
-      const res = await client.api.v4.playlists.$post(
-        {
-          json: {
-            title: title.trim(),
-            description: description.trim(),
-            visibility,
-            asUserId: selectedAccountId || undefined,
-          },
+      const res = await client.api.v4.playlists.$post({
+        json: {
+          title: title.trim(),
+          description: description.trim(),
+          visibility,
+          asUserId: selectedAccountId || undefined,
         },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      });
 
       if (!res.ok) {
         throw new Error("作成に失敗しました");

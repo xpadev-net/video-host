@@ -1,84 +1,61 @@
 import { createMiddleware } from "hono/factory";
-import jwt from "jsonwebtoken";
-import type { HonoApp } from "@/@types/hono";
-import { JWT_SECRET, PUBLIC_ENDPOINTS } from "@/env";
+import type { Env, HonoApp } from "@/@types/hono";
+import { AUTH_TRUSTED_ORIGINS, PUBLIC_ENDPOINTS } from "@/env";
+import { auth } from "@/lib/auth";
+import { isPathWithin, isTrustedMutationOrigin } from "@/lib/auth-policy";
 import { prisma } from "@/lib/prisma";
-import { unauthorized } from "@/utils/response";
+import { forbidden, unauthorized } from "@/utils/response";
 
 export const handleAuth = (app: HonoApp) => {
   app.use("/*", authMiddleware);
 };
 
-const authMiddleware = createMiddleware<{
-  Variables: {
-    user: {
-      id: string;
-      username: string;
-      name: string;
-    };
-  };
-}>(async (c, next) => {
-  const url = new URL(c.req.url).pathname;
-  const authHeader = c.req.header("authorization");
-  const token = authHeader?.match(/^Bearer\s+(\S+)$/i)?.[1];
-  if (!token) {
-    if (isPublicEndpoint(url)) {
-      await next();
-      return;
-    }
-    unauthorized("Unauthorized");
+export const authMiddleware = createMiddleware<Env>(async (c, next) => {
+  const path = new URL(c.req.url).pathname;
+  // Better Auth validates its own cookies, origin, OAuth state, nonce and PKCE.
+  // Machine endpoints retain their separate, secret-validated authentication.
+  if (
+    isPathWithin(path, "/api/auth") ||
+    isPathWithin(path, "/api/v4/callback") ||
+    isPathWithin(path, "/api/v4/vod") ||
+    path === "/healthz" ||
+    c.req.method === "OPTIONS"
+  ) {
+    await next();
+    return;
   }
 
-  // JWT signature verification (before DB query to reject invalid tokens early)
-  try {
-    jwt.verify(token, JWT_SECRET);
-  } catch {
-    if (isPublicEndpoint(url)) {
-      await next();
-      return;
+  if (!["GET", "HEAD"].includes(c.req.method)) {
+    // CORS alone does not prevent simple cross-site form submissions. Every
+    // browser mutation must carry an exact configured trusted Origin.
+    if (
+      !isTrustedMutationOrigin(c.req.header("origin"), AUTH_TRUSTED_ORIGINS)
+    ) {
+      forbidden("Untrusted request origin");
     }
-    unauthorized("Invalid token signature");
   }
 
-  const session = await prisma.session.findFirst({
-    where: {
-      token,
-      expiredAt: {
-        gte: new Date(),
-      },
-    },
-    include: {
-      user: true,
-    },
+  const { response: session, headers } = await auth.api.getSession({
+    headers: c.req.raw.headers,
+    returnHeaders: true,
   });
-  if (!session) {
-    if (isPublicEndpoint(url)) {
-      await next();
-      return;
-    }
-    unauthorized("Unauthorized");
+  for (const cookie of headers.getSetCookie()) {
+    c.header("Set-Cookie", cookie, { append: true });
   }
-  c.set("user", session.user);
+  if (session) {
+    const user = await prisma.user.findUnique({
+      where: { authUserId: session.user.id },
+    });
+    if (user?.kind === "HUMAN") {
+      c.set("user", user);
+      c.header("Cache-Control", "private, no-store");
+    }
+  }
+  if (!c.get("user") && !isPublicEndpoint(path)) unauthorized("Unauthorized");
   await next();
 });
 
-const isPublicEndpoint = (url: string) => {
-  // Auth endpoints (login, SSO flow, auth config) are unauthenticated by design
-  if (url.startsWith("/api/v4/auth")) {
-    return true;
-  }
-  // Callback endpoint has its own secret-based auth
-  if (url.startsWith("/api/v4/callback")) {
-    return true;
-  }
-  // VOD mapping endpoint is called by nginx internally
-  if (url.startsWith("/api/v4/vod")) {
-    return true;
-  }
-  for (const publicPath of PUBLIC_ENDPOINTS) {
-    if (url.startsWith(publicPath)) {
-      return true;
-    }
-  }
-  return false;
-};
+function isPublicEndpoint(path: string): boolean {
+  if (path === "/api/v4/auth/config") return true;
+  return PUBLIC_ENDPOINTS.some((prefix) => isPathWithin(path, prefix));
+}

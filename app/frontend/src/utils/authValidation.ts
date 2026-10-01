@@ -4,10 +4,16 @@ export interface ValidationResult {
 }
 
 export function validatePassword(password: string): ValidationResult {
-  if (password.length < 6) {
+  if (password.length < 8) {
     return {
       isValid: false,
-      error: "パスワードは6文字以上で入力してください",
+      error: "パスワードは8文字以上で入力してください",
+    };
+  }
+  if (password.length > 128) {
+    return {
+      isValid: false,
+      error: "パスワードは128文字以内で入力してください",
     };
   }
   return { isValid: true };

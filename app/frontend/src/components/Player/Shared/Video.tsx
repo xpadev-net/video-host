@@ -9,7 +9,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { AuthTokenAtom } from "@/atoms/Auth";
 import {
   AudioTrackIdAtom,
   AudioTracksAtom,
@@ -22,6 +21,7 @@ import {
 } from "@/atoms/Player";
 import { watchedHistoryAtom } from "@/atoms/WatchedHistory";
 import { findNext } from "@/components/Player/utils/findPrevNext";
+import { isApiUrl } from "@/lib/api-origin";
 
 type props = {
   className?: string;
@@ -32,7 +32,6 @@ type props = {
 const Video = ({ className, videoRef, movie }: props) => {
   const setMetadata = useSetAtom(VideoMetadataAtom);
   const setState = useSetAtom(PlayerStateAtom);
-  const token = useAtomValue(AuthTokenAtom);
   const [playerConfig, setPlayerConfig] = useAtom(PlayerConfigAtom);
   const playbackRate = useAtomValue(PlayerPlaybackRateAtom);
   const [configVolume, setConfigVolume] = useAtom(PlayerVolumeAtom);
@@ -119,11 +118,9 @@ const Video = ({ className, videoRef, movie }: props) => {
           hlsRef.current = null;
         }
         const hls = new Hls({
-          xhrSetup: (xhr, url) => {
-            xhr.open("GET", url);
-            if (token) {
-              xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-            }
+          xhrSetup: (xhr, requestUrl) => {
+            // Only the trusted API origin receives session credentials.
+            xhr.withCredentials = isApiUrl(requestUrl);
           },
           enableWorker: true,
           lowLatencyMode: true,
@@ -161,7 +158,7 @@ const Video = ({ className, videoRef, movie }: props) => {
       }
       setPlayerConfig((pv) => ({ ...pv }));
     },
-    [token, setPlayerConfig, setHls, setAudioTracks, setAudioTrackId],
+    [setPlayerConfig, setHls, setAudioTracks, setAudioTrackId],
   );
 
   useEffect(() => {

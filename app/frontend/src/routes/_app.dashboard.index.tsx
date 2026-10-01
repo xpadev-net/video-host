@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useSelf } from "@/hooks/useUser";
-import { client } from "@/lib/client";
-import { getAuthConfig } from "@/service/getAuthConfig";
+import { authClient } from "@/lib/auth-client";
+import { type AuthConfig, getAuthConfig } from "@/service/getAuthConfig";
 
 export const Route = createFileRoute("/_app/dashboard/")({
   head: () => ({ meta: [{ title: "ダッシュボード" }] }),
@@ -14,29 +14,45 @@ function DashboardPage() {
   const { data: response, isLoading } = useSelf();
   // biome-ignore lint/suspicious/noExplicitAny: complex type inference
   const user = response?.status === "ok" ? (response as any).data : null;
-  const [ssoDisplayName, setSsoDisplayName] = useState<string | null>(null);
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState("");
+  const linkPending = useRef(false);
 
   useEffect(() => {
+    let cancelled = false;
     void getAuthConfig().then((config) => {
-      if (config?.ssoEnabled) {
-        setSsoDisplayName(config.ssoDisplayName);
-      }
+      if (!cancelled) setAuthConfig(config);
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Starts the account-link flow: POST /auth/sso/link returns the provider
-  // authorization URL, which the browser then navigates to.
   const handleLinkSso = async () => {
+    if (
+      !authConfig?.accountLinkingEnabled ||
+      !authConfig.ssoProviderId ||
+      linkPending.current
+    )
+      return;
+    linkPending.current = true;
+    setLinking(true);
+    setLinkError("");
     try {
-      const res = await client.api.v4.auth.sso.link.$post({
-        query: { callback: "/dashboard" },
+      const { error } = await authClient.linkSocial({
+        provider: authConfig.ssoProviderId,
+        callbackURL: new URL("/auth/link", window.location.origin).href,
+        errorCallbackURL: new URL(
+          "/auth/link?error=link_failed",
+          window.location.origin,
+        ).href,
       });
-      const body = await res.json();
-      if (body.status === "ok") {
-        window.location.assign(body.data);
-      }
+      if (error) throw new Error(error.message);
     } catch {
-      // fall through: do nothing on failure (button is best-effort)
+      setLinkError("SSO連携を開始できませんでした。もう一度お試しください");
+      linkPending.current = false;
+      setLinking(false);
     }
   };
 
@@ -74,19 +90,25 @@ function DashboardPage() {
             <span className="dashboard-card-icon">📋</span>
             <span className="dashboard-card-title">プレイリストを作成</span>
           </Link>
-          {ssoDisplayName && (
+          {authConfig?.accountLinkingEnabled && authConfig.ssoProviderId && (
             <button
               type="button"
               className="dashboard-card"
               onClick={handleLinkSso}
+              disabled={linking}
             >
               <span className="dashboard-card-icon">🔗</span>
               <span className="dashboard-card-title">
-                {ssoDisplayName}と連携
+                {linking ? "連携中..." : `${authConfig.ssoDisplayName}と連携`}
               </span>
             </button>
           )}
         </div>
+        {linkError && (
+          <p role="alert" className="text-destructive">
+            {linkError}
+          </p>
+        )}
       </div>
       <style>{`
         .dashboard-home h1 {

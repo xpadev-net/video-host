@@ -2,7 +2,7 @@
 rule_schema_version: 2
 suite_id: "rules-20260831-tanstack-start"
 rule_file: "common"
-last_updated: "2026-09-01"
+last_updated: "2026-10-01"
 ---
 
 # Common Repository Rules
@@ -15,7 +15,7 @@ last_updated: "2026-09-01"
 
 - Build backend declarations before frontend typecheck or build: `pnpm -F @video-host/backend build`.
 - For frontend TypeScript or CSS changes, run `pnpm -F @video-host/frontend lint`, `pnpm -F @video-host/frontend typecheck`, and `pnpm -F @video-host/frontend build`.
-- For workspace integration, run `pnpm lint`, `pnpm typecheck`, and `pnpm build`.
+- For workspace integration, run `pnpm -F @video-host/backend test`, `pnpm -F @video-host/frontend test`, `pnpm lint`, `pnpm typecheck`, and `pnpm build`.
 - For frontend container changes, build and start the image, then verify `GET /api/healthz` on port 3000.
 
 ## Repo Safety / Boundaries
@@ -23,7 +23,7 @@ last_updated: "2026-09-01"
 - Do not rewrite history or force-push when the current branch has an open pull request.
 - Use `gh` for GitHub resources and prefix shell commands with `rtk`.
 - Preserve the typed Hono frontend/backend contract and do not change backend runtime behavior solely to simplify frontend work.
-- Treat auth token storage, runtime public-environment replacement, and persistent-player continuity as compatibility-sensitive behavior.
+- Treat HttpOnly session cookies and trusted-origin checks, runtime public-environment replacement, and persistent-player continuity as compatibility-sensitive behavior.
 
 ## Repo Naming / Structure
 

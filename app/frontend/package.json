@@ -12,7 +12,10 @@
     "lint:fix": "biome check ./src --write --unsafe",
     "format": "biome format ./src --write",
     "format:check": "biome format ./src",
-    "typecheck": "tsc --noEmit --skipLibCheck --pretty --noErrorTruncation --skipDefaultLibCheck --project tsconfig.json"
+    "typecheck": "tsc --noEmit --skipLibCheck --pretty --noErrorTruncation --skipDefaultLibCheck --project tsconfig.json",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:proxy": "node --test tests/proxy-smoke.test.mjs",
+    "test:runtime-env": "node --test tests/placeholder-runtime.test.mjs"
   },
   "engines": {
     "node": ">=22.12.0"
@@ -46,7 +49,8 @@
     "react-icons": "^5.5.0",
     "swr": "^2.3.7",
     "tailwind-merge": "^3.4.0",
-    "tailwindcss": "^4.1.18"
+    "tailwindcss": "^4.1.18",
+    "better-auth": "1.7.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",

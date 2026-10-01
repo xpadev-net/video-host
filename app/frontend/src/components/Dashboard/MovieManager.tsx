@@ -1,7 +1,7 @@
 import { useAtomValue } from "jotai";
 import { type FC, useCallback, useEffect, useState } from "react";
-import { AuthTokenAtom } from "@/atoms/Auth";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
 interface Movie {
@@ -28,7 +28,8 @@ export const MovieManager: FC<MovieManagerProps> = ({
   movies,
   onMoviesChange,
 }) => {
-  const token = useAtomValue(AuthTokenAtom);
+  const { data: authSession } = authClient.useSession();
+  const session = authSession?.user.id;
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const [availableMovies, setAvailableMovies] = useState<Movie[]>([]);
   const [selectedMovieId, setSelectedMovieId] = useState<string>("");
@@ -38,19 +39,16 @@ export const MovieManager: FC<MovieManagerProps> = ({
 
   // Fetch available movies for selection
   const fetchAvailableMovies = useCallback(async () => {
-    if (!token) return;
+    if (!session) return;
     setIsLoadingMovies(true);
     try {
-      const res = await client.api.v4.movies.$get(
-        {
-          query: {
-            limit: "100",
-            author: selectedAccountId || undefined,
-            mine: selectedAccountId ? undefined : "true",
-          },
+      const res = await client.api.v4.movies.$get({
+        query: {
+          limit: "100",
+          author: selectedAccountId || undefined,
+          mine: selectedAccountId ? undefined : "true",
         },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      });
 
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
@@ -70,32 +68,26 @@ export const MovieManager: FC<MovieManagerProps> = ({
     } finally {
       setIsLoadingMovies(false);
     }
-  }, [token, selectedAccountId, movies]);
+  }, [session, selectedAccountId, movies]);
 
   useEffect(() => {
     fetchAvailableMovies();
   }, [fetchAvailableMovies]);
 
   const handleAddMovie = async () => {
-    if (!selectedMovieId || !token) return;
+    if (!selectedMovieId || !session) return;
     setIsAdding(true);
     try {
       const res =
         entityType === "series"
-          ? await client.api.v4.series[":series"].movies.$post(
-              {
-                param: { series: entityId },
-                json: { movieId: selectedMovieId },
-              },
-              { headers: { Authorization: `Bearer ${token}` } },
-            )
-          : await client.api.v4.playlists[":playlist"].movies.$post(
-              {
-                param: { playlist: entityId },
-                json: { movieId: selectedMovieId },
-              },
-              { headers: { Authorization: `Bearer ${token}` } },
-            );
+          ? await client.api.v4.series[":series"].movies.$post({
+              param: { series: entityId },
+              json: { movieId: selectedMovieId },
+            })
+          : await client.api.v4.playlists[":playlist"].movies.$post({
+              param: { playlist: entityId },
+              json: { movieId: selectedMovieId },
+            });
 
       if (!res.ok) throw new Error("Failed to add");
 
@@ -117,21 +109,17 @@ export const MovieManager: FC<MovieManagerProps> = ({
   };
 
   const handleRemoveMovie = async (movieId: string) => {
-    if (!token) return;
+    if (!session) return;
     try {
       const res =
         entityType === "series"
-          ? await client.api.v4.series[":series"].movies[":movie"].$delete(
-              {
-                param: { series: entityId, movie: movieId },
-              },
-              { headers: { Authorization: `Bearer ${token}` } },
-            )
+          ? await client.api.v4.series[":series"].movies[":movie"].$delete({
+              param: { series: entityId, movie: movieId },
+            })
           : await client.api.v4.playlists[":playlist"].movies[":movie"].$delete(
               {
                 param: { playlist: entityId, movie: movieId },
               },
-              { headers: { Authorization: `Bearer ${token}` } },
             );
 
       if (!res.ok) throw new Error("Failed to remove");
@@ -159,28 +147,22 @@ export const MovieManager: FC<MovieManagerProps> = ({
   };
 
   const updateServerOrder = async (ids: string[]) => {
-    if (!token) return;
+    if (!session) return;
     try {
       const res =
         entityType === "series"
-          ? await client.api.v4.series[":series"].movies.$patch(
-              {
-                param: { series: entityId },
-                json: {
-                  movieIds: ids,
-                },
+          ? await client.api.v4.series[":series"].movies.$patch({
+              param: { series: entityId },
+              json: {
+                movieIds: ids,
               },
-              { headers: { Authorization: `Bearer ${token}` } },
-            )
-          : await client.api.v4.playlists[":playlist"].movies.$patch(
-              {
-                param: { playlist: entityId },
-                json: {
-                  movieIds: ids,
-                },
+            })
+          : await client.api.v4.playlists[":playlist"].movies.$patch({
+              param: { playlist: entityId },
+              json: {
+                movieIds: ids,
               },
-              { headers: { Authorization: `Bearer ${token}` } },
-            );
+            });
       if (!res.ok) throw new Error("Failed to update order");
     } catch {
       alert("並び替えに失敗しました");
@@ -189,14 +171,14 @@ export const MovieManager: FC<MovieManagerProps> = ({
   };
 
   const handleDragEnd = async () => {
-    if (draggedIndex === null || !token) return;
+    if (draggedIndex === null || !session) return;
     const movieIds = movies.map((m) => m.movie.id);
     await updateServerOrder(movieIds);
     setDraggedIndex(null);
   };
 
   const handleMoveUp = async (index: number) => {
-    if (index === 0 || !token) return;
+    if (index === 0 || !session) return;
     const newMovies = [...movies];
     [newMovies[index - 1], newMovies[index]] = [
       newMovies[index],
@@ -208,7 +190,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
   };
 
   const handleMoveDown = async (index: number) => {
-    if (index === movies.length - 1 || !token) return;
+    if (index === movies.length - 1 || !session) return;
     const newMovies = [...movies];
     [newMovies[index], newMovies[index + 1]] = [
       newMovies[index + 1],

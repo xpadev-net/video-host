@@ -3,10 +3,10 @@ import { useEffect, useState } from "react";
 
 import { AuthForm, AuthLayout, FormField } from "@/components/Auth";
 import { Button } from "@/components/ui/button";
-import { ApiEndpoint, SiteName } from "@/contexts/env";
+import { SiteName } from "@/contexts/env";
 import { getSafeCallback, useAuth } from "@/hooks/useAuth";
+import { authClient } from "@/lib/auth-client";
 import { type AuthConfig, getAuthConfig } from "@/service/getAuthConfig";
-import { postAuth } from "@/service/postAuth";
 
 type LoginSearch = { callback?: string; error?: string };
 
@@ -44,47 +44,79 @@ function LoginRoute() {
     handleAuthSuccess,
     handleAuthError,
   } = useAuth();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
-  const passwordAuthEnabled = authConfig?.passwordAuthEnabled ?? true;
-  const ssoEnabled = authConfig?.ssoEnabled ?? false;
+  const passwordAuthEnabled = authConfig?.passwordAuthEnabled ?? false;
+  const ssoEnabled = Boolean(
+    authConfig?.ssoEnabled && authConfig.ssoProviderId,
+  );
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
-      if (ssoError) {
-        setError(ssoErrorMessages[ssoError] ?? "SSOログインに失敗しました");
-      } else {
-        const token = localStorage.getItem("token");
-        if (token && token !== "null" && token.trim() !== "") {
-          await navigate({ to: getSafeCallback(callback) ?? "/" });
+      try {
+        const [config, sessionResult] = await Promise.all([
+          getAuthConfig(),
+          authClient.getSession(),
+        ]);
+        if (cancelled) return;
+        if (ssoError) {
+          setError(ssoErrorMessages[ssoError] ?? "SSOログインに失敗しました");
+        } else if (sessionResult.data) {
+          await navigate({ to: callback ?? "/", replace: true });
           return;
         }
+        setAuthConfig(config);
+        if (!config)
+          setError(
+            "認証設定を取得できませんでした。ページを再読み込みしてください",
+          );
+      } catch {
+        if (!cancelled)
+          setError(
+            "ネットワークエラーが発生しました。ページを再読み込みしてください",
+          );
+      } finally {
+        if (!cancelled) setInitialLoading(false);
       }
-      setAuthConfig(await getAuthConfig());
-      setInitialLoading(false);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [callback, navigate, setError, ssoError]);
 
   const handleSignIn = async (event: React.FormEvent) => {
     event.preventDefault();
-    startAuth();
+    if (!passwordAuthEnabled || !startAuth()) return;
     try {
-      const body = await postAuth(username, password);
-      if (body.status === "ok") handleAuthSuccess(body.data);
-      else handleAuthError("ログインに失敗しました");
+      const { error } = await authClient.signIn.email({ email, password });
+      if (error)
+        handleAuthError("メールアドレスまたはパスワードが正しくありません");
+      else await handleAuthSuccess();
     } catch {
       handleAuthError("ネットワークエラーが発生しました");
     }
   };
 
-  const handleSsoLogin = () => {
-    const safeCallback = getSafeCallback(callback);
-    const query = new URLSearchParams();
-    if (safeCallback) query.set("callback", safeCallback);
-    const suffix = query.size > 0 ? `?${query.toString()}` : "";
-    window.location.assign(`${ApiEndpoint}/api/v4/auth/sso/login${suffix}`);
+  const handleSsoLogin = async () => {
+    if (!authConfig?.ssoProviderId || !startAuth()) return;
+    try {
+      const callbackUrl = new URL("/auth/callback", window.location.origin);
+      callbackUrl.searchParams.set("callback", callback ?? "/");
+      const errorUrl = new URL("/login", window.location.origin);
+      errorUrl.searchParams.set("error", "sso_failed");
+      if (callback) errorUrl.searchParams.set("callback", callback);
+      const { error } = await authClient.signIn.social({
+        provider: authConfig.ssoProviderId,
+        callbackURL: callbackUrl.href,
+        errorCallbackURL: errorUrl.href,
+      });
+      if (error) handleAuthError("SSOログインに失敗しました");
+    } catch {
+      handleAuthError("ネットワークエラーが発生しました");
+    }
   };
 
   if (initialLoading) {
@@ -112,17 +144,20 @@ function LoginRoute() {
           submitText="ログイン"
           submitTextLoading="ログイン中..."
           isLoading={loading}
-          isDisabled={loading || !username || !password}
+          isDisabled={loading || !email || !password}
           linkText="アカウントをお持ちでない方は"
           linkHref="/register"
           linkLabel="新規登録"
           error={error}
+          showLink={authConfig?.signupEnabled !== false}
+          callback={callback ?? undefined}
         >
           <FormField
-            type="text"
-            placeholder="ユーザー名"
-            value={username}
-            onChange={setUsername}
+            type="email"
+            placeholder="メールアドレス"
+            value={email}
+            onChange={setEmail}
+            autoComplete="email"
             disabled={loading}
             required
           />
@@ -131,6 +166,7 @@ function LoginRoute() {
             placeholder="パスワード"
             value={password}
             onChange={setPassword}
+            autoComplete="current-password"
             disabled={loading}
             required
           />

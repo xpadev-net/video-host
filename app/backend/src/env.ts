@@ -2,322 +2,267 @@ import "dotenv/config";
 import * as process from "node:process";
 import { z } from "zod";
 
-/**
- * Environment configuration with Zod validation.
- *
- * Security-sensitive variables (JWT_SECRET, PASSWORD_SALT, etc.) are required
- * in production mode and cannot use development defaults.
- *
- * Development defaults are only allowed when NODE_ENV=development.
- */
-
-const DEV_DEFAULTS = {
-  JWT_SECRET: "dev-jwt-secret",
-  PASSWORD_SALT: "dev-password-salt",
+export const DEV_DEFAULTS = {
+  BETTER_AUTH_SECRET: "development-only-better-auth-secret-do-not-deploy",
   CALLBACK_SECRET: "dev-callback-secret",
   VOD_INTERNAL_SECRET: "dev-vod-internal-secret",
 } as const;
 
-/**
- * Determines if we should allow development defaults.
- * Reads NODE_ENV directly from process.env at call time.
- */
-function isDevelopment(): boolean {
-  return process.env.NODE_ENV === "development";
-}
-
-/**
- * Creates a Zod string schema for secrets that:
- * - In production/test: requires actual values (no defaults)
- * - In development: allows development defaults with a warning
- */
-function createSecretSchema(name: keyof typeof DEV_DEFAULTS) {
-  return z
+const flag = (fallback: boolean) =>
+  z
     .string()
     .optional()
-    .superRefine((val, ctx) => {
-      if (val && val.length > 0) {
-        return;
-      }
+    .transform((value) =>
+      value === undefined || value === "" ? fallback : value === "true",
+    );
+const origin = z.url().refine((value) => {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  return (
+    !url.hostname.includes("*") &&
+    ["http:", "https:"].includes(url.protocol) &&
+    !url.username &&
+    !url.password &&
+    !url.search &&
+    !url.hash &&
+    (url.pathname === "/" || url.pathname === "")
+  );
+}, "Expected an exact http(s) origin without a path, credentials, query, or fragment");
+const origins = z
+  .string()
+  .optional()
+  .transform((value) =>
+    value
+      ? value
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [],
+  )
+  .pipe(z.array(origin));
 
-      if (isDevelopment()) {
-        // Will be transformed to dev default later
-        return;
+// Defaults depend on the parsed NODE_ENV, never on the importing process's mode.
+// Production intentionally fails closed when an external origin or secret is absent.
+export const EnvSchema = z.preprocess(
+  (input) => {
+    if (!input || typeof input !== "object") return input;
+    const values = { ...input } as Record<string, unknown>;
+    if (values.NODE_ENV === "development") {
+      for (const [key, value] of Object.entries(DEV_DEFAULTS)) {
+        if (!values[key]) values[key] = value;
       }
+      if (!values.BETTER_AUTH_URL)
+        values.BETTER_AUTH_URL = "http://localhost:3000";
+      if (!values.FRONTEND_URL) values.FRONTEND_URL = "http://localhost:3000";
+    }
+    return values;
+  },
+  z
+    .object({
+      NODE_ENV: z.enum(["development", "production", "test"]),
+      BETTER_AUTH_SECRET: z.string().min(32),
+      BETTER_AUTH_URL: origin,
+      FRONTEND_URL: origin,
+      AUTH_TRUSTED_ORIGINS: origins,
+      CALLBACK_SECRET: z.string().min(1),
+      VOD_INTERNAL_SECRET: z.string().min(1),
+      PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+      SIGNUP_ENABLED: flag(false),
+      SIGNUP_CODE: z.string().optional(),
+      PASSWORD_AUTH_ENABLED: flag(true),
+      OIDC_ENABLED: flag(false),
+      OIDC_ISSUER_URL: z
+        .union([z.url(), z.literal("")])
+        .optional()
+        .transform((value) => value || undefined),
+      OIDC_CLIENT_ID: z.string().optional(),
+      OIDC_CLIENT_SECRET: z.string().optional(),
+      OIDC_SCOPE: z
+        .string()
+        .optional()
+        .transform((value) => value || "openid profile email"),
+      OIDC_DISPLAY_NAME: z
+        .string()
+        .optional()
+        .transform((value) => value || "SSO"),
+      OIDC_AUTO_PROVISION: flag(true),
+      OIDC_ALLOW_HTTP: flag(false),
+      // Extra exact browser origins, used by both CORS and application CSRF checks.
+      CORS_ORIGIN: origins,
+      PUBLIC_ENDPOINTS: z
+        .string()
+        .optional()
+        .transform((value) =>
+          value
+            ? value
+                .split(",")
+                .map((item) => item.trim())
+                .filter(Boolean)
+            : [],
+        ),
+      // S3 Configuration
+      S3_TMP_BUCKET: z.string().default("video-tmp"),
+      S3_PROD_BUCKET: z.string().default("video-prod"),
+      S3_REGION: z.string().default("ap-northeast-1"),
+      S3_ACCESS_KEY_ID: z.string().default(""),
+      S3_SECRET_ACCESS_KEY: z.string().default(""),
+      S3_ENDPOINT: z.string().optional(),
+      S3_FORCE_PATH_STYLE: z
+        .string()
+        .optional()
+        .transform((val) => val === "true")
+        .default(false),
 
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `${name} is required in production`,
-      });
+      // Redis Configuration
+      REDIS_URL: z.string().default("redis://localhost:6379"),
+      REDIS_SENTINEL_HOSTS: z.string().optional(),
+      REDIS_SENTINEL_NAME: z.string().optional(),
+      REDIS_SENTINEL_PASSWORD: z.string().optional(),
+
+      // Video Processing
+      VOD_BASE_URL: z.string().default(""),
+
+      // OpenTelemetry metrics export (disabled when the endpoint is unset)
+      OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: z.string().optional(),
+      OTEL_SERVICE_NAME: z.string().optional(),
     })
-    .transform((val) => {
-      if (val && val.length > 0) {
-        return val;
-      }
-      // Only reached in development mode (validated above)
-      console.warn(`Warning: ${name} not set, using development default`);
-      return DEV_DEFAULTS[name];
-    });
-}
-
-/**
- * Zod schema for environment validation.
- * Security-sensitive variables will cause startup failure if missing in production.
- */
-const EnvSchema = z
-  .object({
-    NODE_ENV: z
-      .enum(["development", "production", "test"])
-      .default("development"),
-
-    // Security-sensitive (required in production)
-    JWT_SECRET: createSecretSchema("JWT_SECRET"),
-    PASSWORD_SALT: createSecretSchema("PASSWORD_SALT"),
-    CALLBACK_SECRET: createSecretSchema("CALLBACK_SECRET"),
-    VOD_INTERNAL_SECRET: createSecretSchema("VOD_INTERNAL_SECRET"),
-
-    // Password hashing - minimum 12 rounds for security
-    PASSWORD_HASH_ROUNDS: z.coerce.number().min(12).default(12),
-
-    // Token and server settings
-    TOKEN_EXPIRY: z.coerce.number().default(604800), // seconds
-    PORT: z.coerce.number().default(3000),
-
-    // Signup configuration
-    SIGNUP_ENABLED: z
-      .string()
-      .optional()
-      .transform((val) => val === "true")
-      .default(false),
-    SIGNUP_CODE: z.string().optional(),
-
-    // Password authentication - set to "false" to disable username/password
-    // login and signup (e.g. when only SSO should be usable)
-    PASSWORD_AUTH_ENABLED: z
-      .string()
-      .optional()
-      .transform((val) => val !== "false")
-      .default(true),
-
-    // OIDC SSO configuration
-    OIDC_ENABLED: z
-      .string()
-      .optional()
-      .transform((val) => val === "true")
-      .default(false),
-    OIDC_ISSUER_URL: z
-      .union([z.url(), z.literal("")])
-      .optional()
-      .transform((val) => val || undefined),
-    OIDC_CLIENT_ID: z.string().optional(),
-    OIDC_CLIENT_SECRET: z.string().optional(),
-    OIDC_REDIRECT_URI: z
-      .union([z.url(), z.literal("")])
-      .optional()
-      .transform((val) => val || undefined),
-    OIDC_SCOPE: z
-      .string()
-      .optional()
-      .transform((val) => val || "openid profile email"),
-    OIDC_DISPLAY_NAME: z
-      .string()
-      .optional()
-      .transform((val) => val || "SSO"),
-    OIDC_AUTO_PROVISION: z
-      .string()
-      .optional()
-      .transform((val) => val !== "false")
-      .default(true),
-    // Allow plain-HTTP issuers (e.g. a provider on localhost during
-    // development). Never enable this against untrusted networks.
-    OIDC_ALLOW_HTTP: z
-      .string()
-      .optional()
-      .transform((val) => val === "true")
-      .default(false),
-
-    // Frontend base URL used for post-login redirects (SSO callback)
-    FRONTEND_URL: z
-      .union([z.url(), z.literal("")])
-      .default("")
-      .transform((val) => (val === "" ? "http://localhost:3000" : val)),
-
-    // CORS and endpoints
-    PUBLIC_ENDPOINTS: z
-      .string()
-      .optional()
-      .transform((val) => (val ? val.split(",") : []))
-      .default([]),
-    CORS_ORIGIN: z
-      .string()
-      .optional()
-      .transform((val) => (val ? val.split(",") : []))
-      .default([]),
-
-    // S3 Configuration
-    S3_TMP_BUCKET: z.string().default("video-tmp"),
-    S3_PROD_BUCKET: z.string().default("video-prod"),
-    S3_REGION: z.string().default("ap-northeast-1"),
-    S3_ACCESS_KEY_ID: z.string().default(""),
-    S3_SECRET_ACCESS_KEY: z.string().default(""),
-    S3_ENDPOINT: z.string().optional(),
-    S3_FORCE_PATH_STYLE: z
-      .string()
-      .optional()
-      .transform((val) => val === "true")
-      .default(false),
-
-    // Redis Configuration
-    REDIS_URL: z.string().default("redis://localhost:6379"),
-    REDIS_SENTINEL_HOSTS: z.string().optional(),
-    REDIS_SENTINEL_NAME: z.string().optional(),
-    REDIS_SENTINEL_PASSWORD: z.string().optional(),
-
-    // Video Processing
-    VOD_BASE_URL: z.string().default(""),
-
-    // OpenTelemetry metrics export (disabled when the endpoint is unset)
-    OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
-    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: z.string().optional(),
-    OTEL_SERVICE_NAME: z.string().optional(),
-  })
-  .refine(
-    (env) => {
-      // In production, reject development defaults
+    .superRefine((env, ctx) => {
+      const issue = (message: string) =>
+        ctx.addIssue({ code: "custom", message });
       if (env.NODE_ENV === "production") {
-        for (const [key, devValue] of Object.entries(DEV_DEFAULTS)) {
-          const typedKey = key as keyof typeof DEV_DEFAULTS;
-          if (env[typedKey] === devValue) {
-            return false;
-          }
+        for (const [key, value] of Object.entries(DEV_DEFAULTS)) {
+          if (env[key as keyof typeof DEV_DEFAULTS] === value)
+            issue("Production cannot use development default secrets");
         }
+        if (
+          [
+            env.BETTER_AUTH_SECRET,
+            env.CALLBACK_SECRET,
+            env.VOD_INTERNAL_SECRET,
+          ].some((value) => value.startsWith("CHANGE_ME"))
+        ) {
+          issue("Production cannot use CHANGE_ME placeholder secrets");
+        }
+        if (
+          ![
+            env.BETTER_AUTH_URL,
+            env.FRONTEND_URL,
+            ...env.AUTH_TRUSTED_ORIGINS,
+            ...env.CORS_ORIGIN,
+          ].every((value) => value.startsWith("https://"))
+        ) {
+          issue(
+            "BETTER_AUTH_URL, FRONTEND_URL and trusted browser origins must use https:// in production",
+          );
+        }
+        if (env.OIDC_ALLOW_HTTP) issue("OIDC_ALLOW_HTTP is development-only");
       }
-      return true;
-    },
-    {
-      message:
-        "Production environment cannot use development default secrets. " +
-        "Please set JWT_SECRET, PASSWORD_SALT, CALLBACK_SECRET, and VOD_INTERNAL_SECRET to non-default values.",
-    },
-  )
-  .refine(
-    (env) =>
-      !env.OIDC_ENABLED ||
-      (env.OIDC_ISSUER_URL && env.OIDC_CLIENT_ID && env.OIDC_REDIRECT_URI),
-    {
-      message:
-        "OIDC_ISSUER_URL, OIDC_CLIENT_ID, and OIDC_REDIRECT_URI are required " +
-        "when OIDC_ENABLED is true",
-    },
-  )
-  .refine((env) => env.PASSWORD_AUTH_ENABLED || env.OIDC_ENABLED, {
-    message:
-      "At least one authentication method must be enabled: set " +
-      "PASSWORD_AUTH_ENABLED=true or configure OIDC_ENABLED=true",
-  })
-  .refine(
-    (env) =>
-      !(env.OIDC_ENABLED && env.NODE_ENV === "production") ||
-      env.FRONTEND_URL.startsWith("https://"),
-    {
-      message:
-        "FRONTEND_URL must be set to an https:// URL in production when " +
-        "OIDC_ENABLED is true (the SSO callback carries the session token)",
-    },
-  );
+      if (!env.PASSWORD_AUTH_ENABLED && !env.OIDC_ENABLED)
+        issue("At least one authentication method must be enabled");
+      if (env.OIDC_ENABLED) {
+        if (!env.OIDC_ISSUER_URL || !env.OIDC_CLIENT_ID)
+          issue(
+            "OIDC_ISSUER_URL and OIDC_CLIENT_ID are required when OIDC_ENABLED is true",
+          );
+        if (env.OIDC_ISSUER_URL) {
+          let issuer: URL;
+          try {
+            issuer = new URL(env.OIDC_ISSUER_URL);
+          } catch {
+            issue("Invalid OIDC_ISSUER_URL");
+            return;
+          }
+          if (
+            issuer.username ||
+            issuer.password ||
+            issuer.search ||
+            issuer.hash
+          )
+            issue(
+              "OIDC_ISSUER_URL must not contain credentials, query, or fragment",
+            );
+          if (
+            issuer.protocol !== "https:" &&
+            !(
+              issuer.protocol === "http:" &&
+              env.OIDC_ALLOW_HTTP &&
+              env.NODE_ENV === "development"
+            )
+          )
+            issue(
+              "OIDC_ISSUER_URL must use HTTPS (HTTP is explicitly allowed only in development)",
+            );
+        }
+        if (
+          !["openid", "email"].every((scope) =>
+            env.OIDC_SCOPE.split(/\s+/).includes(scope),
+          )
+        )
+          issue("OIDC_SCOPE must include openid and email");
+      }
+    })
+    .transform((env) => ({
+      ...env,
+      AUTH_TRUSTED_ORIGINS: [
+        ...new Set(
+          [
+            env.FRONTEND_URL,
+            env.BETTER_AUTH_URL,
+            ...env.AUTH_TRUSTED_ORIGINS,
+            ...env.CORS_ORIGIN,
+          ].map((value) => new URL(value).origin),
+        ),
+      ],
+    })),
+);
 
-// Export the schema for testing purposes
-export { DEV_DEFAULTS, EnvSchema };
-
-/**
- * Parses and validates environment variables.
- * Throws a descriptive error if validation fails.
- */
-function parseEnv() {
-  const result = EnvSchema.safeParse(process.env);
-
-  if (!result.success) {
-    const errors = result.error.issues
-      .map((issue) => {
-        const path = issue.path.length > 0 ? issue.path.join(".") : "(schema)";
-        return `  ${path}: ${issue.message}`;
-      })
-      .join("\n");
-    throw new Error(`Environment validation failed:\n${errors}`);
-  }
-
-  return result.data;
-}
-
-const env = parseEnv();
-
-// Export individual validated values
-export const PUBLIC_ENDPOINTS = env.PUBLIC_ENDPOINTS;
-export const CORS_ORIGIN = env.CORS_ORIGIN;
-export const PASSWORD_SALT = env.PASSWORD_SALT;
-export const PASSWORD_HASH_ROUNDS = env.PASSWORD_HASH_ROUNDS;
-export const TOKEN_EXPIRY = env.TOKEN_EXPIRY * 1000; // Convert seconds to milliseconds
-export const SIGNUP_ENABLED = env.SIGNUP_ENABLED;
-export const SIGNUP_CODE = env.SIGNUP_CODE;
-export const PORT = env.PORT;
-export const JWT_SECRET = env.JWT_SECRET;
-
-// S3 Configuration
-export const S3_TMP_BUCKET = env.S3_TMP_BUCKET;
-export const S3_PROD_BUCKET = env.S3_PROD_BUCKET;
-export const S3_REGION = env.S3_REGION;
-export const S3_ACCESS_KEY_ID = env.S3_ACCESS_KEY_ID;
-export const S3_SECRET_ACCESS_KEY = env.S3_SECRET_ACCESS_KEY;
-export const S3_ENDPOINT = env.S3_ENDPOINT;
-export const S3_FORCE_PATH_STYLE = env.S3_FORCE_PATH_STYLE;
-
-// Redis Configuration
-export const REDIS_URL = env.REDIS_URL;
-export const REDIS_SENTINEL_HOSTS = env.REDIS_SENTINEL_HOSTS;
-export const REDIS_SENTINEL_NAME = env.REDIS_SENTINEL_NAME;
-export const REDIS_SENTINEL_PASSWORD = env.REDIS_SENTINEL_PASSWORD;
-
-// Video Processing
-export const VOD_BASE_URL = env.VOD_BASE_URL;
-
-// OpenTelemetry
-export const OTEL_EXPORTER_OTLP_ENDPOINT = env.OTEL_EXPORTER_OTLP_ENDPOINT;
-export const OTEL_EXPORTER_OTLP_METRICS_ENDPOINT =
-  env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
-export const OTEL_SERVICE_NAME = env.OTEL_SERVICE_NAME;
-export const CALLBACK_SECRET = env.CALLBACK_SECRET;
-export const VOD_INTERNAL_SECRET = env.VOD_INTERNAL_SECRET;
-
-// Authentication methods
-export const PASSWORD_AUTH_ENABLED = env.PASSWORD_AUTH_ENABLED;
-
-// OIDC SSO
-export const OIDC_ENABLED = env.OIDC_ENABLED;
-export const OIDC_ISSUER_URL = env.OIDC_ISSUER_URL;
-export const OIDC_CLIENT_ID = env.OIDC_CLIENT_ID;
-export const OIDC_CLIENT_SECRET = env.OIDC_CLIENT_SECRET;
-export const OIDC_REDIRECT_URI = env.OIDC_REDIRECT_URI;
-export const OIDC_SCOPE = env.OIDC_SCOPE;
-export const OIDC_DISPLAY_NAME = env.OIDC_DISPLAY_NAME;
-export const OIDC_AUTO_PROVISION = env.OIDC_AUTO_PROVISION;
-export const OIDC_ALLOW_HTTP = env.OIDC_ALLOW_HTTP;
-
-// Frontend
-export const FRONTEND_URL = env.FRONTEND_URL;
-
-// Legacy export for backward compatibility
-// Note: New code should import specific values directly
-export const requireEnv = (name: string, defaultForDev?: string): string => {
-  const value = process.env[name];
-  if (value) return value;
-
-  if (process.env.NODE_ENV === "development" && defaultForDev !== undefined) {
-    console.warn(`Warning: ${name} not set, using development default`);
-    return defaultForDev;
-  }
-
+const result = EnvSchema.safeParse(process.env);
+if (!result.success) {
   throw new Error(
-    `Required environment variable ${name} is not set. ` +
-      `Set it in your environment or use NODE_ENV=development for defaults.`,
+    `Environment validation failed:\n${result.error.issues.map((issue) => `  ${issue.path.join(".") || "(schema)"}: ${issue.message}`).join("\n")}`,
   );
-};
+}
+const env = result.data;
+export const {
+  NODE_ENV,
+  BETTER_AUTH_SECRET,
+  BETTER_AUTH_URL,
+  FRONTEND_URL,
+  AUTH_TRUSTED_ORIGINS,
+  CORS_ORIGIN,
+  PUBLIC_ENDPOINTS,
+  PORT,
+  SIGNUP_ENABLED,
+  SIGNUP_CODE,
+  PASSWORD_AUTH_ENABLED,
+  OIDC_ENABLED,
+  OIDC_ISSUER_URL,
+  OIDC_CLIENT_ID,
+  OIDC_CLIENT_SECRET,
+  OIDC_SCOPE,
+  OIDC_DISPLAY_NAME,
+  OIDC_AUTO_PROVISION,
+  OIDC_ALLOW_HTTP,
+  S3_TMP_BUCKET,
+  S3_PROD_BUCKET,
+  S3_REGION,
+  S3_ACCESS_KEY_ID,
+  S3_SECRET_ACCESS_KEY,
+  S3_ENDPOINT,
+  S3_FORCE_PATH_STYLE,
+  REDIS_URL,
+  REDIS_SENTINEL_HOSTS,
+  REDIS_SENTINEL_NAME,
+  REDIS_SENTINEL_PASSWORD,
+  VOD_BASE_URL,
+  CALLBACK_SECRET,
+  VOD_INTERNAL_SECRET,
+  OTEL_EXPORTER_OTLP_ENDPOINT,
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
+  OTEL_SERVICE_NAME,
+} = env;

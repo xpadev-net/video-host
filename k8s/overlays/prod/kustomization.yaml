@@ -39,12 +39,13 @@ configMapGenerator:
   # Backend
   - name: backend-config
     literals:
+      - better-auth-url=https://your-frontend-domain.com
+      - auth-trusted-origins=https://your-frontend-domain.com
       - signup-enabled=false
       - password-auth-enabled=true
       - oidc-enabled=false
       - oidc-issuer-url=
       - oidc-client-id=
-      - oidc-redirect-uri=https://api.your-domain.com/api/v4/auth/sso/callback
       - oidc-scope=openid profile email
       - oidc-display-name=SSO
       - oidc-auto-provision=true
@@ -65,7 +66,8 @@ configMapGenerator:
   # Frontend
   - name: frontend-config
     literals:
-      - api-endpoint=https://api.your-domain.com
+      - api-endpoint=
+      - api-upstream-url=http://backend:3000
       - enable-comments=true
       - require-signup-code=false
       - site-name=Video Host
@@ -98,8 +100,7 @@ secretGenerator:
   - name: backend-secrets
     literals:
       - database-url=mysql://user:password@mysql:3306/video_host
-      - jwt-secret=CHANGE_ME_jwt_secret
-      - password-salt=CHANGE_ME_password_salt
+      - better-auth-secret=CHANGE_ME_random_secret_at_least_32_characters
       - signup-code=
       - oidc-client-secret=
       - s3-access-key-id=CHANGE_ME

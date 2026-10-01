@@ -1,56 +1,79 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { AuthLayout } from "@/components/Auth";
-import { getSafeCallback } from "@/hooks/useAuth";
-import { client } from "@/lib/client";
+import { authClient } from "@/lib/auth-client";
+import { getAuthConfig } from "@/service/getAuthConfig";
 
 export const Route = createFileRoute("/auth/link")({
   component: AuthLinkRoute,
 });
 
 function AuthLinkRoute() {
-  const router = useRouter();
-  const confirmationStarted = useRef(false);
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<"loading" | "success" | "error">(
+    "loading",
+  );
 
   useEffect(() => {
-    if (confirmationStarted.current) return;
-    confirmationStarted.current = true;
-    const hash = window.location.hash.replace(/^#/, "");
-    const params = hash
-      ? new URLSearchParams(hash)
-      : new URLSearchParams(window.location.search);
-    const token = params.get("token");
-    const callback = getSafeCallback(params.get("callback")) ?? "/dashboard";
-    if (!token) {
-      setError("SSO連携トークンが見つかりません");
-      return;
-    }
+    let cancelled = false;
     void (async () => {
+      if (new URLSearchParams(window.location.search).has("error")) {
+        setStatus("error");
+        return;
+      }
       try {
-        const response = await client.api.v4.auth.sso.link.confirm.$post({
-          json: { token },
-        });
-        if (response.ok) {
-          router.history.replace(getSafeCallback(callback) ?? "/dashboard");
+        const [session, config] = await Promise.all([
+          authClient.getSession(),
+          getAuthConfig(),
+        ]);
+        if (
+          !session.data ||
+          !config?.accountLinkingEnabled ||
+          !config.ssoProviderId
+        ) {
+          if (!cancelled) setStatus("error");
           return;
         }
+        const accounts = await authClient.listAccounts();
+        if (cancelled) return;
+        setStatus(
+          accounts.data?.some(
+            (account) => account.providerId === config.ssoProviderId,
+          )
+            ? "success"
+            : "error",
+        );
       } catch {
-        // Network and API errors share the same user-facing recovery message.
+        if (!cancelled) setStatus("error");
       }
-      setError("SSO連携に失敗しました。もう一度やり直してください");
     })();
-  }, [router]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
-    <AuthLayout title="SSO連携" description="アカウントを連携しています...">
-      {error ? (
-        <p className="text-center text-sm text-red-500">{error}</p>
-      ) : (
-        <div className="flex justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-        </div>
+    <AuthLayout
+      title="SSO連携"
+      description={
+        status === "loading"
+          ? "連携結果を確認しています..."
+          : status === "success"
+            ? "SSOアカウントを連携しました"
+            : "SSO連携に失敗しました"
+      }
+    >
+      {status === "error" && (
+        <p role="alert">
+          同じメールアドレスの認証済みSSOアカウントで、ダッシュボードからもう一度お試しください。
+        </p>
+      )}
+      {status !== "loading" && (
+        <Link
+          to="/dashboard"
+          className="text-center text-primary hover:underline"
+        >
+          ダッシュボードに戻る
+        </Link>
       )}
     </AuthLayout>
   );

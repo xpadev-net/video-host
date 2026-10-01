@@ -23,6 +23,8 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: NODE_ENV
+              value: "production"
             - name: PORT
               value: "3000"
             # Database
@@ -32,18 +34,22 @@ spec:
                   name: backend-secrets
                   key: database-url
             # Auth
-            - name: JWT_SECRET
+            - name: BETTER_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
                   name: backend-secrets
-                  key: jwt-secret
-            - name: PASSWORD_SALT
+                  key: better-auth-secret
+            - name: BETTER_AUTH_URL
               valueFrom:
-                secretKeyRef:
-                  name: backend-secrets
-                  key: password-salt
-            - name: TOKEN_EXPIRY
-              value: "604800"
+                configMapKeyRef:
+                  name: backend-config
+                  key: better-auth-url
+            - name: AUTH_TRUSTED_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: auth-trusted-origins
+                  optional: true
             - name: SIGNUP_ENABLED
               valueFrom:
                 configMapKeyRef:
@@ -85,12 +91,6 @@ spec:
                 secretKeyRef:
                   name: backend-secrets
                   key: oidc-client-secret
-                  optional: true
-            - name: OIDC_REDIRECT_URI
-              valueFrom:
-                configMapKeyRef:
-                  name: backend-config
-                  key: oidc-redirect-uri
                   optional: true
             - name: OIDC_SCOPE
               valueFrom:

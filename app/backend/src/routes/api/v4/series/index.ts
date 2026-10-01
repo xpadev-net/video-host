@@ -133,7 +133,7 @@ export const seriesRoute = app
       if (!targetUser) {
         badRequest("Target user not found");
       }
-      if (targetUser.password !== null) {
+      if (targetUser.kind !== "SYSTEM") {
         badRequest("Can only create series for system accounts");
       }
       authorId = asUserId;

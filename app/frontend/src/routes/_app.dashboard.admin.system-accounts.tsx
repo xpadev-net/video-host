@@ -1,7 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useAtomValue } from "jotai";
 import { type FormEvent, useState } from "react";
-import { AuthTokenAtom } from "@/atoms/Auth";
 import { useSystemAccounts } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
@@ -19,7 +17,6 @@ interface SystemAccount {
 }
 
 function SystemAccountsPage() {
-  const token = useAtomValue(AuthTokenAtom);
   const { data: response, isLoading: isUserLoading } = useSelf();
   // biome-ignore lint/suspicious/noExplicitAny: complex type inference
   const user = response?.status === "ok" ? (response as any).data : null;
@@ -38,12 +35,9 @@ function SystemAccountsPage() {
     setError(null);
 
     try {
-      const res = await client.api.v4["system-accounts"].$post(
-        {
-          json: { username: username.trim(), name: name.trim() },
-        },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      const res = await client.api.v4["system-accounts"].$post({
+        json: { username: username.trim(), name: name.trim() },
+      });
 
       if (!res.ok) throw new Error("作成に失敗しました");
 
@@ -67,14 +61,9 @@ function SystemAccountsPage() {
 
     setDeletingId(id);
     try {
-      const res = await client.api.v4["system-accounts"][":id"].$delete(
-        {
-          param: { id },
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const res = await client.api.v4["system-accounts"][":id"].$delete({
+        param: { id },
+      });
 
       if (!res.ok) throw new Error("削除に失敗しました");
 

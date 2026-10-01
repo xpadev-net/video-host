@@ -14,6 +14,8 @@ interface AuthFormProps {
   linkLabel: string;
   children: ReactNode;
   error?: string;
+  callback?: string;
+  showLink?: boolean;
 }
 
 export function AuthForm({
@@ -27,6 +29,8 @@ export function AuthForm({
   linkLabel,
   children,
   error,
+  callback,
+  showLink = true,
 }: AuthFormProps) {
   return (
     <>
@@ -41,15 +45,18 @@ export function AuthForm({
           {isLoading ? submitTextLoading : submitText}
         </Button>
       </form>
-      <div className="text-center text-sm">
-        <span className="text-muted-foreground">{linkText} </span>
-        <Link
-          to={linkHref as "/login" | "/register"}
-          className="text-primary hover:underline"
-        >
-          {linkLabel}
-        </Link>
-      </div>
+      {showLink && (
+        <div className="text-center text-sm">
+          <span className="text-muted-foreground">{linkText} </span>
+          <Link
+            to={linkHref as "/login" | "/register"}
+            search={{ callback }}
+            className="text-primary hover:underline"
+          >
+            {linkLabel}
+          </Link>
+        </div>
+      )}
     </>
   );
 }
