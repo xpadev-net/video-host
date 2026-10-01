@@ -104,7 +104,7 @@ const VideosPage: FC = () => {
                       {visibility2str(movie.visibility)}
                     </span>
                     {movie.variants?.[0]?.status === "UPLOADING" && (
-                      <span className="status-badge uploading">
+                      <span className="animate-pulse rounded bg-[rgba(234,179,8,0.2)] px-2 py-1 text-xs font-medium text-[#eab308]">
                         アップロード中
                       </span>
                     )}
@@ -247,11 +247,6 @@ const VideosPage: FC = () => {
           border-radius: 4px;
           font-size: 0.75rem;
           font-weight: 500;
-        }
-        .status-badge.uploading {
-          background: rgba(234, 179, 8, 0.2);
-          color: #eab308;
-          animation: pulse 2s infinite;
         }
         .status-badge.encoding {
           background: rgba(59, 130, 246, 0.2);

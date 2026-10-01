@@ -85,7 +85,7 @@ const NewVideoPage: FC = () => {
     };
   }, [needsLeaveGuard, router]);
 
-  const saveMetadata = async (): Promise<boolean> => {
+  const doSaveMetadata = async (): Promise<boolean> => {
     const id = movieIdRef.current;
     const current = metadataRef.current;
     if (!id || !current.title.trim()) return false;
@@ -108,6 +108,19 @@ const NewVideoPage: FC = () => {
     }
     setSaved(true);
     return true;
+  };
+
+  // Serialize PATCHes: a manual save overlapping the upload-complete
+  // auto-save could otherwise land first and let the stale request finish
+  // last, silently reverting the user's newest edits.
+  const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const saveMetadata = (): Promise<boolean> => {
+    const task = saveQueueRef.current.then(() => doSaveMetadata());
+    saveQueueRef.current = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    return task;
   };
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -194,6 +207,10 @@ const NewVideoPage: FC = () => {
   };
 
   const handleCancelUpload = async () => {
+    // Once the upload PUT has landed the server is completing/enqueuing the
+    // encode; deleting the movie here would race that completion, so cancel
+    // is only offered while bytes are still in flight.
+    if (uploadState.phase !== "uploading") return;
     cancel();
     if (movieId) {
       // Discard the record created for this upload; a leftover UPLOADING
@@ -271,42 +288,50 @@ const NewVideoPage: FC = () => {
           ) : null}
 
           {movieId && isBusy && (
-            <div className="upload-progress">
-              <div className="progress-status">
+            <div className="flex flex-col gap-3">
+              <div className="text-sm text-[color:var(--text-secondary,#999)]">
                 {uploadState.phase === "uploading" &&
                   `アップロード中 (${uploadState.progress}%)`}
                 {(uploadState.phase === "creating" ||
                   uploadState.phase === "completing") &&
                   "アップロード処理中..."}
               </div>
-              <div className="progress-bar">
+              <div className="relative h-2 overflow-hidden rounded bg-[var(--background-primary,#0d0d0d)]">
                 <div
-                  className="progress-fill"
+                  className="h-full bg-[var(--primary-color,#3b82f6)] transition-[width]"
                   style={{ width: `${uploadState.progress}%` }}
                 />
               </div>
-              <button
-                type="button"
-                className="cancel-upload-button"
-                onClick={() => void handleCancelUpload()}
-              >
-                アップロードをキャンセル
-              </button>
+              {uploadState.phase === "uploading" && (
+                <button
+                  type="button"
+                  className="self-start cursor-pointer rounded-md border border-[var(--border-color,#333)] bg-transparent px-3.5 py-1.5 text-[0.8rem] text-[color:var(--text-secondary,#999)] hover:border-[#ef4444] hover:text-[#ef4444]"
+                  onClick={() => void handleCancelUpload()}
+                >
+                  アップロードをキャンセル
+                </button>
+              )}
             </div>
           )}
 
           {isDone && (
-            <div className="upload-done" aria-live="polite">
+            <div
+              className="rounded-lg border border-green-500/40 bg-green-500/10 px-5 py-4 text-green-500"
+              aria-live="polite"
+            >
               アップロードが完了しました。エンコードはバックグラウンドで継続さ
               れます。このページを離れても問題ありません。
-              <div className="done-actions">
+              <div className="mt-3 flex gap-4">
                 <Link
                   href={`/dashboard/videos/${movieId}/edit`}
-                  className="done-link"
+                  className="font-medium text-green-500"
                 >
                   動画ページへ
                 </Link>
-                <Link href="/dashboard/videos" className="done-link">
+                <Link
+                  href="/dashboard/videos"
+                  className="font-medium text-green-500"
+                >
                   動画一覧へ
                 </Link>
               </div>
@@ -318,7 +343,7 @@ const NewVideoPage: FC = () => {
               {uploadState.error ?? "アップロードに失敗しました"}
               <button
                 type="button"
-                className="retry-button"
+                className="shrink-0 cursor-pointer rounded-md border border-[#ef4444] bg-transparent px-3.5 py-1.5 text-[0.8rem] text-[#ef4444] hover:bg-[rgba(239,68,68,0.15)]"
                 onClick={() => void handleRetryUpload()}
               >
                 再試行
@@ -372,7 +397,7 @@ const NewVideoPage: FC = () => {
                   <option value="LIMITED">指定ユーザー公開</option>
                   <option value="PRIVATE">非公開</option>
                 </select>
-                <p className="visibility-note">
+                <p className="m-0 text-[0.8rem] text-[color:var(--text-secondary,#999)]">
                   エンコードが完了するまでは設定に関わらず非公開になります
                 </p>
               </div>
@@ -476,62 +501,6 @@ const NewVideoPage: FC = () => {
           color: var(--text-secondary, #999);
           font-size: 0.875rem;
         }
-        .upload-progress {
-          display: flex;
-          flex-direction: column;
-          gap: 0.75rem;
-        }
-        .progress-status {
-          color: var(--text-secondary, #999);
-          font-size: 0.875rem;
-        }
-        .progress-bar {
-          position: relative;
-          height: 8px;
-          background: var(--background-primary, #0d0d0d);
-          border-radius: 4px;
-          overflow: hidden;
-        }
-        .progress-fill {
-          height: 100%;
-          background: var(--primary-color, #3b82f6);
-          transition: width 0.3s;
-        }
-        .cancel-upload-button {
-          align-self: flex-start;
-          padding: 0.4rem 0.9rem;
-          background: transparent;
-          border: 1px solid var(--border-color, #333);
-          border-radius: 6px;
-          color: var(--text-secondary, #999);
-          font-size: 0.8rem;
-          cursor: pointer;
-        }
-        .cancel-upload-button:hover {
-          border-color: #ef4444;
-          color: #ef4444;
-        }
-        .upload-done {
-          padding: 1rem 1.25rem;
-          background: rgba(34, 197, 94, 0.1);
-          border: 1px solid rgba(34, 197, 94, 0.4);
-          border-radius: 8px;
-          color: #22c55e;
-        }
-        .done-actions {
-          display: flex;
-          gap: 1rem;
-          margin-top: 0.75rem;
-        }
-        .done-link {
-          color: #22c55e;
-          font-weight: 500;
-        }
-        .visibility-note {
-          margin: 0;
-          color: var(--text-secondary, #999);
-          font-size: 0.8rem;
-        }
         .error-message {
           padding: 0.75rem;
           background: rgba(239, 68, 68, 0.1);
@@ -542,19 +511,6 @@ const NewVideoPage: FC = () => {
           align-items: center;
           justify-content: space-between;
           gap: 1rem;
-        }
-        .retry-button {
-          padding: 0.4rem 0.9rem;
-          background: transparent;
-          border: 1px solid #ef4444;
-          border-radius: 6px;
-          color: #ef4444;
-          font-size: 0.8rem;
-          cursor: pointer;
-          flex-shrink: 0;
-        }
-        .retry-button:hover {
-          background: rgba(239, 68, 68, 0.15);
         }
         .form-actions {
           display: flex;

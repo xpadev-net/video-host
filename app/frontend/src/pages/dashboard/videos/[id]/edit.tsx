@@ -276,15 +276,18 @@ const EditVideoPage: FC = () => {
 
         {/* Upload resume: record exists but the file never fully landed */}
         {isUploadPending && (
-          <div className="upload-pending" aria-live="polite">
+          <div
+            className="mb-6 flex max-w-[600px] flex-col gap-3 rounded-xl border border-[rgba(234,179,8,0.3)] bg-[rgba(234,179,8,0.1)] p-6 text-[#eab308]"
+            aria-live="polite"
+          >
             {isResuming ? (
               <>
-                <div className="progress-status">
+                <div className="font-medium text-[#eab308]">
                   アップロード中 ({uploadState.progress}%)
                 </div>
-                <div className="progress-bar-container">
+                <div className="h-2 overflow-hidden rounded bg-[rgba(234,179,8,0.2)]">
                   <div
-                    className="progress-bar-fill"
+                    className="h-full rounded bg-[#eab308] transition-[width]"
                     style={{ width: `${uploadState.progress}%` }}
                   />
                 </div>
@@ -296,7 +299,7 @@ const EditVideoPage: FC = () => {
                 </span>
                 <button
                   type="button"
-                  className="resume-button"
+                  className="self-start cursor-pointer rounded-lg border border-[#eab308] bg-transparent px-5 py-2.5 font-medium text-[#eab308] hover:bg-[rgba(234,179,8,0.15)]"
                   onClick={() => resumeFileInputRef.current?.click()}
                 >
                   アップロードを再開
@@ -505,47 +508,6 @@ const EditVideoPage: FC = () => {
           color: #ef4444;
           margin-bottom: 1.5rem;
           max-width: 600px;
-        }
-        .upload-pending {
-          padding: 1.5rem;
-          background: rgba(234, 179, 8, 0.1);
-          border: 1px solid rgba(234, 179, 8, 0.3);
-          border-radius: 12px;
-          margin-bottom: 1.5rem;
-          max-width: 600px;
-          display: flex;
-          flex-direction: column;
-          gap: 0.75rem;
-          color: #eab308;
-        }
-        .upload-pending .progress-status {
-          color: #eab308;
-          font-weight: 500;
-        }
-        .upload-pending .progress-bar-container {
-          height: 8px;
-          background: rgba(234, 179, 8, 0.2);
-          border-radius: 4px;
-          overflow: hidden;
-        }
-        .upload-pending .progress-bar-fill {
-          height: 100%;
-          background: #eab308;
-          border-radius: 4px;
-          transition: width 0.3s ease;
-        }
-        .resume-button {
-          align-self: flex-start;
-          padding: 0.6rem 1.25rem;
-          background: transparent;
-          border: 1px solid #eab308;
-          border-radius: 8px;
-          color: #eab308;
-          font-weight: 500;
-          cursor: pointer;
-        }
-        .resume-button:hover {
-          background: rgba(234, 179, 8, 0.15);
         }
       `}</style>
     </DashboardLayout>
