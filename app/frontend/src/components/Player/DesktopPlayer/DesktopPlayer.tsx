@@ -1,6 +1,5 @@
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue, useSetAtom } from "jotai";
-import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { LoadingIcon } from "@/assets/LoadingIcon";
 import {
@@ -9,6 +8,7 @@ import {
   VideoRefAtom,
   WrapperRefAtom,
 } from "@/atoms/Player";
+import { ImageWithFallback } from "@/components/ImageWithFallback";
 import { CommentCanvas } from "@/components/Player/Shared/CommentCanvas";
 import { KeyboardHandler } from "@/components/Player/Shared/KeyboardHandler";
 import { MediaSessionHandler } from "@/components/Player/Shared/MediaSessionHandler";
@@ -30,7 +30,7 @@ const DesktopPlayer = ({ className, data, id, isPipMode = false }: props) => {
   const setWrapperAtom = useSetAtom(WrapperRefAtom);
   const { isPipEnable, isNiconicommentsEnable } =
     useAtomValue(PlayerConfigAtom);
-  const wrapperRef = useRef<HTMLButtonElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const [isAfk, setIsAfk] = useState(false);
@@ -82,7 +82,8 @@ const DesktopPlayer = ({ className, data, id, isPipMode = false }: props) => {
   };
 
   return (
-    <button
+    // biome-ignore lint/a11y/noStaticElementInteractions: Mouse movement only reveals controls; activation remains on the native playback button.
+    <div
       className={cn(
         "relative h-auto w-full overflow-hidden bg-black",
         state.isFullscreen && "fixed left-0 top-0 w-screen h-screen z-20000",
@@ -90,69 +91,72 @@ const DesktopPlayer = ({ className, data, id, isPipMode = false }: props) => {
         className,
       )}
       onMouseMove={onMouseMove}
-      onClick={togglePlayerState}
-      type="button"
-      tabIndex={0}
-      aria-label={state.paused ? "Play video" : "Pause video"}
       ref={wrapperRef}
       id={id}
     >
-      {state.isLoading && data && (
-        <>
-          <div
-            className={
-              "absolute z-20 left-0 top-0 w-full h-full bg-black/50 grid place-items-center pointer-events-none"
-            }
-          >
-            <LoadingIcon className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-          </div>
-          {data.thumbnailUrl && (
-            <Image
-              src={data.thumbnailUrl}
-              width={720}
-              height={480}
-              alt={""}
-              className={"absolute z-10 left-0 top-0 w-full h-full"}
+      <button
+        className="relative block h-auto w-full overflow-hidden border-0 bg-black p-0"
+        onClick={togglePlayerState}
+        type="button"
+        aria-label={state.paused ? "Play video" : "Pause video"}
+      >
+        {state.isLoading && data && (
+          <>
+            <div
+              className={
+                "absolute z-20 left-0 top-0 w-full h-full bg-black/50 grid place-items-center pointer-events-none"
+              }
+            >
+              <LoadingIcon className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            {data.thumbnailUrl && (
+              <ImageWithFallback
+                src={data.thumbnailUrl}
+                width={720}
+                height={480}
+                alt={""}
+                className={"absolute z-10 left-0 top-0 w-full h-full"}
+              />
+            )}
+          </>
+        )}
+        <div
+          className={cn(
+            "relative aspect-video h-full mx-auto",
+            state.isFullscreen && "max-w-[100vw] max-h-screen",
+          )}
+        >
+          {isNiconicommentsEnable && EnableComments && !isPipMode && (
+            <CommentCanvas
+              key={data?.id}
+              url={data?.id}
+              className="absolute w-full h-full z-2 pointer-events-none object-contain"
+              videoRef={videoRef.current}
+              pipVideoRef={pipVideoRef.current}
             />
           )}
-        </>
-      )}
-      <div
-        className={cn(
-          "relative aspect-video h-full mx-auto",
-          state.isFullscreen && "max-w-[100vw] max-h-screen",
-        )}
-      >
-        {isNiconicommentsEnable && EnableComments && !isPipMode && (
-          <CommentCanvas
-            key={data?.id}
-            url={data?.id}
-            className="absolute w-full h-full z-2 pointer-events-none object-contain"
-            videoRef={videoRef.current}
-            pipVideoRef={pipVideoRef.current}
+          <Video
+            className="absolute w-full h-full z-1"
+            videoRef={videoRef}
+            movie={data}
           />
-        )}
-        <Video
-          className="absolute w-full h-full z-1"
-          videoRef={videoRef}
-          movie={data}
-        />
-        <video
-          className={cn(
-            "absolute w-full h-full",
-            isPipEnable && EnableComments ? "z-3" : "-z-1",
-          )}
-          ref={pipVideoRef}
-          autoPlay={true}
-          muted={true}
-          onPause={onPipPause}
-        />
-        <PlayerStatusDisplay />
-      </div>
+          <video
+            className={cn(
+              "absolute w-full h-full",
+              isPipEnable && EnableComments ? "z-3" : "-z-1",
+            )}
+            ref={pipVideoRef}
+            autoPlay={true}
+            muted={true}
+            onPause={onPipPause}
+          />
+          <PlayerStatusDisplay />
+        </div>
+      </button>
       <Controller data={data} isPipMode={isPipMode} isHovering={!isInactive} />
       {!isPipMode && <KeyboardHandler data={data} />}
       <MediaSessionHandler data={data} />
-    </button>
+    </div>
   );
 };
 

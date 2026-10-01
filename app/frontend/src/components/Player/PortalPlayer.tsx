@@ -1,6 +1,6 @@
+import { useRouterState } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
-import { useRouter } from "next/router";
 import { useEffect, useId, useRef } from "react";
 import { CurrentMovieAtom, DurablePlayerAtom } from "@/atoms/Player";
 import { useIsMobile } from "@/libraries/isMobile";
@@ -14,15 +14,15 @@ export const PortalPlayer = ({
 }) => {
   const portalTarget = useAtomValue(DurablePlayerAtom);
   const currentMovie = useAtomValue(CurrentMovieAtom);
-  const router = useRouter();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   const id = useId();
   const ref = useRef<HTMLDivElement>(null);
   const target = portalTarget || fallback;
 
   // PiPモードの判定: パスが/movies/[movie]でない場合
-  const isPipMode =
-    router.pathname !== "/movies/[movie]" &&
-    !router.asPath.match(/^\/movies\/[^/]+$/);
+  const isPipMode = !/^\/movies\/[^/]+\/?$/.test(pathname);
 
   useEffect(() => {
     const player = document.getElementById(id);

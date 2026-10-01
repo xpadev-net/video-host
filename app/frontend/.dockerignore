@@ -8,12 +8,13 @@
 # testing
 /coverage
 
-# next.js
-/.next/
+# legacy build output
 /out/
 
 # production
 /build
+/dist
+/.output
 
 # misc
 .DS_Store
@@ -30,7 +31,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
 
 .idea
 .env.local

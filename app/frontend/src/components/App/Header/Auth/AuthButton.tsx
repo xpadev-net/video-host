@@ -1,6 +1,6 @@
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
 import { LogIn, LogOut } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
 import { AuthTokenAtom } from "@/atoms/Auth";
 import { Button } from "@/components/ui/button";
 import { useSelf } from "@/hooks/useUser";
@@ -8,8 +8,10 @@ import { deleteAuth } from "@/service/deleteAuth";
 
 const AuthButton = () => {
   const user = useSelf();
-  const router = useRouter();
-  const pathname = usePathname();
+  const navigate = useNavigate();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   const setAuthToken = useSetAtom(AuthTokenAtom);
 
   // biome-ignore lint/suspicious/noExplicitAny: type inference
@@ -34,8 +36,10 @@ const AuthButton = () => {
     <Button
       variant={"ghost"}
       onClick={() => {
-        const callback = encodeURIComponent(pathname || "/");
-        void router.push(`/login?callback=${callback}`);
+        void navigate({
+          to: "/login",
+          search: { callback: pathname || "/" },
+        });
       }}
       size={"icon"}
       className="cursor-pointer"

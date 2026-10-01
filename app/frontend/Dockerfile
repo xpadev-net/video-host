@@ -18,34 +18,32 @@ COPY app/backend/ ./app/backend/
 
 RUN pnpm run prisma:generate
 
-# Copy env placeholder for b　uild
+# Copy env placeholder for build
 COPY app/frontend/docker/.env.placeholder ./app/frontend/.env
 
-RUN pnpm run build
+RUN pnpm -F @video-host/backend build
+RUN pnpm -F @video-host/frontend build
 
 # Run phase
 FROM node:$NODE_VERSION AS runner
 
 ARG COMMIT_HASH
 ENV COMMIT_HASH=$COMMIT_HASH
+ENV HOST=0.0.0.0
+ENV PORT=3000
 
 LABEL org.opencontainers.image.source=https://github.com/xpadev-net/video-host
 WORKDIR /app
 
-# Copy built application and dependencies
-# Copy standalone build
-COPY --from=builder /app/app/frontend/.next/standalone ./
-COPY --from=builder /app/app/frontend/public ./app/frontend/public
-COPY --from=builder /app/app/frontend/.next/static ./app/frontend/.next/static
+# Nitro's output is standalone and includes the public client assets.
+COPY --from=builder /app/app/frontend/.output ./app/frontend/.output
 COPY --from=builder /app/app/frontend/start.sh ./
-COPY app/frontend/next.config.js ./app/frontend/next.config.js
 
-COPY app/frontend/docker/.env.placeholder ./.env
 COPY app/frontend/docker/env-replacer.sh ./
 
 RUN chmod +x ./env-replacer.sh
 RUN chmod +x ./start.sh
 ENTRYPOINT [ "/app/env-replacer.sh" ]
+EXPOSE 3000
 
-# Copy artifacts
 CMD ["./start.sh"]

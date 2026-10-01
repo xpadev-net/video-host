@@ -66,13 +66,13 @@ export const useSettingDefinitions = (): Record<
   const audioTrackId = useAtomValue(AudioTrackIdAtom);
   const hls = useAtomValue(HlsRefAtom);
 
-  const toggleWindowFullscreen = () => {
+  const toggleWindowFullscreen = (windowFullscreen: boolean) => {
     setPlayerConfig((pv) => ({
       ...pv,
-      windowFullscreen: !pv.windowFullscreen,
+      windowFullscreen,
     }));
     if (state.isFullscreen) {
-      if (playerConfig.windowFullscreen) {
+      if (!windowFullscreen) {
         wrapperRef
           ?.requestFullscreen()
           .catch(() => setState((pv) => ({ ...pv, isFullscreen: false })));
@@ -89,31 +89,33 @@ export const useSettingDefinitions = (): Record<
   };
 
   const audioTrackLabel = (id: number) =>
-    audioTracks.find((track) => track.id === id)?.name || `トラック ${id + 1}`;
+    audioTracks.find((track) => track.id === id)?.name ||
+    audioTracks.find((track) => track.id === id)?.lang ||
+    `トラック ${id + 1}`;
 
   const updateAudioTrack = (id: number) => {
     if (hls) hls.audioTrack = id;
     setPlayerSetting((prev) => prev.filter((page) => page !== "audioTrack"));
   };
 
-  const toggleCommentActive = () => {
+  const toggleCommentActive = (isNiconicommentsEnable: boolean) => {
     setPlayerConfig((prev) => ({
       ...prev,
-      isNiconicommentsEnable: !prev.isNiconicommentsEnable,
+      isNiconicommentsEnable,
     }));
   };
 
-  const toggleNiconicommentsConfig = (key: keyof Options) => {
+  const updateNiconicommentsConfig = (key: keyof Options, enabled: boolean) => {
     setNiconicommentsConfig((prev) => ({
       ...prev,
-      [key]: !prev[key],
+      [key]: enabled,
     }));
   };
 
-  const togglePipEnable = () => {
+  const togglePipEnable = (isPipEnable: boolean) => {
     setPlayerConfig((prev) => ({
       ...prev,
-      isPipEnable: !prev.isPipEnable,
+      isPipEnable,
     }));
   };
 
@@ -214,7 +216,7 @@ export const useSettingDefinitions = (): Record<
       label: "FPS表示",
       icon: Activity,
       getValue: () => !!niconicommentsConfig.showFPS,
-      onChange: () => toggleNiconicommentsConfig("showFPS"),
+      onChange: (enabled) => updateNiconicommentsConfig("showFPS", enabled),
     },
     {
       type: "toggle",
@@ -222,7 +224,8 @@ export const useSettingDefinitions = (): Record<
       label: "当たり判定表示",
       icon: VectorSquare,
       getValue: () => !!niconicommentsConfig.showCollision,
-      onChange: () => toggleNiconicommentsConfig("showCollision"),
+      onChange: (enabled) =>
+        updateNiconicommentsConfig("showCollision", enabled),
     },
     {
       type: "toggle",
@@ -230,7 +233,8 @@ export const useSettingDefinitions = (): Record<
       label: "コメント数表示",
       icon: Sigma,
       getValue: () => !!niconicommentsConfig.showCommentCount,
-      onChange: () => toggleNiconicommentsConfig("showCommentCount"),
+      onChange: (enabled) =>
+        updateNiconicommentsConfig("showCommentCount", enabled),
     },
     {
       type: "toggle",

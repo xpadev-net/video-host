@@ -1,7 +1,7 @@
+import { useNavigate } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
 import { useSetAtom } from "jotai";
 import { Maximize2, X } from "lucide-react";
-import { useRouter } from "next/router";
 import { CurrentMovieAtom } from "@/atoms/Player";
 import { cn } from "@/lib/utils";
 import { PlayPauseButton } from "../../Shared/Controller/PlayPauseButton";
@@ -16,22 +16,21 @@ type props = {
 
 export const PiPController = ({ data, className, isHovering }: props) => {
   const setCurrentMovie = useSetAtom(CurrentMovieAtom);
-  const router = useRouter();
+  const navigate = useNavigate();
   const handleClosePip = () => {
     setCurrentMovie(null);
   };
 
   const handleBackToMovie = () => {
-    void router.push(`/movies/${data.id}`);
+    void navigate({ to: "/movies/$movie", params: { movie: data.id } });
   };
   return (
-    <button
+    <fieldset
       className={cn(
-        "absolute top-0 left-0 w-full h-full text-white z-10",
+        "absolute top-0 left-0 w-full h-full min-w-0 border-0 p-0 text-white z-10",
         className,
       )}
       aria-label="Video player controls"
-      type="button"
     >
       <div
         className={cn(
@@ -64,6 +63,6 @@ export const PiPController = ({ data, className, isHovering }: props) => {
         <PlayPauseButton className="w-12 h-12 rounded-full bg-black/70 hover:bg-black/90 flex items-center justify-center text-white z-10" />
       </div>
       <Slider className="absolute bottom-0 left-1 right-1 h-4 w-auto" />
-    </button>
+    </fieldset>
   );
 };

@@ -1,6 +1,6 @@
+import { useRouterState } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue, useSetAtom } from "jotai";
-import { useRouter } from "next/router";
 import { type RefObject, useEffect, useRef } from "react";
 import { CurrentMovieAtom, DurablePlayerAtom } from "@/atoms/Player";
 import { useIsMobile } from "@/libraries/isMobile";
@@ -9,21 +9,24 @@ const PipPlayer = () => {
   const playerPortalTargetRef = useRef<HTMLDivElement>(null);
   const setPlayerPortalTarget = useSetAtom(DurablePlayerAtom);
   const currentMovie = useAtomValue(CurrentMovieAtom);
-  const router = useRouter();
-  const isPipMode =
-    router.pathname !== "/movies/[movie]" &&
-    !router.asPath.match(/^\/movies\/[^/]+$/);
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  const isPipMode = !/^\/movies\/[^/]+\/?$/.test(pathname);
 
   const isMobile = useIsMobile();
 
   useEffect(() => {
-    if (!playerPortalTargetRef.current || !isPipMode) return;
+    const target = playerPortalTargetRef.current;
+    if (!target || !isPipMode) return;
     setPlayerPortalTarget({
-      target: playerPortalTargetRef.current,
+      target,
       className: "overflow-visible",
     });
     return () => {
-      setPlayerPortalTarget(null);
+      setPlayerPortalTarget((current) =>
+        current?.target === target ? null : current,
+      );
     };
   }, [setPlayerPortalTarget, isPipMode]);
 

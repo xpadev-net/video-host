@@ -17,7 +17,7 @@ const DurablePlayerAtom = atom<{
 } | null>(null);
 const CurrentMovieAtom = atom<FormattedMovie | null>(null);
 
-const WrapperRefAtom = atom<HTMLButtonElement | null>(null);
+const WrapperRefAtom = atom<HTMLElement | null>(null);
 const VideoRefAtom = atom<HTMLVideoElement | null>(null);
 const HlsRefAtom = atom<Hls | null>(null);
 const AudioTracksAtom = atom<PlayerAudioTrack[]>([]);

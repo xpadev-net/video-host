@@ -1,6 +1,6 @@
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue, useSetAtom } from "jotai";
-import { type MouseEvent, useState } from "react";
+import { type KeyboardEvent, type MouseEvent, useState } from "react";
 import { VideoMetadataAtom, VideoRefAtom } from "@/atoms/Player";
 import { TimeDisplay } from "@/components/Player/DesktopPlayer/Controller/TimeDisplay";
 import { AutoPlayButton } from "@/components/Player/Shared/Controller/AutoPlayButton";
@@ -34,11 +34,15 @@ const DefaultController = ({ data, isHovering }: props) => {
     setIsVolumeExtend(true);
   };
 
-  const stopPropagation = (e: MouseEvent<HTMLButtonElement>) => {
+  const stopPropagation = (e: MouseEvent<HTMLFieldSetElement>) => {
     setMetadata((pv) => ({
       ...pv,
       isSetting: false,
     }));
+    e.stopPropagation();
+  };
+
+  const stopKeyPropagation = (e: KeyboardEvent<HTMLFieldSetElement>) => {
     e.stopPropagation();
   };
 
@@ -59,14 +63,15 @@ const DefaultController = ({ data, isHovering }: props) => {
   };
 
   return (
-    <button
+    <fieldset
       className={cn(
-        `absolute z-4 left-0 w-full transition-[bottom] duration-250 ease-in-out px-3 flex flex-col-reverse select-none text-white`,
+        `absolute z-4 left-0 w-full min-w-0 border-0 transition-[bottom] duration-250 ease-in-out px-3 flex flex-col-reverse select-none text-white`,
         isHovering ? "bottom-0" : "-bottom-[100px]",
       )}
       onClick={stopPropagation}
+      onKeyDown={stopKeyPropagation}
       aria-label="Video player controls"
-      type="button"
+      onMouseLeave={onMouseLeave}
     >
       <div
         className="absolute left-0 h-[100px] w-full -z-10 pointer-events-none"
@@ -75,12 +80,7 @@ const DefaultController = ({ data, isHovering }: props) => {
             "linear-gradient(0deg, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.4) 40%, rgba(0, 0, 0, 0.2) 60%, rgba(0, 0, 0, 0) 100%)",
         }}
       ></div>
-      <button
-        className="flex flex-row h-10 justify-between"
-        onMouseLeave={onMouseLeave}
-        aria-label="Video controls"
-        type="button"
-      >
+      <div className="flex flex-row h-10 justify-between">
         <div className="flex flex-row items-center">
           <PrevNextButton
             className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6"
@@ -117,10 +117,10 @@ const DefaultController = ({ data, isHovering }: props) => {
           <TheatreButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
           <FullscreenButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
         </div>
-      </button>
+      </div>
       <Slider />
       <Setting className="absolute right-3 bottom-[60px]" />
-    </button>
+    </fieldset>
   );
 };
 

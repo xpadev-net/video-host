@@ -9,7 +9,7 @@ import {
   PeriodicExportingMetricReader,
 } from "@opentelemetry/sdk-metrics";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-import type { Instrumentation } from "next";
+import type { CapturedErrorContext } from "nitro/types";
 
 const DEFAULT_SERVICE_NAME = "video-host-frontend";
 const EXPORT_INTERVAL_MS = 30_000;
@@ -17,6 +17,7 @@ const EXPORT_INTERVAL_MS = 30_000;
 // Instruments must be created after the provider is registered:
 // getMeterProvider() is a permanent NoopMeterProvider until then.
 let requestErrors: Counter | undefined;
+let meterProvider: MeterProvider | undefined;
 
 /**
  * Registers a global MeterProvider pushing OTLP metrics to the collector.
@@ -32,7 +33,11 @@ export const initOtelMetrics = () => {
     return;
   }
 
-  const provider = new MeterProvider({
+  if (meterProvider) {
+    return meterProvider;
+  }
+
+  meterProvider = new MeterProvider({
     resource: defaultResource().merge(
       resourceFromAttributes({
         [ATTR_SERVICE_NAME]:
@@ -46,30 +51,27 @@ export const initOtelMetrics = () => {
       }),
     ],
   });
-  metrics.setGlobalMeterProvider(provider);
+  metrics.setGlobalMeterProvider(meterProvider);
 
   requestErrors = metrics
     .getMeter(DEFAULT_SERVICE_NAME)
     .createCounter("video_host.frontend.request.errors", {
-      description: "Server-side request errors reported by Next.js.",
+      description: "Server-side request errors captured by Nitro.",
       unit: "{error}",
     });
 
-  return provider;
+  return meterProvider;
 };
 
-export const recordRequestError: Instrumentation.onRequestError = (
-  _error,
-  request,
-  context,
+export const recordRequestError = (
+  _error: Error,
+  context: CapturedErrorContext,
 ) => {
+  const event = context.event;
+
   requestErrors?.add(1, {
-    "http.request.method": request.method,
-    "http.route": context.routePath || "unknown",
-    "next.router.kind": context.routerKind,
-    "next.route.type": context.routeType,
-    ...(context.renderSource
-      ? { "next.render_source": context.renderSource }
-      : {}),
+    "http.request.method": event?.req.method ?? "unknown",
+    "url.path": event ? new URL(event.req.url).pathname : "unknown",
+    ...(context.tags?.length ? { "error.source": context.tags.join(",") } : {}),
   });
 };

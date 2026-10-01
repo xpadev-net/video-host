@@ -1,6 +1,6 @@
+import { Link } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
 import { Menu, Tv } from "lucide-react";
-import Link from "next/link";
 import { sidebarState } from "@/atoms/SidebarState";
 import { Button } from "@/components/ui/button";
 import { SiteName } from "@/contexts/env";
@@ -30,7 +30,7 @@ const HeaderMenu = () => {
         className="cursor-pointer text-left h-10"
         asChild
       >
-        <Link href={"/"}>
+        <Link to={"/"}>
           <Tv />
           {SiteName}
         </Link>

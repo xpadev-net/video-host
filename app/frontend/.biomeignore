@@ -1,4 +1,3 @@
-.next/**
 .claude/**
 node_modules/**
 *.d.ts

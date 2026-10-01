@@ -48,6 +48,7 @@ configMapGenerator:
       - oidc-scope=openid profile email
       - oidc-display-name=SSO
       - oidc-auto-provision=true
+      - oidc-allow-http=false
       - frontend-url=https://your-frontend-domain.com
       - cors-origin=https://your-frontend-domain.com
       - public-endpoints=
@@ -65,9 +66,11 @@ configMapGenerator:
   - name: frontend-config
     literals:
       - api-endpoint=https://api.your-domain.com
-      - allowed-image-hostname=your-s3-domain.com
       - enable-comments=true
+      - require-signup-code=false
       - site-name=Video Host
+      - otel-endpoint=
+      - otel-service-name=video-host-frontend
 
   # FFmpeg Worker
   - name: ffmpeg-worker-config
@@ -98,6 +101,7 @@ secretGenerator:
       - jwt-secret=CHANGE_ME_jwt_secret
       - password-salt=CHANGE_ME_password_salt
       - signup-code=
+      - oidc-client-secret=
       - s3-access-key-id=CHANGE_ME
       - s3-secret-access-key=CHANGE_ME
       - redis-sentinel-password=

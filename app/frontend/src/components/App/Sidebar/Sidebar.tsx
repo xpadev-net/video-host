@@ -1,14 +1,15 @@
-import Link from "next/link";
-import { useRouter } from "next/router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { MdHistory, MdHomeFilled } from "react-icons/md";
 
 import { OverlaySidebar } from "@/components/App/Sidebar/OverlaySidebar";
 import { useIsMobile } from "@/libraries/isMobile";
 
 const Sidebar = () => {
-  const router = useRouter();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   const isMobile = useIsMobile();
-  const isDisabled = router.pathname.startsWith("/movies/") && !isMobile;
+  const isDisabled = pathname.startsWith("/movies/") && !isMobile;
 
   const wrapperClassName = `relative z-[10001] ${isMobile ? "h-12" : ""}`;
 
@@ -50,11 +51,11 @@ const Sidebar = () => {
   return (
     <div className={wrapperClassName}>
       <div className={containerClassName}>
-        <Link className={buttonWrapperClassName} href={"/"}>
+        <Link className={buttonWrapperClassName} to={"/"}>
           <MdHomeFilled className={iconClassName} />
           <span className={textClassName}>ホーム</span>
         </Link>
-        <Link className={buttonWrapperClassName} href={"/history"}>
+        <Link className={buttonWrapperClassName} to={"/history"}>
           <MdHistory className={iconClassName} />
           <span className={textClassName}>履歴</span>
         </Link>

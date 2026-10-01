@@ -9,7 +9,7 @@ on:
       - master
 
 env:
-  NODE_VERSION: '22.x'
+  NODE_VERSION: '22.12.x'
 
 jobs:
   # Backend CI
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        task: [lint, format, typecheck, build]
+        task: [lint, format:check, typecheck, build]
     
     steps:
       - name: Checkout repository

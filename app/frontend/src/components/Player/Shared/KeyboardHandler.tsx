@@ -1,6 +1,6 @@
+import { useNavigate } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useRouter } from "next/router";
 import { type FC, useEffect } from "react";
 import {
   PlayerConfigAtom,
@@ -25,7 +25,7 @@ const KeyboardHandler: FC<Props> = ({ data }) => {
   const setVideoMetadata = useSetAtom(PlayerStateAtom);
   const setSeekNotification = useSetAtom(PlayerSeekNotificationAtom);
   const setPlayPauseNotification = useSetAtom(PlayerPlayPauseNotificationAtom);
-  const router = useRouter();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -68,7 +68,7 @@ const KeyboardHandler: FC<Props> = ({ data }) => {
         e.preventDefault();
         const item = e.code === "KeyN" ? findNext(data) : findPrev(data);
         if (!item) return false;
-        void router.push(`/movie/${item.id}`);
+        void navigate({ to: "/movies/$movie", params: { movie: item.id } });
         return true;
       }
       if (e.code === "KeyT") {
@@ -104,7 +104,7 @@ const KeyboardHandler: FC<Props> = ({ data }) => {
     setVideoMetadata,
     setSeekNotification,
     setPlayPauseNotification,
-    router.push,
+    navigate,
   ]);
 
   return null;

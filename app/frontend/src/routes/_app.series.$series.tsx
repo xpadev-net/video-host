@@ -1,0 +1,45 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
+
+import { MovieList } from "@/components/MovieList";
+import { SeriesPageSkeleton } from "@/components/SeriesPageSkeleton";
+import { User } from "@/components/User/User";
+import { SiteName } from "@/contexts/env";
+import { useSeries } from "@/hooks/useSeries";
+
+export const Route = createFileRoute("/_app/series/$series")({
+  head: () => ({ meta: [{ title: SiteName }] }),
+  component: SeriesRoute,
+});
+
+function SeriesRoute() {
+  const { series } = Route.useParams();
+  const { data, error } = useSeries(series);
+
+  useEffect(() => {
+    if (data?.status === "ok") {
+      document.title = `${data.data.title} - ${SiteName}`;
+    }
+  }, [data]);
+
+  if (!data || error) return <SeriesPageSkeleton />;
+  if (data.status !== "ok") {
+    return (
+      <div>
+        <h2>見つかりませんでした</h2>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 pt-3 max-w-[1070px] mx-auto flex flex-col gap-2">
+      <div className="sticky top-0 z-10 bg-background py-4 flex flex-col gap-2">
+        <h1 className="text-2xl">{data.data.title}</h1>
+        <User user={data.data.author} size="1" />
+      </div>
+      <div>
+        <MovieList movies={data.data.movies ?? []} type="column" />
+      </div>
+    </div>
+  );
+}

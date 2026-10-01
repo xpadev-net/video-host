@@ -1,6 +1,5 @@
 import { ArrowLeft, SearchIcon } from "lucide-react";
-import { useRouter } from "next/router";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { AuthButton } from "src/components/App/Header/Auth";
 import { Search } from "@/components/App/Header/Search";
 import { ToggleTheme } from "@/components/App/Header/Theme";
@@ -15,11 +14,6 @@ type props = {
 const MobileHeader = ({ className }: props) => {
   const [isInputActive, setIsInputActive] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const _router = useRouter();
-  useEffect(() => {
-    setIsInputActive(false);
-  }, []);
-
   const onSearchButtonClick = () => {
     setIsInputActive(true);
     inputRef.current?.focus();

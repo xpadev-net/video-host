@@ -1,5 +1,5 @@
+import { Link } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
-import Link from "next/link";
 import { User } from "@/components/User/User";
 
 type props = {
@@ -23,7 +23,8 @@ const MovieInfo = ({ data, className }: props) => {
         <p>この動画を含むプレイリスト</p>
         <Link
           className="text-[var(--color-sub-text)] no-underline hover:underline"
-          href={`/series/${data.series?.id}`}
+          to="/series/$series"
+          params={{ series: data.series?.id ?? "" }}
         >
           {data.series?.title}
         </Link>

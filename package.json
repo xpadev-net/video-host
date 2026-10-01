@@ -28,8 +28,7 @@
       "lefthook",
       "prisma",
       "@parcel/watcher",
-      "@tailwindcss/oxide",
-      "sharp"
+      "@tailwindcss/oxide"
     ],
     "overrides": {
       "fast-xml-parser@>=5.0.9 <=5.3.3": ">=5.3.4",
@@ -40,8 +39,6 @@
       "fast-xml-parser@>=5.0.0 <5.3.8": ">=5.3.8",
       "@hono/node-server@<1.19.10": ">=1.19.10",
       "hono@<4.12.7": ">=4.12.7",
-      "next@>=16.0.0-beta.0 <16.1.7": ">=16.1.7",
-      "next@>=16.0.1 <16.1.7": ">=16.1.7",
       "fast-xml-parser@>=5.0.0 <5.5.6": ">=5.5.6",
       "effect@<3.20.0": ">=3.20.0",
       "fast-xml-parser@>=4.0.0-beta.3 <=5.5.6": ">=5.5.7",
