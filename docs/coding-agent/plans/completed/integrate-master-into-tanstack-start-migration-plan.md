@@ -1,6 +1,6 @@
 # Plan: Integrate master into the TanStack Start migration
 
-- status: in_progress
+- status: done
 - generated: 2026-10-01
 - last_updated: 2026-10-01
 - work_type: code
@@ -332,6 +332,14 @@
   - Summary: regenerated `pnpm-lock.yaml` and `routeTree.gen.ts`, resolved all merge conflicts, and staged the integrated normal merge.
   - Validation evidence: normal and frozen installs passed; backend lint/format/typecheck, 141 tests, and build passed; frontend lint/format/typecheck/build passed; workspace lint/typecheck/build passed; Kustomize and retirement searches passed; Docker image build and live container runtime substitution/health checks passed.
   - Notes: temporary validation container was removed; normal merge commit and parent verification remain before Reviewer dispatch.
+- 2026-10-01 00:09 Wave 5 completed: [Task_8]
+  - Summary: independent integration, production-runtime, desktop, and mobile review approved the completed normal merge with no findings.
+  - Validation evidence: Reviewer `APPROVED`; six non-empty screenshots; auth callback matrix, SSO UI/linking, upload cancel/retry/resume, LIMITED viewer persistence, multi-audio selection, Nitro startup, and `/api/healthz` passed.
+  - Notes: real OIDC, object storage, encoder, and production media were replaced by documented deterministic seams; no At Risk item remains.
+- 2026-10-01 00:10 Plan completed: [Task_1, Task_2, Task_3, Task_4, Task_5, Task_6, Task_7, Task_8]
+  - Summary: all tasks and required validation are complete; merge commit `7b71685114a7f9a7094a6c95e39f669f72f61125` has expected parents.
+  - Validation evidence: Worker validations passed, Orchestrator full-sweep passed, Reviewer `APPROVED` with no findings.
+  - Notes: plan moved to `docs/coding-agent/plans/completed/`; no ADR, rule, or skill update is required.
 
 ## Decision Log (append-only; re-plans and major discoveries)
 
@@ -359,6 +367,12 @@
   - Tradeoffs considered: none; this records approval only.
   - User approval: yes; user response `すすめて`.
   - Record proposed: none; existing migration direction remains controlling.
+- 2026-10-01 00:10 Decision: close the integration plan as complete.
+  - Trigger / new insight: all required validation and independent review passed with no unresolved finding.
+  - Plan delta (what changed): status moved from `in_progress` to `done` and the plan is archived under `completed`.
+  - Tradeoffs considered: none; completion criteria are fully satisfied.
+  - User approval: yes; covered by the approved execution plan.
+  - Record proposed: none; no new durable architectural decision beyond the existing TanStack migration direction.
 
 ## Notes
 
