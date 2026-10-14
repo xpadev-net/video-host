@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import http from "node:http";
@@ -51,7 +52,7 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
     {
       name: "explicit-origin",
       endpoint: "https://api.example.test",
-      site: "Runtime explicit-origin",
+      site: "Runtime $HOME & | \\path ` ${window.name}",
       flag: false,
       replace: true,
     },
@@ -132,13 +133,40 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
             }
           }
           assert.ok(ready, logs || "Server did not become ready");
+
+          const assetResponse = await fetch(`${origin}/assets/${assetName}`);
+          assert.equal(assetResponse.status, 200, logs);
+          const assetBody = Buffer.from(await assetResponse.arrayBuffer());
+          assert.equal(
+            Number(assetResponse.headers.get("content-length")),
+            assetBody.byteLength,
+            "The served env asset must match its Content-Length",
+          );
+          const expectedEtag = `"${assetBody.byteLength.toString(16)}-${createHash(
+            "sha1",
+          )
+            .update(assetBody)
+            .digest("base64")
+            .replace(/=$/, "")}"`;
+          assert.equal(
+            assetResponse.headers.get("etag"),
+            expectedEtag,
+            "The served env asset ETag must match its complete response body",
+          );
+          if (scenario.replace) {
+            assert.doesNotMatch(
+              assetBody.toString("utf8"),
+              /_VITE_[A-Z0-9_]+_/,
+            );
+          }
+
           for (const route of ["/", "/login"]) {
             const response = await fetch(origin + route);
             assert.equal(response.status, 200, logs);
             const html = await response.text();
             assert.match(html, /<html/);
             assert.ok(
-              html.includes(scenario.site),
+              html.includes(scenario.site.replaceAll("&", "&amp;")),
               `${route} must render the configured site name`,
             );
             if (scenario.replace)
