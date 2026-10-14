@@ -17,28 +17,28 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.952.0",
-    "@aws-sdk/s3-request-presigner": "^3.952.0",
-    "@hono/node-server": "^2.1.1",
-    "@hono/zod-validator": "^0.7.5",
+    "@aws-sdk/client-s3": "^3.1151.0",
+    "@aws-sdk/s3-request-presigner": "^3.1151.0",
+    "@hono/node-server": "^2.1.5",
+    "@hono/zod-validator": "^0.7.6",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-metrics-otlp-http": "^0.222.0",
-    "@opentelemetry/resources": "^2.11.0",
-    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@opentelemetry/resources": "^2.12.0",
+    "@opentelemetry/sdk-metrics": "^2.12.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@prisma/client": "6.19.0",
     "better-auth": "1.7.7",
-    "dotenv": "^17.2.3",
-    "hono": "^4.13.9",
-    "prisma": "^6.19.1",
-    "redis": "^5.10.0",
-    "zod": "^4.2.1"
+    "dotenv": "^17.4.2",
+    "hono": "^4.13.13",
+    "prisma": "^6.19.3",
+    "redis": "^5.12.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^24.10.4",
+    "@types/node": "^24.19.2",
     "@vitest/coverage-v8": "^4.1.11",
-    "tsc-alias": "^1.8.8",
-    "tsx": "^4.21.0",
+    "tsc-alias": "^1.9.7",
+    "tsx": "^4.23.15",
     "vitest": "^4.1.11"
   }
 }
