@@ -252,30 +252,29 @@ describe("real generic OIDC redirect flow", () => {
       "error=",
     );
   });
-  it.each([
-    "nonce",
-    "aud",
-    "iss",
-  ])("rejects mismatched %s before creating an identity", async (claim) => {
-    const flow = await startFlow();
-    const claims = fixture.claims.get(flow.code);
-    if (!claims) throw new Error("Missing test claims");
-    claims[claim] = "invalid";
-    const response = await finishFlow(flow);
-    expect(response.headers.get("location")).toContain("error=");
-    expect(fixture.db.AuthUser).toHaveLength(0);
-  });
-  it.each([
-    "email",
-    "sub",
-  ])("rejects missing %s rather than fabricating identity data", async (claim) => {
-    const flow = await startFlow();
-    delete fixture.claims.get(flow.code)?.[claim];
-    expect((await finishFlow(flow)).headers.get("location")).toContain(
-      "error=",
-    );
-    expect(fixture.db.AuthUser).toHaveLength(0);
-  });
+  it.each(["nonce", "aud", "iss"])(
+    "rejects mismatched %s before creating an identity",
+    async (claim) => {
+      const flow = await startFlow();
+      const claims = fixture.claims.get(flow.code);
+      if (!claims) throw new Error("Missing test claims");
+      claims[claim] = "invalid";
+      const response = await finishFlow(flow);
+      expect(response.headers.get("location")).toContain("error=");
+      expect(fixture.db.AuthUser).toHaveLength(0);
+    },
+  );
+  it.each(["email", "sub"])(
+    "rejects missing %s rather than fabricating identity data",
+    async (claim) => {
+      const flow = await startFlow();
+      delete fixture.claims.get(flow.code)?.[claim];
+      expect((await finishFlow(flow)).headers.get("location")).toContain(
+        "error=",
+      );
+      expect(fixture.db.AuthUser).toHaveLength(0);
+    },
+  );
   it("rejects absent ID tokens and unsolicited callbacks", async () => {
     const flow = await startFlow();
     fixture.omitIdToken = true;
@@ -394,31 +393,30 @@ describe("real generic OIDC redirect flow", () => {
       ids.every((id) => typeof id === "string" && /^[a-f0-9]{64}$/.test(id)),
     ).toBe(true);
   });
-  it.each([
-    "x".repeat(256),
-    "subject\u0000",
-    "subject\ud800",
-  ])("rejects oversized or malformed subject %#", async (subject) => {
-    const flow = await startFlow();
-    const claims = fixture.claims.get(flow.code);
-    if (!claims) throw new Error("Missing test claims");
-    claims.sub = subject;
-    expect((await finishFlow(flow)).headers.get("location")).toContain(
-      "error=",
-    );
-    expect(fixture.db.AuthUser).toHaveLength(0);
-  });
-  it.each([
-    "exp",
-    "iat",
-  ])("rejects signed ID tokens missing %s", async (claim) => {
-    const flow = await startFlow();
-    delete fixture.claims.get(flow.code)?.[claim];
-    expect((await finishFlow(flow)).headers.get("location")).toContain(
-      "error=",
-    );
-    expect(fixture.db.AuthUser).toHaveLength(0);
-  });
+  it.each(["x".repeat(256), "subject\u0000", "subject\ud800"])(
+    "rejects oversized or malformed subject %#",
+    async (subject) => {
+      const flow = await startFlow();
+      const claims = fixture.claims.get(flow.code);
+      if (!claims) throw new Error("Missing test claims");
+      claims.sub = subject;
+      expect((await finishFlow(flow)).headers.get("location")).toContain(
+        "error=",
+      );
+      expect(fixture.db.AuthUser).toHaveLength(0);
+    },
+  );
+  it.each(["exp", "iat"])(
+    "rejects signed ID tokens missing %s",
+    async (claim) => {
+      const flow = await startFlow();
+      delete fixture.claims.get(flow.code)?.[claim];
+      expect((await finishFlow(flow)).headers.get("location")).toContain(
+        "error=",
+      );
+      expect(fixture.db.AuthUser).toHaveLength(0);
+    },
+  );
   it.each([
     ["expired expiry", "exp", Math.floor(Date.now() / 1000) - 60],
     ["string expiry", "exp", "9999999999"],

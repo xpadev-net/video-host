@@ -125,28 +125,28 @@ describe("cookie-backed domain authentication", () => {
       expect((await appUnderTest().request(path)).status).toBe(401);
     }
   });
-  it.each([
-    "GET",
-    "HEAD",
-  ])("redirects anonymous %s config/ requests to a successful config response", async (method) => {
-    const app = appUnderTest(true);
-    const redirect = await app.request("/api/v4/auth/config/?from=login", {
-      method,
-    });
-    expect(redirect.status).toBe(301);
-    const location = redirect.headers.get("location");
-    expect(location).toBe("http://localhost/api/v4/auth/config?from=login");
-    if (!location) throw new Error("Missing config redirect location");
-    const response = await app.request(location, { method });
-    expect(response.status).toBe(200);
-    if (method === "GET") {
-      expect(await response.json()).toMatchObject({
-        status: "ok",
-        data: { passwordAuthEnabled: true, signupEnabled: false },
+  it.each(["GET", "HEAD"])(
+    "redirects anonymous %s config/ requests to a successful config response",
+    async (method) => {
+      const app = appUnderTest(true);
+      const redirect = await app.request("/api/v4/auth/config/?from=login", {
+        method,
       });
-    }
-    expect(mocks.findUnique).not.toHaveBeenCalled();
-  });
+      expect(redirect.status).toBe(301);
+      const location = redirect.headers.get("location");
+      expect(location).toBe("http://localhost/api/v4/auth/config?from=login");
+      if (!location) throw new Error("Missing config redirect location");
+      const response = await app.request(location, { method });
+      expect(response.status).toBe(200);
+      if (method === "GET") {
+        expect(await response.json()).toMatchObject({
+          status: "ok",
+          data: { passwordAuthEnabled: true, signupEnabled: false },
+        });
+      }
+      expect(mocks.findUnique).not.toHaveBeenCalled();
+    },
+  );
   it("keeps trailing-slash lookalikes and private paths protected", async () => {
     const app = appUnderTest(true);
     for (const path of [

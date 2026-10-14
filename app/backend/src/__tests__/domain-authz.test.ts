@@ -125,29 +125,29 @@ describe("explicit HUMAN and SYSTEM authorization", () => {
       }),
     );
   });
-  it.each([
-    humanSso,
-    { ...system, authUserId: "unexpected-auth-mapping" },
-  ])("rejects system deletion for human/mapped identities", async (target) => {
-    database.user.findUnique.mockResolvedValue(target);
-    expect(
-      (
-        await appFor(admin).request(`/api/v4/system-accounts/${target.id}`, {
-          method: "DELETE",
-        })
-      ).status,
-    ).toBe(400);
-    expect(database.$transaction).not.toHaveBeenCalled();
-  });
-  it.each([
-    undefined,
-    member,
-  ])("rejects non-admin system administration", async (actor) => {
-    expect(
-      (await appFor(actor).request("/api/v4/system-accounts")).status,
-    ).toBe(401);
-    expect(database.user.findMany).not.toHaveBeenCalled();
-  });
+  it.each([humanSso, { ...system, authUserId: "unexpected-auth-mapping" }])(
+    "rejects system deletion for human/mapped identities",
+    async (target) => {
+      database.user.findUnique.mockResolvedValue(target);
+      expect(
+        (
+          await appFor(admin).request(`/api/v4/system-accounts/${target.id}`, {
+            method: "DELETE",
+          })
+        ).status,
+      ).toBe(400);
+      expect(database.$transaction).not.toHaveBeenCalled();
+    },
+  );
+  it.each([undefined, member])(
+    "rejects non-admin system administration",
+    async (actor) => {
+      expect(
+        (await appFor(actor).request("/api/v4/system-accounts")).status,
+      ).toBe(401);
+      expect(database.user.findMany).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("machine authentication remains separate", () => {
