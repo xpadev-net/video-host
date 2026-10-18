@@ -20,7 +20,7 @@ import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { ApiEndpoint } from "@/contexts/env";
 import { useUpload } from "@/hooks/useUpload";
 import { authClient } from "@/lib/auth-client";
-import { client } from "@/lib/client";
+import { client, getSelectedProfileId } from "@/lib/client";
 
 export const Route = createFileRoute("/_app/dashboard/videos/$id/edit")({
   head: () => ({ meta: [{ title: "動画を編集" }] }),
@@ -103,7 +103,7 @@ function EditVideoPage() {
     if (!movie || !session) return;
 
     const variant = movie.variants?.[0];
-    if (!variant || variant.status !== "PROCESSING") {
+    if (variant?.status !== "PROCESSING") {
       return;
     }
 
@@ -122,6 +122,9 @@ function EditVideoPage() {
 
       const eventSource = new EventSourcePlus(url, {
         credentials: "include",
+        headers: getSelectedProfileId()
+          ? { "X-Profile-Id": getSelectedProfileId() as string }
+          : {},
         signal: controller.signal,
       });
 

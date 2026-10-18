@@ -38,6 +38,7 @@ model User {
   kind           UserKind      @default(HUMAN)
   authUserId     String?       @unique
   authUser       AuthUser?     @relation(fields: [authUserId], references: [id], onDelete: SetNull)
+  additionalProfile AuthProfile?
   role           Role          @default(USER)
   avatarUrl      String?
   series         Series[]
@@ -62,6 +63,22 @@ model AuthUser {
   sessions      AuthSession[]
   accounts      AuthAccount[]
   profile       User?
+  additionalProfiles AuthProfile[]
+}
+
+// The existing User.authUserId relation remains the account's default
+// profile. Additional profiles are linked through this table so existing
+// account/profile rows need no data backfill.
+model AuthProfile {
+  id          String   @id @default(uuid())
+  authUserId  String
+  profileId   String   @unique
+  authUser    AuthUser @relation(fields: [authUserId], references: [id], onDelete: Cascade)
+  profile     User     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([authUserId, profileId])
+  @@index([authUserId])
 }
 
 model AuthSession {

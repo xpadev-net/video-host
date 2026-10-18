@@ -3,6 +3,7 @@ import type { Env, HonoApp } from "@/@types/hono";
 import { AUTH_TRUSTED_ORIGINS, PUBLIC_ENDPOINTS } from "@/env";
 import { auth } from "@/lib/auth";
 import { isPathWithin, isTrustedMutationOrigin } from "@/lib/auth-policy";
+import { provisionAuthProfile } from "@/lib/auth-profile";
 import { prisma } from "@/lib/prisma";
 import { forbidden, unauthorized } from "@/utils/response";
 
@@ -43,11 +44,24 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
     c.header("Set-Cookie", cookie, { append: true });
   }
   if (session) {
-    const user = await prisma.user.findUnique({
-      where: { authUserId: session.user.id },
-    });
-    if (user?.kind === "HUMAN") {
-      c.set("user", user);
+    const defaultProfile = await provisionAuthProfile(session.user);
+    const requestedProfileId = c.req.header("x-profile-id");
+    let activeProfile = defaultProfile;
+    if (requestedProfileId && requestedProfileId !== defaultProfile.id) {
+      const membership = await prisma.authProfile.findFirst({
+        where: {
+          authUserId: session.user.id,
+          profileId: requestedProfileId,
+        },
+        include: { profile: true },
+      });
+      if (membership) activeProfile = membership.profile;
+    }
+    if (activeProfile.kind === "HUMAN") {
+      c.set("authUserId", session.user.id);
+      // Account permissions remain available while the selected profile
+      // supplies the identity used for ownership and profile-level sharing.
+      c.set("user", { ...activeProfile, role: defaultProfile.role });
       c.header("Cache-Control", "private, no-store");
     }
   }
