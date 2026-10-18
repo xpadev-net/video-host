@@ -4,11 +4,11 @@ import { ApiEndpoint } from "@/contexts/env";
 
 export const getSelectedProfileId = (): string | null => {
   if (typeof window === "undefined") return null;
-  const storedProfile = window.localStorage.getItem(
-    "dashboard-selected-profile",
-  );
-  if (!storedProfile) return null;
   try {
+    const storedProfile = window.localStorage.getItem(
+      "dashboard-selected-profile",
+    );
+    if (!storedProfile) return null;
     const profileId: unknown = JSON.parse(storedProfile);
     return typeof profileId === "string" ? profileId : null;
   } catch {

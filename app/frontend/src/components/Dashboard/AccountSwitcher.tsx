@@ -37,24 +37,46 @@ export const AccountSwitcher: FC = () => {
   const [newName, setNewName] = useState("");
   const [newUsername, setNewUsername] = useState("");
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [profilesLoadError, setProfilesLoadError] = useState(false);
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    void client.api.v4.users.profiles
-      .$get()
-      .then(async (res) => {
-        if (!res.ok) return;
+    const loadProfiles = async () => {
+      try {
+        const res = await client.api.v4.users.profiles.$get();
+        if (!res.ok) throw new Error("Profile request failed");
         const json = await res.json();
-        if (!cancelled) setProfiles(json.data as Profile[]);
-      })
-      .catch(() => {
-        if (!cancelled) setProfiles([]);
-      });
+        if (!cancelled) {
+          setProfiles(json.data as Profile[]);
+          setProfilesLoadError(false);
+        }
+      } catch {
+        if (!cancelled) setProfilesLoadError(true);
+      }
+    };
+    void loadProfiles();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === "dashboard-selected-profile") window.location.reload();
+    };
+    window.addEventListener("storage", onStorage);
     return () => {
       cancelled = true;
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
+
+  const retryLoadProfiles = async () => {
+    try {
+      const res = await client.api.v4.users.profiles.$get();
+      if (!res.ok) throw new Error("Profile request failed");
+      const json = await res.json();
+      setProfiles(json.data as Profile[]);
+      setProfilesLoadError(false);
+    } catch {
+      setProfilesLoadError(true);
+    }
+  };
 
   useEffect(() => {
     if (
@@ -119,6 +141,14 @@ export const AccountSwitcher: FC = () => {
 
   return (
     <div className="account-switcher">
+      {profilesLoadError && (
+        <p role="alert">
+          プロフィールを読み込めませんでした。{" "}
+          <button type="button" onClick={retryLoadProfiles}>
+            再試行
+          </button>
+        </p>
+      )}
       {profiles.length > 0 && (
         <>
           <label htmlFor="profile-select" className="account-switcher-label">

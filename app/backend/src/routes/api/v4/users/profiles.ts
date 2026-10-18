@@ -46,20 +46,33 @@ export const profilesRoute = app
     });
     if (!account?.profile) unauthorized("Profile not provisioned");
 
-    const profile = await prisma.$transaction(async (tx) => {
-      const created = await tx.user.create({
-        data: {
-          name,
-          username,
-          kind: "HUMAN",
-          role: account.profile?.role ?? "USER",
-        },
+    let profile: Awaited<ReturnType<typeof prisma.user.create>>;
+    try {
+      profile = await prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            name,
+            username,
+            kind: "HUMAN",
+            role: account.profile?.role ?? "USER",
+          },
+        });
+        await tx.authProfile.create({
+          data: { authUserId, profileId: created.id },
+        });
+        return created;
       });
-      await tx.authProfile.create({
-        data: { authUserId, profileId: created.id },
-      });
-      return created;
-    });
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "P2002"
+      ) {
+        badRequest("Username already exists");
+      }
+      throw error;
+    }
     return ok(c, { ...filterUser(profile), isDefault: false });
   });
 
