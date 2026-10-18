@@ -87,7 +87,8 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
               key={user.id}
               className="bg-thirdly-background border-border text-text inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm"
             >
-              {user.name}
+              {user.name}{" "}
+              <span className="text-sub-text">@{user.username}</span>
               <button
                 type="button"
                 className="text-sub-text hover:text-text cursor-pointer text-base leading-none"
@@ -120,7 +121,10 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
                 className="text-text hover:bg-thirdly-background block w-full cursor-pointer px-3 py-2.5 text-left"
                 onClick={() => handleSelect(user)}
               >
-                <span className="text-sm">{user.name}</span>
+                <span className="text-sm">
+                  {user.name}{" "}
+                  <span className="text-sub-text">@{user.username}</span>
+                </span>
               </button>
             ))
           ) : (

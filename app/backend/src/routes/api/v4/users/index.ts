@@ -6,6 +6,7 @@ import type { FilteredUser, PaginatedResponse } from "@/@types/models";
 import { filterUser } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
 import { meRoute } from "@/routes/api/v4/users/me";
+import { profilesRoute } from "@/routes/api/v4/users/profiles";
 import { ok } from "@/utils/response/ok";
 import { userRoute } from "./[user]";
 
@@ -68,6 +69,7 @@ export const usersRoute = app
     return ok(c, response);
   })
   .route("/", meRoute)
+  .route("/profiles", profilesRoute)
   .route("/", userRoute);
 
 export const registerUsersRoute = (app: HonoApp) => {
