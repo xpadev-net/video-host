@@ -7,31 +7,47 @@ on:
   pull_request:
     branches:
       - master
+  workflow_dispatch:
 
-env:
-  NODE_VERSION: '22.12.x'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Lint GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/*.yaml
+
   kubernetes-manifests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
         with:
           version: v1.32.0
 
-      - name: Render production Kubernetes manifests
-        run: kubectl kustomize k8s/overlays/prod > /dev/null
+      - name: Render and validate production Kubernetes manifests
+        run: |
+          kubectl kustomize k8s/overlays/prod > /tmp/video-host-prod.yaml
+          go run github.com/yannh/kubeconform/cmd/kubeconform@v0.6.7 \
+            -strict -summary -kubernetes-version 1.32.0 /tmp/video-host-prod.yaml
 
-  # Replaying migrations against a temporary MySQL shadow DB catches schema drift.
-  schema-drift:
+  backend-ci:
     runs-on: ubuntu-latest
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:8.4.11
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: video_host
@@ -43,50 +59,20 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     env:
-      NODE_VERSION: '22.12.x'
       DATABASE_URL: mysql://root:root@127.0.0.1:3306/video_host
       SHADOW_DATABASE_URL: mysql://root:root@127.0.0.1:3306/video_host_shadow
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Create Prisma shadow database
-        run: docker exec "${{ job.services.mysql.id }}" mysql -uroot -proot -e "CREATE DATABASE video_host_shadow;"
-
-      - name: Check migration history matches Prisma schema
-        run: pnpm -F @video-host/backend prisma:schema-check
-
-  # Backend CI
-  backend-ci:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        task: [lint, format:check, typecheck, test]
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          node-version-file: .nvmrc
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -94,72 +80,141 @@ jobs:
       - name: Generate Prisma client
         run: pnpm -F @video-host/backend prisma:generate
 
-      - name: Run ${{ matrix.task }} (backend)
-        run: pnpm -F @video-host/backend ${{ matrix.task }}
+      - name: Validate Prisma schema
+        run: pnpm -F @video-host/backend exec prisma validate
 
-  # Frontend CI
+      - name: Create Prisma shadow database
+        run: docker exec "${{ job.services.mysql.id }}" mysql -uroot -proot -e "CREATE DATABASE video_host_shadow;"
+
+      - name: Check Prisma migration history
+        run: pnpm -F @video-host/backend prisma:schema-check
+
+      - name: Run backend lint
+        run: pnpm -F @video-host/backend lint
+
+      - name: Check backend formatting
+        run: pnpm -F @video-host/backend format:check
+
+      - name: Typecheck backend
+        run: pnpm -F @video-host/backend typecheck
+
+      - name: Test backend
+        run: pnpm -F @video-host/backend test
+
+      - name: Build backend
+        run: pnpm -F @video-host/backend build
+
   frontend-ci:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        task: [lint, format:check, typecheck, build, test]
-    
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          node-version-file: .nvmrc
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build backend
+      - name: Build backend workspace dependency
         run: pnpm -F @video-host/backend build
 
       - name: Copy env placeholder
         run: cp app/frontend/docker/.env.placeholder app/frontend/.env
 
-      - name: Run ${{ matrix.task }} (frontend)
-        run: pnpm -F @video-host/frontend ${{ matrix.task }}
+      - name: Run frontend lint
+        run: pnpm -F @video-host/frontend lint
+
+      - name: Check frontend formatting
+        run: pnpm -F @video-host/frontend format:check
+
+      - name: Typecheck frontend
+        run: pnpm -F @video-host/frontend typecheck
+
+      - name: Build frontend
+        run: pnpm -F @video-host/frontend build
+
+      - name: Test frontend
+        run: pnpm -F @video-host/frontend test
 
       - name: Verify production API proxy
-        if: matrix.task == 'build'
         run: |
           pnpm -F @video-host/frontend test:proxy
           pnpm -F @video-host/frontend test:runtime-env
 
-  # Worker CI
   ffmpeg-worker-ci:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        task: [lint, format:check, typecheck]
-    
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          node-version-file: .nvmrc
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build backend
-        run: pnpm -F @video-host/backend build
+      - name: Run worker lint
+        run: pnpm -F @video-host/ffmpeg-worker lint
 
-      - name: Run ${{ matrix.task }} (worker)
-        run: pnpm -F @video-host/ffmpeg-worker ${{ matrix.task }}
+      - name: Check worker formatting
+        run: pnpm -F @video-host/ffmpeg-worker format:check
+
+      - name: Typecheck worker
+        run: pnpm -F @video-host/ffmpeg-worker typecheck
+
+  docker-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            file: app/backend/Dockerfile
+          - image: frontend
+            file: app/frontend/Dockerfile
+          - image: ffmpeg-worker
+            file: app/ffmpeg-worker/Dockerfile
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Read Docker Node image version
+        id: node-image
+        run: echo "version=$(cat .nvmrc)-bookworm-slim" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Dockerfile Node version matches .nvmrc
+        env:
+          DOCKERFILE: ${{ matrix.file }}
+          NODE_IMAGE_VERSION: ${{ steps.node-image.outputs.version }}
+        run: grep -Fx "ARG NODE_VERSION=$NODE_IMAGE_VERSION" "$DOCKERFILE"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build image for pull request validation
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: video-host/${{ matrix.image }}:ci
+          build-args: NODE_VERSION=${{ steps.node-image.outputs.version }}
+          cache-from: type=gha,scope=ci-${{ matrix.image }}
+          cache-to: type=gha,scope=ci-${{ matrix.image }},mode=max
