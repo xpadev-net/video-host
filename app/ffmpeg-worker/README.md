@@ -31,7 +31,20 @@ Worker logs are JSON with service/version fields. Claimed job logs also include 
 
 See the backend README for callback security and the root README for the local service topology.
 
+## Worker checks
+
+Run the worker lint, formatting, typecheck, and test commands from the repository root. Queue integration tests connect to the Redis URL in `REDIS_URL` (default `redis://127.0.0.1:6379`); start Redis before running them. Invalid numeric settings, boolean flags, and log levels fail at startup with the offending environment variable named in the error.
+
+```sh
+pnpm -F @video-host/ffmpeg-worker lint
+pnpm -F @video-host/ffmpeg-worker format:check
+pnpm -F @video-host/ffmpeg-worker typecheck
+pnpm -F @video-host/ffmpeg-worker test
+```
+
 The worker accepts MP4/MOV, Matroska/WebM, AVI, MPEG-TS/PS, FLV, and ASF inputs up to 3840×2160 and two hours. HLS playlists and concat inputs are rejected; the transcoder also restricts input protocols to local files and crypto wrappers. Outputs are H.264 High/yuv420p at up to 1080p with 48 kHz stereo AAC, and HDR sources are tone-mapped to BT.709.
+
+The worker image pins the Debian Bookworm FFmpeg package and checks that its `zscale` filter is available for HDR tone mapping. Update `FFMPEG_PACKAGE_VERSION` in the Dockerfile when changing that runtime dependency.
 
 ## Retry and dead-letter queues
 

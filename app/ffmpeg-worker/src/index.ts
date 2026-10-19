@@ -1,8 +1,15 @@
 import { execFile } from "node:child_process";
-import { statfs, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { sendCallback } from "./callback";
+import {
+  DISK_SPACE_MARGIN_BYTES,
+  DISK_SPACE_MULTIPLIER,
+  PROCESSING_JOB_HEARTBEAT_MS,
+  RETRY_QUEUE_POLL_INTERVAL_MS,
+} from "./config";
+import { getDiskSpace } from "./disk";
 import {
   cleanup,
   encodeVideo,
@@ -17,7 +24,16 @@ import {
   TEMP_DIR,
 } from "./env";
 import { log, withLogContext } from "./logger";
-import { initOtelMetrics, shutdownOtelMetrics } from "./otel";
+import {
+  callbackFailures,
+  encodeInputBytes,
+  encodeJobDuration,
+  encodeJobs,
+  encodeStageDuration,
+  ffmpegSpeed,
+  retryQueueMoved,
+} from "./metrics";
+import { shutdownOtelMetrics } from "./otel";
 import {
   addJobToDeadLetterQueue,
   addJobToRetryQueue,
@@ -30,17 +46,14 @@ import {
   finishProcessingJob,
   getEncodeProgress,
   getJobCompletion,
-  getQueueDepths,
-  getStaleProcessingJobs,
   MAX_RETRY_COUNT,
-  type ProcessingClaim,
   processRetryQueue,
   refreshProcessingJob,
   releaseProcessingJob,
   requeueProcessingJob,
-  requeueStaleProcessingJob,
   setEncodeProgress,
 } from "./queue";
+import { createReaper } from "./reaper";
 import {
   deleteFromProd,
   deleteFromTmp,
@@ -67,44 +80,6 @@ const writeReadiness = () =>
 log.info("FFmpeg Worker starting...");
 log.info(`Commit Hash: ${process.env.COMMIT_HASH || "unknown"}`);
 
-const meter = initOtelMetrics();
-
-const encodeJobs = meter.createCounter("video_host.encode.jobs", {
-  description: "Encode jobs processed, by terminal result.",
-  unit: "{job}",
-});
-const encodeJobDuration = meter.createHistogram(
-  "video_host.encode.job.duration",
-  {
-    description: "Time spent processing one encode job.",
-    unit: "s",
-  },
-);
-const encodeStageDuration = meter.createHistogram(
-  "video_host.encode.stage.duration",
-  { description: "Time spent in each encode stage.", unit: "s" },
-);
-const encodeInputBytes = meter.createHistogram("video_host.encode.input.size", {
-  description: "Input media size in bytes.",
-  unit: "By",
-});
-const ffmpegSpeed = meter.createHistogram("video_host.encode.speed", {
-  description: "FFmpeg encoding speed relative to realtime.",
-  unit: "x",
-});
-const callbackFailures = meter.createCounter(
-  "video_host.encode.callback.failures",
-  { description: "Failed backend callbacks.", unit: "{callback}" },
-);
-const reaperEvents = meter.createCounter("video_host.encode.reaper.events", {
-  description: "Processing claims recovered by the reaper.",
-  unit: "{claim}",
-});
-const diskSpace = meter.createObservableGauge("video_host.worker.disk.bytes", {
-  description: "Available and total scratch filesystem bytes.",
-  unit: "By",
-});
-
 const sendCallbackObserved = async (
   payload: Parameters<typeof sendCallback>[0],
 ): Promise<Awaited<ReturnType<typeof sendCallback>>> => {
@@ -119,40 +94,8 @@ const sendCallbackObserved = async (
     throw error;
   }
 };
-const retryQueueMoved = meter.createCounter("video_host.encode.queue.moved", {
-  description: "Jobs moved from the retry queue back to the main queue.",
-  unit: "{job}",
-});
-meter
-  .createObservableGauge("video_host.encode.queue.depth", {
-    description: "Jobs waiting in the encode queues.",
-    unit: "{job}",
-  })
-  .addCallback(async (observableResult) => {
-    try {
-      const { main, retry, processing } = await getQueueDepths();
-      observableResult.observe(main, { queue: "main" });
-      observableResult.observe(retry, { queue: "retry" });
-      observableResult.observe(processing, { queue: "processing" });
-    } catch (err) {
-      log.error("Failed to observe encode queue depth:", err);
-    }
-  });
-diskSpace.addCallback(async (observableResult) => {
-  try {
-    const disk = await getDiskSpace();
-    observableResult.observe(disk.availableBytes, {
-      resource: "scratch",
-      state: "available",
-    });
-    observableResult.observe(disk.totalBytes, {
-      resource: "scratch",
-      state: "total",
-    });
-  } catch (err) {
-    log.error("Failed to observe scratch disk space:", err);
-  }
-});
+const { finalizeCommittedClaim, runReaper } =
+  createReaper(sendCallbackObserved);
 
 let isShuttingDown = false;
 
@@ -177,65 +120,6 @@ const SHUTDOWN_SETTLE_TIMEOUT_MS = 10_000;
 // Aborted on shutdown so the in-flight job stops via the normal failure
 // path instead of running alongside a requeued copy on another worker.
 const jobShutdownAbort = new AbortController();
-
-// Claims older than JOB_TIMEOUT + margin belong to a worker that died
-// mid-job (SIGKILL, crash) — live jobs are bounded by the job timeout.
-const PROCESSING_JOB_LEASE_MS = 5 * 60 * 1000;
-const PROCESSING_JOB_HEARTBEAT_MS = 30 * 1000;
-const DISK_SPACE_MARGIN_BYTES = 512 * 1024 * 1024;
-const DISK_SPACE_MULTIPLIER = 2.5;
-let reaperInFlight = false;
-
-const finalizeCommittedClaim = async (
-  member: string,
-  job: EncodeJob,
-  completion: {
-    contentUrl: string;
-    duration?: number;
-    thumbnailKey?: string;
-  },
-): Promise<void> => {
-  await setEncodeProgress(job.movieId, {
-    status: "completed",
-    progress: 100,
-    duration: completion.duration,
-  });
-  const result = await sendCallbackObserved({
-    movieId: job.movieId,
-    variantId: "original",
-    status: "success",
-    s3Key: job.s3Key,
-    contentUrl: completion.contentUrl,
-    duration: completion.duration,
-    thumbnailKey: completion.thumbnailKey,
-  });
-  if (result === "rejected") {
-    await deleteFromProd(job.s3Key).catch((error) =>
-      log.error(
-        `Failed to remove rejected output: movieId=${job.movieId}`,
-        error,
-      ),
-    );
-    await setEncodeProgress(job.movieId, { status: "failed" });
-    await sendCallbackObserved({
-      movieId: job.movieId,
-      variantId: "original",
-      status: "failed",
-      s3Key: job.s3Key,
-    });
-  }
-  await finishProcessingJob(member, job);
-};
-
-const runReaper = async (): Promise<void> => {
-  if (reaperInFlight || isShuttingDown) return;
-  reaperInFlight = true;
-  try {
-    await reapStaleProcessingJobs();
-  } finally {
-    reaperInFlight = false;
-  }
-};
 
 const startLeaseHeartbeat = (
   member: string,
@@ -277,106 +161,6 @@ const stopLeaseHeartbeat = (): void => {
   if (!leaseHeartbeatTimer) return;
   clearInterval(leaseHeartbeatTimer);
   leaseHeartbeatTimer = null;
-};
-
-// Reaper: recover claims whose owner died mid-job. Committed claims carry
-// their outcome (input already deleted, so re-encoding is impossible) and
-// are finalized via progress + callback; others are requeued atomically.
-const reapStaleProcessingJobs = async (): Promise<void> => {
-  const staleMembers = await getStaleProcessingJobs(
-    Date.now() - PROCESSING_JOB_LEASE_MS,
-  );
-  for (const member of staleMembers) {
-    let claim: ProcessingClaim;
-    try {
-      claim = JSON.parse(member) as ProcessingClaim;
-    } catch (err) {
-      log.error("Dropping malformed processing claim:", err);
-      reaperEvents.add(1, { action: "drop_malformed" });
-      await releaseProcessingJob(member).catch(() => {});
-      continue;
-    }
-    await withLogContext(
-      log.child({
-        movieId: claim.job.movieId,
-        claimId: claim.claimId,
-        retryCount: claim.job.retryCount ?? 0,
-        s3Key: claim.job.s3Key,
-      }),
-      async () => {
-        const { job } = claim;
-        // The completion record (24h) is authoritative: it outlives the claim
-        // lease, so a committed outcome is never re-queued as an encode job.
-        const completion =
-          (await getJobCompletion(job.movieId, job.s3Key).catch(() => null)) ??
-          claim.completion;
-        if (!completion) {
-          const progress = await getEncodeProgress(job.movieId).catch(
-            () => null,
-          );
-          if (progress?.status === "failed") {
-            await releaseProcessingJob(member).catch(() => {});
-            return;
-          }
-          if (progress?.status === "completed") {
-            try {
-              await finalizeCommittedClaim(member, job, {
-                contentUrl: getVodContentUrl(job.s3Key),
-                duration: progress.duration,
-              });
-              reaperEvents.add(1, { action: "finalize" });
-              log.info(
-                `Finalized completed job from stale claim: movieId=${job.movieId}`,
-              );
-            } catch (err) {
-              log.error(
-                `Failed to finalize completed stale claim: movieId=${job.movieId}`,
-                err,
-              );
-            }
-            return;
-          }
-        }
-        if (completion) {
-          try {
-            await finalizeCommittedClaim(member, job, completion);
-            reaperEvents.add(1, { action: "finalize" });
-            log.info(`Finalized job from stale claim: movieId=${job.movieId}`);
-          } catch (err) {
-            // Leave the claim in place so a later reap retries it.
-            log.error(
-              `Failed to finalize stale processing claim: movieId=${job.movieId}`,
-              err,
-            );
-          }
-          return;
-        }
-        try {
-          const requeued = await requeueStaleProcessingJob(member);
-          if (requeued) {
-            reaperEvents.add(1, { action: "requeue" });
-            log.info(`Requeued job from stale claim: movieId=${job.movieId}`);
-          }
-        } catch (err) {
-          log.error(
-            `Failed to requeue stale processing claim: movieId=${job.movieId}`,
-            err,
-          );
-        }
-      },
-    );
-  }
-};
-
-const getDiskSpace = async (): Promise<{
-  availableBytes: number;
-  totalBytes: number;
-}> => {
-  const space = await statfs(TEMP_DIR);
-  return {
-    availableBytes: Number(space.bavail) * Number(space.bsize),
-    totalBytes: Number(space.blocks) * Number(space.bsize),
-  };
 };
 
 // "error" marks unexpected processJob rejections (no confirmed terminal
@@ -812,7 +596,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 };
 
 const pollForJobs = async (): Promise<void> => {
-  // Process retry queue periodically (every 10 seconds)
+  // Process retry queue periodically to move due jobs back to the main queue.
   const retryQueueInterval = setInterval(async () => {
     if (!isShuttingDown) {
       try {
@@ -824,14 +608,14 @@ const pollForJobs = async (): Promise<void> => {
         log.error("Error processing retry queue:", error);
       }
       try {
-        await runReaper();
+        await runReaper(isShuttingDown);
       } catch (error) {
         log.error("Error reaping stale processing jobs:", error);
       }
     } else {
       clearInterval(retryQueueInterval);
     }
-  }, 10000);
+  }, RETRY_QUEUE_POLL_INTERVAL_MS);
 
   // Process retry queue once at startup
   try {
@@ -845,7 +629,7 @@ const pollForJobs = async (): Promise<void> => {
 
   // Recover claims left behind by workers that died mid-job.
   try {
-    await runReaper();
+    await runReaper(isShuttingDown);
   } catch (error) {
     log.error("Error reaping stale processing jobs at startup:", error);
   }

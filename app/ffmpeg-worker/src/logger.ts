@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import pino, { type Logger } from "pino";
+import { WorkerEnvSchema } from "./config";
 
 const serviceName = process.env.OTEL_SERVICE_NAME || "video-host-ffmpeg-worker";
 const baseLogger = pino({
@@ -7,7 +8,7 @@ const baseLogger = pino({
     "service.name": serviceName,
     "service.version": process.env.COMMIT_HASH || "unknown",
   },
-  level: process.env.LOG_LEVEL || "info",
+  level: WorkerEnvSchema.shape.LOG_LEVEL.parse(process.env.LOG_LEVEL),
   messageKey: "message",
   timestamp: pino.stdTimeFunctions.isoTime,
 });

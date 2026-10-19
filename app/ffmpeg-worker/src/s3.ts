@@ -148,5 +148,3 @@ export const deleteFromProd = async (s3Key: string): Promise<void> => {
     ),
   );
 };
-
-export { S3_PROD_BUCKET, S3_TMP_BUCKET };
