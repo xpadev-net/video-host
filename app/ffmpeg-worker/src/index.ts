@@ -3,10 +3,10 @@ import { promisify } from "util";
 import { sendCallback } from "./callback";
 import { cleanup, encodeVideo, getLocalPath } from "./encoder";
 import {
+  getVodContentUrl,
   JOB_TIMEOUT_SECONDS,
   MIN_DISK_SPACE_GB,
   TEMP_DIR,
-  getVodContentUrl,
 } from "./env";
 import { getMeter, initOtelMetrics } from "./otel";
 import {
