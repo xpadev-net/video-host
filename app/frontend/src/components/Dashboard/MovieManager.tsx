@@ -1,6 +1,13 @@
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
-import { type FC, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type FC,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   selectedAccountIdAtom,
   selectedProfileIdAtom,
@@ -44,12 +51,12 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const profileIdRef = useRef(selectedProfileId);
   const profileGenerationRef = useRef(0);
   const previousSelectionRef = useRef({ selectedAccountId, selectedProfileId });
+  const dragContextRef = useRef<{
+    profileId: string | null;
+    generation: number;
+  } | null>(null);
   const moviesRef = useRef(movies);
   const mountedRef = useRef(true);
-  if (profileIdRef.current !== selectedProfileId) {
-    profileIdRef.current = selectedProfileId;
-    profileGenerationRef.current += 1;
-  }
   moviesRef.current = movies;
 
   const isCurrentProfileMutation = (
@@ -117,14 +124,18 @@ export const MovieManager: FC<MovieManagerProps> = ({
     void fetchAvailableMovies(selectedProfileId);
   }, [fetchAvailableMovies, selectedProfileId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       previousSelectionRef.current.selectedAccountId === selectedAccountId &&
       previousSelectionRef.current.selectedProfileId === selectedProfileId
     )
       return;
     previousSelectionRef.current = { selectedAccountId, selectedProfileId };
+    profileIdRef.current = selectedProfileId;
+    profileGenerationRef.current += 1;
     setSelectedMovieId("");
+    setDraggedIndex(null);
+    dragContextRef.current = null;
   }, [selectedAccountId, selectedProfileId]);
 
   const handleAddMovie = async () => {
@@ -206,6 +217,10 @@ export const MovieManager: FC<MovieManagerProps> = ({
   };
 
   const handleDragStart = (index: number) => {
+    dragContextRef.current = {
+      profileId: selectedProfileId,
+      generation: profileGenerationRef.current,
+    };
     setDraggedIndex(index);
   };
 
@@ -221,34 +236,52 @@ export const MovieManager: FC<MovieManagerProps> = ({
     setDraggedIndex(index);
   };
 
-  const updateServerOrder = async (ids: string[]) => {
-    if (!session) return;
+  const updateServerOrder = async (
+    ids: string[],
+    profileId: string | null,
+    profileGeneration: number,
+  ) => {
+    if (!session || !isCurrentProfileMutation(profileId, profileGeneration))
+      return;
     try {
       const res =
         entityType === "series"
-          ? await client.api.v4.series[":series"].movies.$patch({
-              param: { series: entityId },
-              json: {
-                movieIds: ids,
+          ? await client.api.v4.series[":series"].movies.$patch(
+              {
+                param: { series: entityId },
+                json: {
+                  movieIds: ids,
+                },
               },
-            })
-          : await client.api.v4.playlists[":playlist"].movies.$patch({
-              param: { playlist: entityId },
-              json: {
-                movieIds: ids,
+              { headers: { "X-Profile-Id": profileId ?? "" } },
+            )
+          : await client.api.v4.playlists[":playlist"].movies.$patch(
+              {
+                param: { playlist: entityId },
+                json: {
+                  movieIds: ids,
+                },
               },
-            });
+              { headers: { "X-Profile-Id": profileId ?? "" } },
+            );
       if (!res.ok) throw new Error("Failed to update order");
     } catch {
+      if (!isCurrentProfileMutation(profileId, profileGeneration)) return;
       notify("並び替えに失敗しました");
       // Could revert here if needed
     }
   };
 
   const handleDragEnd = async () => {
-    if (draggedIndex === null || !session) return;
+    const dragContext = dragContextRef.current;
+    if (draggedIndex === null || !session || !dragContext) return;
     const movieIds = movies.map((m) => m.movie.id);
-    await updateServerOrder(movieIds);
+    dragContextRef.current = null;
+    await updateServerOrder(
+      movieIds,
+      dragContext.profileId,
+      dragContext.generation,
+    );
     setDraggedIndex(null);
   };
 
@@ -261,7 +294,11 @@ export const MovieManager: FC<MovieManagerProps> = ({
     ];
     onMoviesChange(newMovies);
     const movieIds = newMovies.map((m) => m.movie.id);
-    await updateServerOrder(movieIds);
+    await updateServerOrder(
+      movieIds,
+      selectedProfileId,
+      profileGenerationRef.current,
+    );
   };
 
   const handleMoveDown = async (index: number) => {
@@ -273,7 +310,11 @@ export const MovieManager: FC<MovieManagerProps> = ({
     ];
     onMoviesChange(newMovies);
     const movieIds = newMovies.map((m) => m.movie.id);
-    await updateServerOrder(movieIds);
+    await updateServerOrder(
+      movieIds,
+      selectedProfileId,
+      profileGenerationRef.current,
+    );
   };
 
   return (
