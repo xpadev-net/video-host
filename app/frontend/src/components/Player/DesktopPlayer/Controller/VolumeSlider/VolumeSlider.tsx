@@ -12,14 +12,15 @@ import {
   PlayerVolumeAtom,
   VideoRefAtom,
 } from "@/atoms/Player";
-import { effectiveVolume } from "@/utils/volume";
 
 const VolumeSlider = () => {
   const videoRef = useAtomValue(VideoRefAtom);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const storedVolume = useAtomValue(PlayerVolumeAtom);
+  // The retained level stays visible and announced while muted (the icon and
+  // aria-valuetext say it is muted): the arrow keys adjust that same level, so
+  // what is shown is what the next key press changes.
+  const configVolume = useAtomValue(PlayerVolumeAtom);
   const muted = useAtomValue(PlayerMutedAtom);
-  const configVolume = effectiveVolume(storedVolume, muted);
   const [isDragging, setIsDragging] = useState(false);
 
   const updateVolume = useCallback(
@@ -84,10 +85,11 @@ const VolumeSlider = () => {
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(configVolume * 100)}
+      aria-valuetext={muted ? "ミュート中" : undefined}
     >
       <div className="absolute top-5 -translate-y-1/2 w-full h-1 bg-white/20 rounded-full overflow-hidden">
         <div
-          className="absolute top-0 left-0 h-1 rounded-full bg-white"
+          className={`absolute top-0 left-0 h-1 rounded-full bg-white ${muted ? "opacity-40" : ""}`}
           style={{
             width: `${configVolume * 100}%`,
           }}

@@ -33,19 +33,34 @@ const PlayerStateAtom = atom<PlayerState>({
 // "autoPlay" was renamed to "autoPlayNext" (it only ever meant "play the next
 // movie"). Keep the value people already chose when reading older storage.
 const baseConfigStorage = createJSONStorage<PlayerConfig>();
+
+const migrateConfig = (stored: PlayerConfig): PlayerConfig => {
+  const legacy = stored as PlayerConfig & Partial<{ autoPlay: boolean }>;
+  if (!legacy || typeof legacy !== "object" || !("autoPlay" in legacy)) {
+    return stored;
+  }
+  const { autoPlay, ...rest } = legacy;
+  return { ...rest, autoPlayNext: rest.autoPlayNext ?? autoPlay ?? true };
+};
+
 const playerConfigStorage = {
   ...baseConfigStorage,
-  getItem: (key: string, initialValue: PlayerConfig): PlayerConfig => {
-    const stored = baseConfigStorage.getItem(
-      key,
-      initialValue,
-    ) as PlayerConfig & Partial<{ autoPlay: boolean }>;
-    if (!stored || typeof stored !== "object" || !("autoPlay" in stored)) {
-      return stored;
-    }
-    const { autoPlay, ...rest } = stored;
-    return { ...rest, autoPlayNext: rest.autoPlayNext ?? autoPlay ?? true };
-  },
+  getItem: (key: string, initialValue: PlayerConfig): PlayerConfig =>
+    migrateConfig(baseConfigStorage.getItem(key, initialValue)),
+  // Updates written by another tab still on the old release arrive here, not
+  // through getItem, so they need the same migration.
+  subscribe: baseConfigStorage.subscribe
+    ? (
+        key: string,
+        callback: (value: PlayerConfig) => void,
+        initialValue: PlayerConfig,
+      ) =>
+        baseConfigStorage.subscribe?.(
+          key,
+          (value) => callback(migrateConfig(value)),
+          initialValue,
+        ) ?? (() => undefined)
+    : undefined,
 };
 
 const PlayerConfigAtom = atomWithStorage<PlayerConfig>(
