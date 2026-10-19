@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseWorkerEnv } from "./config";
+import { parseLogLevel, parseWorkerEnv } from "./config";
 
 test("worker environment applies documented defaults", () => {
   const env = parseWorkerEnv(
@@ -63,6 +63,22 @@ test("invalid numeric values fail with the offending environment name", () => {
       ),
     /FFMPEG_THREADS/,
   );
+});
+
+test("whitespace numeric settings use defaults and log level errors name the variable", () => {
+  const env = parseWorkerEnv(
+    {
+      NODE_ENV: "development",
+      MIN_DISK_SPACE_GB: "   ",
+      JOB_TIMEOUT_SECONDS: "  ",
+      FFMPEG_THREADS: "  ",
+    },
+    2,
+  );
+  assert.equal(env.MIN_DISK_SPACE_GB, 1);
+  assert.equal(env.JOB_TIMEOUT_SECONDS, 7200);
+  assert.equal(env.FFMPEG_THREADS, 2);
+  assert.throws(() => parseLogLevel("verbose"), /LOG_LEVEL/);
 });
 
 test("production requires a callback secret and flags reject unknown values", () => {

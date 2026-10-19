@@ -23,9 +23,12 @@ const optionalText = z
   .optional()
   .transform((value) => value?.trim() || undefined);
 
-const integer = (minimum: number) =>
+const integer = (minimum: number, fallback: number) =>
   z.preprocess(
-    (value) => (value === "" || value === undefined ? undefined : value),
+    (value) =>
+      value === undefined || (typeof value === "string" && value.trim() === "")
+        ? fallback
+        : value,
     z.coerce.number().int().min(minimum).finite(),
   );
 
@@ -70,11 +73,11 @@ export const WorkerEnvSchema = z.object({
   BACKEND_CALLBACK_URL: optionalText,
   CALLBACK_SECRET: optionalText,
   VOD_BASE_URL: text("http://localhost:3002"),
-  POLL_INTERVAL_MS: integer(1).default(5000),
+  POLL_INTERVAL_MS: integer(1, 5000),
   TEMP_DIR: text("/tmp/ffmpeg-worker"),
-  MIN_DISK_SPACE_GB: integer(0).default(1),
-  JOB_TIMEOUT_SECONDS: integer(1).default(7200),
-  FFMPEG_THREADS: integer(1).optional(),
+  MIN_DISK_SPACE_GB: integer(0, 1),
+  JOB_TIMEOUT_SECONDS: integer(1, 7200),
+  FFMPEG_THREADS: integer(1, 1),
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal", "silent"])
     .default("info"),
@@ -82,6 +85,19 @@ export const WorkerEnvSchema = z.object({
   OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: optionalText,
   OTEL_SERVICE_NAME: optionalText,
 });
+
+export const parseLogLevel = (value: string | undefined) => {
+  const result = WorkerEnvSchema.shape.LOG_LEVEL.safeParse(value);
+  if (!result.success) {
+    const message = result.error.issues
+      .map((issue) => issue.message)
+      .join(", ");
+    throw new Error(`Invalid worker environment:\nLOG_LEVEL: ${message}`, {
+      cause: result.error,
+    });
+  }
+  return result.data;
+};
 
 export type WorkerEnv = Omit<
   z.infer<typeof WorkerEnvSchema>,
@@ -100,7 +116,9 @@ export const parseWorkerEnv = (
   try {
     parsed = WorkerEnvSchema.parse({
       ...source,
-      FFMPEG_THREADS: source.FFMPEG_THREADS || defaultThreads,
+      FFMPEG_THREADS: source.FFMPEG_THREADS?.trim()
+        ? source.FFMPEG_THREADS
+        : defaultThreads,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

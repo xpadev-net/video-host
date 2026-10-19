@@ -17,6 +17,7 @@ RUN pnpm --filter @video-host/ffmpeg-worker build
 RUN pnpm --filter @video-host/ffmpeg-worker --prod deploy --legacy /prod/worker
 
 FROM node:${NODE_VERSION} AS runner
+ARG FFMPEG_PACKAGE_VERSION
 ARG COMMIT_HASH
 ENV COMMIT_HASH=$COMMIT_HASH
 LABEL org.opencontainers.image.source=https://github.com/xpadev-net/video-host
