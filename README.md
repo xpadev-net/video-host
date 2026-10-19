@@ -31,7 +31,7 @@ cp app/frontend/.env.example app/frontend/.env
 
 Set `DATABASE_URL` in `app/backend/.env` to the Compose database (`mysql://video_host:video_host@127.0.0.1:3306/video_host`). Keep `CALLBACK_SECRET` the same in backend and worker files. The root `.env` configures Compose; the root `.env.example` is also a combined reference for environment managers, and pnpm package processes do not load it automatically. Then apply migrations and start services in separate terminals:
 
-The local backend and worker examples use SeaweedFS's S3-compatible endpoint at `http://localhost:8333` with the local `admin` / `secret` sample credentials. The VOD container forwards signed URLs to `object-storage:8333` and preserves the signed `Host`. If you change `S3_ENDPOINT`, update both proxy targets and the `Host` header in `nginx/nginx.conf` to match it.
+The local backend and worker examples use SeaweedFS's S3-compatible endpoint at `http://localhost:8333` with the local `admin` / `secret` sample credentials. Compose renders the canonical VOD Nginx template from `k8s/base/vod/nginx.conf.template`, using `VOD_INTERNAL_SECRET` from the root `.env` file. Keep that value identical to `VOD_INTERNAL_SECRET` in `app/backend/.env`; the package process does not read the root `.env`. Use only letters, digits, hyphens, and underscores in this secret. If you change `S3_ENDPOINT`, update the VOD renderer settings in `docker-compose.yml` as well.
 
 ```sh
 pnpm -F @video-host/backend prisma:generate

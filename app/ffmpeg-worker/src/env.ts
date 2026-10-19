@@ -37,8 +37,7 @@ export const S3_FORCE_PATH_STYLE = process.env.S3_FORCE_PATH_STYLE === "true";
 
 // Backend callback
 export const BACKEND_CALLBACK_URL =
-  process.env.BACKEND_CALLBACK_URL ||
-  "http://localhost:3001/api/v4/callback/encode-complete";
+  process.env.BACKEND_CALLBACK_URL || "http://localhost:3001";
 export const CALLBACK_SECRET = requireEnv(
   "CALLBACK_SECRET",
   "dev-callback-secret",
@@ -46,6 +45,11 @@ export const CALLBACK_SECRET = requireEnv(
 
 // VOD streaming
 export const VOD_BASE_URL = process.env.VOD_BASE_URL || "http://localhost:3002";
+export const getVodContentUrl = (s3Key: string): string => {
+  const origin = VOD_BASE_URL.replace(/\/+$/, "").replace(/\/vod$/i, "");
+  const encodedKey = s3Key.split("/").map(encodeURIComponent).join("/");
+  return `${origin}/vod/${encodedKey}/master.m3u8`;
+};
 
 // Worker settings
 export const POLL_INTERVAL_MS = parseInt(

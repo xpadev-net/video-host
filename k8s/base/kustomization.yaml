@@ -15,6 +15,12 @@ resources:
   - networking.yaml
   - availability.yaml
 
+configMapGenerator:
+  - name: vod-nginx-config
+    files:
+      - nginx.conf=vod/nginx.conf.template
+      - render-nginx-config.sh=vod/render-nginx-config.sh
+
 labels:
   - pairs:
       app.kubernetes.io/part-of: video-host

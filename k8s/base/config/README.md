@@ -18,7 +18,8 @@ deployment secret store). Create the fixed names `backend-secrets`,
 keys listed in the `*-secrets.sample.yaml` files. Those sample files contain
 placeholders only and must never be applied. `stringData` accepts clear text;
 do not commit populated copies. The backend and VOD `vod-internal-secret` keys
-must have the same random value.
+must have the same random value. Use only letters, digits, hyphens, and
+underscores so the secret can be safely inserted into the Nginx configuration.
 
 MySQL, Redis, and an S3-compatible service are external dependencies and are
 not created by these manifests. Ensure their configured DNS names and ports
@@ -33,21 +34,21 @@ restrict application ingress.
 For a standalone base install, use the sample files as templates to create the
 required ConfigMaps and Secrets. Do not apply these sample ConfigMaps on top of
 the production overlay; that would create a second source of configuration.
-The sample defaults refer to `mysql`, `redis`, and `minio` DNS names, which must
-be provided by your cluster or changed to your external service endpoints.
+The sample defaults refer to `mysql`, `redis`, and `object-storage` DNS names,
+which must be provided by your cluster or changed to your external service endpoints.
 
 ## VOD ingress and configuration
 
-`nginx/nginx.conf` is mounted by the local `docker-compose.yml` for development
-and is not the Kubernetes configuration. `vod-nginx-config.sample.yaml` is the ConfigMap template used by the VOD
-Deployment. The nginx container runs as UID 101 and listens on port 8080; its
-Service exposes port 80. The Ingress terminates public TLS and routes `/vod/*`
-to that Service. The worker's `vod-base-url` defaults to the public Ingress
+`k8s/base/vod/nginx.conf.template` is the canonical template used by both local
+Compose and Kubernetes. `render-nginx-config.sh` renders it with the deployment's
+secret and S3 settings. The nginx container runs as UID 101 and listens on port
+8080; its Service exposes port 80. The Ingress terminates public TLS and routes
+`/vod/*` to that Service. The worker's `vod-base-url` is the public Ingress
 origin without a trailing `/vod` path; keep it aligned with the Ingress host.
 
-The production overlay generates the VOD ConfigMap from `k8s/overlays/prod/nginx.conf`.
-It routes mapping requests to `backend:3000` and reconstructs presigned S3
-upstreams from the backend ConfigMap's endpoint, region, bucket, and path-style
+The base Kustomize config generates the VOD ConfigMap from the canonical
+template. It routes mapping requests to `/api/v4/vod/mapping/` on
+`backend:3000` and reconstructs presigned S3 upstreams from the backend ConfigMap's endpoint, region, bucket, and path-style
 settings. Virtual-hosted S3 URLs add the bucket to the upstream host; path-style
 URLs retain the bucket in the URI. For HTTPS buckets with dots, the init
 container selects path-style to match the AWS SDK's certificate behavior. Keep
