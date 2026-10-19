@@ -30,7 +30,7 @@ data:
   s3-tmp-bucket: "video-tmp"
   s3-prod-bucket: "video-prod"
   s3-region: "ap-northeast-1"
-  s3-endpoint: "http://minio:9000"  # MinIOのService名・ポートに合わせる
+  s3-endpoint: "http://object-storage:8333"  # SeaweedFS S3 service
   s3-force-path-style: "true"
   # Redis
   redis-url: "redis://redis:6379"

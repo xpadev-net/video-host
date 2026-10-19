@@ -1,6 +1,6 @@
-user root;
+user 101 101;
 worker_processes auto;
-error_log /dev/stderr debug;
+error_log /dev/stderr warn;
 pid /tmp/nginx.pid;
 
 events {
@@ -8,7 +8,6 @@ events {
 }
 
 http {
-    # Temporary directories for distroless image
     client_body_temp_path /tmp/client_temp;
     proxy_temp_path /tmp/proxy_temp;
     fastcgi_temp_path /tmp/fastcgi_temp;
@@ -16,8 +15,8 @@ http {
     scgi_temp_path /tmp/scgi_temp;
 
     default_type application/octet-stream;
+    server_tokens off;
 
-    # Basic MIME types for VOD streaming
     types {
         text/html html htm shtml;
         text/css css;
@@ -42,17 +41,15 @@ http {
     tcp_nodelay on;
     keepalive_timeout 65;
     types_hash_max_size 2048;
-
     client_max_body_size 100M;
 
-    # VOD module settings - Mapped mode
     vod_mode mapped;
     vod_upstream_location /mapping;
     vod_remote_upstream_location /proxy;
     vod_last_modified 'Sun, 19 Nov 2000 08:52:00 GMT';
     vod_last_modified_types *;
-    vod_metadata_cache metadata_cache 256m;
-    vod_response_cache response_cache 128m;
+    vod_metadata_cache metadata_cache 64m;
+    vod_response_cache response_cache 32m;
     vod_mapping_cache mapping_cache 5m;
     vod_manifest_segment_durations_mode accurate;
     vod_segment_duration 10000;
@@ -60,79 +57,89 @@ http {
 
     gzip on;
     gzip_types application/vnd.apple.mpegurl;
-
     open_file_cache max=1000 inactive=5m;
     open_file_cache_valid 2m;
     open_file_cache_min_uses 1;
     open_file_cache_errors on;
     aio on;
 
-    # Resolver for proxy_pass with variables
-    resolver 127.0.0.11 ipv6=off valid=10s;
+    resolver ${DNS_RESOLVER} ipv6=off valid=10s;
 
     server {
-        listen 80;
+        listen ${LISTEN_PORT};
         server_name localhost;
+        server_tokens off;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
 
-        # Health check endpoint
         location /health {
             access_log off;
             return 200 "healthy\n";
             add_header Content-Type text/plain;
         }
 
-        # Backend mapping endpoint
         location /mapping/vod/ {
             internal;
-            proxy_pass http://host.docker.internal:3001/api/v4/vod/mapping/;
+            proxy_pass ${BACKEND_MAPPING_UPSTREAM};
             proxy_set_header Host $http_host;
-            proxy_set_header X-Vod-Internal-Secret "dev-vod-internal-secret";
+            proxy_set_header X-Vod-Internal-Secret "${VOD_INTERNAL_SECRET}";
+            proxy_connect_timeout 5s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
         }
 
-        # Remote proxy for presigned S3 URLs# 今の /proxy/(.+) 正規表現をやめ、プレフィックスで処理する
         location ~ ^/proxy/(.+)$ {
             internal;
             set $backend_uri $1;
+            set $s3_scheme "${S3_PROXY_SCHEME}";
+            set $s3_host "${S3_PROXY_HOST}";
+            set $s3_signed_host "${S3_SIGNED_HOST}";
 
-            # path 内の %3F を見つけたら左右に分割
             if ($backend_uri ~ "^(.*)%3F(.*)$") {
                 set $path_part $1;
                 set $qs_part $2;
             }
 
-            # %3F が無ければそのまま、あれば ?qs を付ける
             if ($qs_part = "") {
-                proxy_pass http://object-storage:8333/$backend_uri;
+                proxy_pass $s3_scheme://$s3_host/$backend_uri;
             }
             if ($qs_part != "") {
-                proxy_pass http://object-storage:8333/$path_part?$qs_part;
+                proxy_pass $s3_scheme://$s3_host/$path_part?$qs_part;
             }
 
             proxy_set_header Cookie "";
             proxy_set_header Authorization "";
-            # The S3 client signs localhost URLs; keep the signed host on the internal proxy hop.
-            proxy_set_header Host localhost:8333;
+            proxy_set_header Host $s3_signed_host;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_connect_timeout 5s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+            proxy_ssl_server_name on;
+            proxy_ssl_name $s3_host;
+            proxy_ssl_verify on;
+            proxy_ssl_trusted_certificate ${S3_CA_BUNDLE};
+            proxy_ssl_verify_depth 5;
         }
 
-        # VOD HLS endpoint
         location /vod/ {
             vod hls;
-            vod_segment_duration 10000;
-            
-            # CORS headers
-            add_header 'Access-Control-Allow-Origin' '*' always;
-            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'Origin, Content-Type, Accept, Range, Authorization' always;
-            add_header 'Access-Control-Expose-Headers' 'Content-Length, Content-Range' always;
+            add_header Access-Control-Allow-Origin '*' always;
+            add_header Access-Control-Allow-Methods 'GET, OPTIONS' always;
+            add_header Access-Control-Allow-Headers 'Origin, Content-Type, Accept, Range, Authorization' always;
+            add_header Access-Control-Expose-Headers 'Content-Length, Content-Range' always;
+            add_header X-Content-Type-Options nosniff always;
+            add_header Referrer-Policy no-referrer always;
 
-            # Handle OPTIONS for CORS preflight
-            if ($request_method = 'OPTIONS') {
-                add_header 'Access-Control-Allow-Origin' '*';
-                add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS';
-                add_header 'Access-Control-Allow-Headers' 'Origin, Content-Type, Accept, Range, Authorization';
-                add_header 'Access-Control-Max-Age' 1728000;
-                add_header 'Content-Type' 'text/plain charset=UTF-8';
-                add_header 'Content-Length' 0;
+            if ($request_method = OPTIONS) {
+                add_header Access-Control-Allow-Origin '*';
+                add_header Access-Control-Allow-Methods 'GET, OPTIONS';
+                add_header Access-Control-Allow-Headers 'Origin, Content-Type, Accept, Range, Authorization';
+                add_header Access-Control-Max-Age 1728000;
+                add_header Content-Type 'text/plain charset=UTF-8';
+                add_header Content-Length 0;
+                add_header X-Content-Type-Options nosniff always;
+                add_header Referrer-Policy no-referrer always;
                 return 204;
             }
 

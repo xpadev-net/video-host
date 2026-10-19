@@ -6,7 +6,7 @@ import {
   JOB_TIMEOUT_SECONDS,
   MIN_DISK_SPACE_GB,
   TEMP_DIR,
-  VOD_BASE_URL,
+  getVodContentUrl,
 } from "./env";
 import { getMeter, initOtelMetrics } from "./otel";
 import {
@@ -129,7 +129,7 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
             variantId: "original",
             status: "success",
             s3Key: job.s3Key,
-            contentUrl: `${VOD_BASE_URL}/vod/${job.s3Key}/master.m3u8`,
+            contentUrl: getVodContentUrl(job.s3Key),
             duration: progress.duration,
           });
           await finishProcessingJob(member, job.movieId);
@@ -398,7 +398,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     await deleteFromTmp(job.s3Key);
 
     // Generate content URL for VOD streaming
-    const contentUrl = `${VOD_BASE_URL}/vod/${job.s3Key}/master.m3u8`;
+    const contentUrl = getVodContentUrl(job.s3Key);
 
     // The input is gone: if this worker dies now the job can no longer be
     // re-encoded, so mark the claim with its outcome for the reaper. A

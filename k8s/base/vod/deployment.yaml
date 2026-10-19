@@ -38,59 +38,19 @@ spec:
               drop: [ALL]
           command:
             - /bin/sh
-            - -c
-            - |
-              cp /etc/ssl/cert.pem /etc/nginx/ssl/ca-certificates.crt
-              DNS_RESOLVER="$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf)"
-              if [ -z "$DNS_RESOLVER" ]; then
-                echo "No DNS resolver found in /etc/resolv.conf" >&2
-                exit 1
-              fi
-              case "$DNS_RESOLVER" in
-                *:*) DNS_RESOLVER="[$DNS_RESOLVER]" ;;
-              esac
-              export DNS_RESOLVER
-              if [ -n "$S3_ENDPOINT" ]; then
-                S3_PROXY_SCHEME="${S3_ENDPOINT%%://*}"
-                S3_PROXY_HOST="${S3_ENDPOINT#*://}"
-                S3_PROXY_HOST="${S3_PROXY_HOST%%/*}"
-              else
-                S3_PROXY_SCHEME=https
-                S3_PROXY_HOST="s3.${S3_REGION}.amazonaws.com"
-              fi
-              S3_USE_PATH_STYLE="$S3_FORCE_PATH_STYLE"
-              S3_BUCKET_HOSTABLE=true
-              case "$S3_PROD_BUCKET" in
-                [a-z0-9]*[a-z0-9]) ;;
-                *) S3_BUCKET_HOSTABLE=false ;;
-              esac
-              case "$S3_PROD_BUCKET" in
-                *[!a-z0-9.-]*|*..*|.*|*.) S3_BUCKET_HOSTABLE=false ;;
-              esac
-              if [ "${#S3_PROD_BUCKET}" -gt 63 ]; then
-                S3_BUCKET_HOSTABLE=false
-              fi
-              case "$S3_PROD_BUCKET" in
-                *.*)
-                  if [ "$S3_PROXY_SCHEME" = "https" ]; then
-                    S3_USE_PATH_STYLE=true
-                  fi
-                  ;;
-              esac
-              if [ "$S3_BUCKET_HOSTABLE" != "true" ]; then
-                S3_USE_PATH_STYLE=true
-              fi
-              if [ "$S3_USE_PATH_STYLE" != "true" ]; then
-                S3_PROXY_HOST="${S3_PROD_BUCKET}.${S3_PROXY_HOST}"
-              fi
-              export S3_PROXY_SCHEME S3_PROXY_HOST
-              envsubst '${VOD_INTERNAL_SECRET} ${S3_PROXY_SCHEME} ${S3_PROXY_HOST} ${DNS_RESOLVER}' < /etc/nginx/template/nginx.conf > /etc/nginx/rendered/nginx.conf
+            - /etc/nginx/template/render-nginx-config.sh
           env:
             - name: VOD_INTERNAL_SECRET
               valueFrom:
                 secretKeyRef:
                   name: vod-secrets
                   key: vod-internal-secret
+            - name: BACKEND_MAPPING_UPSTREAM
+              value: http://backend:3000/api/v4/vod/mapping/
+            - name: LISTEN_PORT
+              value: "8080"
+            - name: S3_CA_BUNDLE
+              value: /etc/nginx/ssl/ca-certificates.crt
             - name: S3_ENDPOINT
               valueFrom:
                 configMapKeyRef:
@@ -132,12 +92,6 @@ spec:
           ports:
             - containerPort: 8080
               protocol: TCP
-          env:
-            - name: VOD_INTERNAL_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: vod-secrets
-                  key: vod-internal-secret
           volumeMounts:
             - name: nginx-config-rendered
               mountPath: /etc/nginx/nginx.conf

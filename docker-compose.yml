@@ -66,18 +66,47 @@ services:
       object-storage:
         condition: service_healthy
 
+  vod-config:
+    image: nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
+    user: "0:0"
+    entrypoint: ["/bin/sh", "/etc/nginx/template/render-nginx-config.sh"]
+    environment:
+      VOD_INTERNAL_SECRET: ${VOD_INTERNAL_SECRET:?Set VOD_INTERNAL_SECRET in the root .env file}
+      BACKEND_MAPPING_UPSTREAM: http://host.docker.internal:3001/api/v4/vod/mapping/
+      LISTEN_PORT: "80"
+      DNS_RESOLVER: 127.0.0.11
+      S3_PROXY_SCHEME: http
+      S3_PROXY_HOST: object-storage:8333
+      S3_SIGNED_HOST: localhost:8333
+      S3_PROD_BUCKET: video-prod
+      S3_FORCE_PATH_STYLE: "true"
+      S3_REGION: ${S3_REGION:-ap-northeast-1}
+      S3_CA_BUNDLE: /etc/nginx/ssl/ca-certificates.crt
+    volumes:
+      - ./k8s/base/vod/nginx.conf.template:/etc/nginx/template/nginx.conf:ro
+      - ./k8s/base/vod/render-nginx-config.sh:/etc/nginx/template/render-nginx-config.sh:ro
+      - vod-config-rendered:/etc/nginx/rendered
+      - vod-ca:/etc/nginx/ssl
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   # VOD streaming server (nginx-vod-module)
   vod:
     image: ghcr.io/xpadev-net/nginx-vod-module-docker@sha256:f6adc8d8c94ee38726d3c2ffdcb637f3622f2404bbc4654242da4025970aa5ff
     platform: linux/amd64
+    user: "101:101"
     container_name: video-host-vod
     ports:
       - "127.0.0.1:3002:80"
+    command: ["-c", "/etc/nginx/rendered/nginx.conf", "-g", "daemon off;"]
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - vod-config-rendered:/etc/nginx/rendered:ro
+      - vod-ca:/etc/nginx/ssl:ro
     depends_on:
       object-storage:
         condition: service_healthy
+      vod-config:
+        condition: service_completed_successfully
     extra_hosts:
       # Lets the container reach the backend when it runs directly on the host, including Linux.
       - "host.docker.internal:host-gateway"
@@ -87,3 +116,5 @@ volumes:
   redis-data:
   mysql-data:
   object-storage-data:
+  vod-config-rendered:
+  vod-ca:
