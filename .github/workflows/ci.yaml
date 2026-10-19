@@ -221,3 +221,77 @@ jobs:
           build-args: NODE_VERSION=${{ steps.node-image.outputs.version }}
           cache-from: type=gha,scope=ci-${{ matrix.image }}
           cache-to: type=gha,scope=ci-${{ matrix.image }},mode=max
+
+  docker-start-smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            file: app/backend/Dockerfile
+            expected-command: ./start.mjs
+            entrypoint-override: ./start.sh
+          - image: frontend
+            file: app/frontend/Dockerfile
+            expected-command: app/frontend/.output/server/index.mjs
+            entrypoint-override: image
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Read Docker Node image version
+        id: node-image
+        run: echo "version=$(cat .nvmrc)-bookworm-slim" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build amd64 image for startup smoke
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: video-host/${{ matrix.image }}:start-smoke
+          build-args: NODE_VERSION=${{ steps.node-image.outputs.version }}
+          cache-from: type=gha,scope=ci-${{ matrix.image }}
+          cache-to: type=gha,scope=start-smoke-${{ matrix.image }},mode=max
+
+      - name: Smoke-test the exec-form startup script
+        env:
+          IMAGE: video-host/${{ matrix.image }}:start-smoke
+          EXPECTED_COMMAND: ${{ matrix.expected-command }}
+          ENTRYPOINT_OVERRIDE: ${{ matrix.entrypoint-override }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/video-host-smoke-bin
+          cat > /tmp/video-host-smoke-bin/node <<'EOF'
+          #!/usr/bin/env sh
+          if [ "$#" -eq 0 ]; then
+            exec /usr/local/bin/node
+          fi
+          printf 'node pid: %s\n' "$$"
+          printf 'node invoked with args:'
+          printf ' %s' "$@"
+          printf '\n'
+          EOF
+          chmod +x /tmp/video-host-smoke-bin/node
+          if [ "$ENTRYPOINT_OVERRIDE" = image ]; then
+            docker run --rm \
+              --env COMMIT_HASH=start-smoke \
+              --env PATH=/smoke-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+              --volume /tmp/video-host-smoke-bin:/smoke-bin:ro \
+              "$IMAGE" | tee /tmp/video-host-start-smoke.log
+          else
+            docker run --rm \
+              --env COMMIT_HASH=start-smoke \
+              --env PATH=/smoke-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+              --volume /tmp/video-host-smoke-bin:/smoke-bin:ro \
+              --entrypoint "$ENTRYPOINT_OVERRIDE" \
+              "$IMAGE" | tee /tmp/video-host-start-smoke.log
+          fi
+          grep -Fx 'node pid: 1' /tmp/video-host-start-smoke.log
+          grep -Fx "node invoked with args: $EXPECTED_COMMAND" /tmp/video-host-start-smoke.log
