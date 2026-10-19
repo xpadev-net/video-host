@@ -40,6 +40,36 @@ function runChild(command, args) {
   });
 }
 
+function keepConnectionActive(connection, intervalMs) {
+  let heartbeatError;
+  let heartbeatInFlight;
+  const timer = setInterval(() => {
+    if (heartbeatInFlight || heartbeatError) {
+      return;
+    }
+    heartbeatInFlight = connection
+      .query("SELECT 1")
+      .catch((error) => {
+        heartbeatError = error;
+        activeChild?.kill("SIGTERM");
+      })
+      .finally(() => {
+        heartbeatInFlight = undefined;
+      });
+  }, intervalMs);
+  timer.unref();
+
+  return {
+    get error() {
+      return heartbeatError;
+    },
+    async stop() {
+      clearInterval(timer);
+      await heartbeatInFlight;
+    },
+  };
+}
+
 try {
   console.info("Waiting for the database migration lock");
   const databaseUrl = new URL(process.env.DATABASE_URL);
@@ -105,8 +135,25 @@ try {
     }
     lockAcquired = true;
 
-    console.info("Applying database migrations");
-    await runChild("./node_modules/.bin/prisma", ["migrate", "deploy"]);
+    const [settings] = await connection.query(
+      "SELECT @@SESSION.wait_timeout AS wait_timeout",
+    );
+    const waitTimeoutSeconds = Number(settings[0]?.wait_timeout);
+    const heartbeatIntervalMs = waitTimeoutSeconds
+      ? Math.max(100, Math.min(30_000, Math.floor(waitTimeoutSeconds * 500)))
+      : 30_000;
+    const heartbeat = keepConnectionActive(connection, heartbeatIntervalMs);
+    try {
+      console.info("Applying database migrations");
+      await runChild("./node_modules/.bin/prisma", ["migrate", "deploy"]);
+    } finally {
+      await heartbeat.stop();
+    }
+    if (heartbeat.error) {
+      throw new Error("Lost the database migration lock connection", {
+        cause: heartbeat.error,
+      });
+    }
   } finally {
     try {
       if (lockAcquired) {
