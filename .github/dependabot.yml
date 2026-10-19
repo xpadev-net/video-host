@@ -17,18 +17,3 @@ updates:
         dependency-type: production
       development-dependencies:
         dependency-type: development
-
-  - package-ecosystem: docker
-    directory: /app/backend
-    schedule:
-      interval: weekly
-
-  - package-ecosystem: docker
-    directory: /app/frontend
-    schedule:
-      interval: weekly
-
-  - package-ecosystem: docker
-    directory: /app/ffmpeg-worker
-    schedule:
-      interval: weekly

@@ -67,4 +67,6 @@ To prepare a release, use **Actions → Release → Run workflow**. Choose the v
 
 ## Security
 
+Dependabot groups weekly npm and GitHub Actions updates. Renovate groups the `.nvmrc` and Docker Node base versions so runtime upgrades stay aligned.
+
 Please report suspected vulnerabilities privately. See [SECURITY.md](SECURITY.md) for the reporting process.

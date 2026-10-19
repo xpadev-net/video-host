@@ -34,10 +34,6 @@ on:
       - frontend-v*
       - ffmpeg-worker-v*
 
-concurrency:
-  group: release-publication
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
@@ -76,7 +72,11 @@ jobs:
         run: |
           set -euo pipefail
           BRANCH="release/versions-${GITHUB_RUN_ID}"
-          node <<'NODE'
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$BRANCH:refs/remotes/origin/$BRANCH"
+            git switch --track -c "$BRANCH" "origin/$BRANCH"
+          else
+            node <<'NODE'
           const fs = require('node:fs');
           const packages = [
             ['RELEASE_BACKEND', 'app/backend/package.json'],
@@ -99,22 +99,28 @@ jobs:
           }
           NODE
 
-          git switch -c "$BRANCH"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add app/backend/package.json app/frontend/package.json app/ffmpeg-worker/package.json
-          git commit -m "chore(release): bump selected package versions"
-          git push origin "$BRANCH"
+            git switch -c "$BRANCH"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add app/backend/package.json app/frontend/package.json app/ffmpeg-worker/package.json
+            git commit -m "chore(release): bump selected package versions"
+            git push origin "$BRANCH"
+          fi
 
           cat > /tmp/release-pr.md <<'EOF'
           <!-- video-host-release -->
           This version bump was prepared by the Release workflow. Review CI before merging. Merging this PR builds the selected images with immutable version and commit tags, publishes build provenance and SBOMs, and creates GitHub Releases.
           EOF
-          gh pr create \
-            --base master \
-            --head "$BRANCH" \
-            --title "chore(release): bump selected package versions" \
-            --body-file /tmp/release-pr.md
+          EXISTING_PR="$(gh pr list --head "$BRANCH" --base master --state all --json number,state,mergedAt --jq '.[0] // empty')"
+          if [ -z "$EXISTING_PR" ]; then
+            gh pr create \
+              --base master \
+              --head "$BRANCH" \
+              --title "chore(release): bump selected package versions" \
+              --body-file /tmp/release-pr.md
+          elif [ "$(printf '%s' "$EXISTING_PR" | jq -r '.state')" = CLOSED ] && [ "$(printf '%s' "$EXISTING_PR" | jq -r '.mergedAt')" = null ]; then
+            gh pr reopen "$(printf '%s' "$EXISTING_PR" | jq -r '.number')"
+          fi
 
           # GITHUB_TOKEN-created branches do not trigger pull_request workflows.
           gh workflow run ci.yaml --ref "$BRANCH"
@@ -234,8 +240,12 @@ jobs:
               fi
               VERSION="v$VERSION"
               TAG="$PACKAGE-$VERSION"
-              if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-                echo "Release tag already exists: $TAG" >&2
+              EXISTING_TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG^{}" | awk 'NR == 1 { print $1 }')"
+              if [ -z "$EXISTING_TAG_SHA" ]; then
+                EXISTING_TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG" | awk 'NR == 1 { print $1 }')"
+              fi
+              if [ -n "$EXISTING_TAG_SHA" ] && [ "$EXISTING_TAG_SHA" != "$COMMIT_SHA" ]; then
+                echo "Release tag $TAG already points to $EXISTING_TAG_SHA, expected $COMMIT_SHA" >&2
                 exit 1
               fi
               echo "$PACKAGE=true" >> "$GITHUB_OUTPUT"
@@ -245,8 +255,58 @@ jobs:
             fi
           done
 
-  build-backend:
+  reserve-release-tags:
     needs: prepare-release
+    if: >-
+      needs.prepare-release.result == 'success' &&
+      (needs.prepare-release.outputs.backend == 'true' ||
+      needs.prepare-release.outputs.frontend == 'true' ||
+      needs.prepare-release.outputs.worker == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare-release.outputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Atomically reserve release version tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_SHA: ${{ needs.prepare-release.outputs.commit_sha }}
+          BACKEND: ${{ needs.prepare-release.outputs.backend }}
+          BACKEND_VERSION: ${{ needs.prepare-release.outputs.backend_version }}
+          FRONTEND: ${{ needs.prepare-release.outputs.frontend }}
+          FRONTEND_VERSION: ${{ needs.prepare-release.outputs.frontend_version }}
+          WORKER: ${{ needs.prepare-release.outputs.worker }}
+          WORKER_VERSION: ${{ needs.prepare-release.outputs.worker_version }}
+        run: |
+          set -euo pipefail
+          reserve_tag() {
+            local tag="$1"
+            local existing_sha
+            existing_sha="$(git ls-remote --tags origin "refs/tags/$tag^{}" | awk 'NR == 1 { print $1 }')"
+            if [ -z "$existing_sha" ]; then
+              existing_sha="$(git ls-remote --tags origin "refs/tags/$tag" | awk 'NR == 1 { print $1 }')"
+            fi
+            if [ -n "$existing_sha" ]; then
+              if [ "$existing_sha" != "$COMMIT_SHA" ]; then
+                echo "Release tag $tag already points to $existing_sha, expected $COMMIT_SHA" >&2
+                return 1
+              fi
+              return 0
+            fi
+            git tag "$tag" "$COMMIT_SHA"
+            git push origin "refs/tags/$tag"
+          }
+          [ "$BACKEND" != true ] || reserve_tag "backend-$BACKEND_VERSION"
+          [ "$FRONTEND" != true ] || reserve_tag "frontend-$FRONTEND_VERSION"
+          [ "$WORKER" != true ] || reserve_tag "ffmpeg-worker-$WORKER_VERSION"
+
+  build-backend:
+    needs: [prepare-release, reserve-release-tags]
     if: needs.prepare-release.outputs.backend == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -304,7 +364,7 @@ jobs:
           push-to-registry: true
 
   build-frontend:
-    needs: prepare-release
+    needs: [prepare-release, reserve-release-tags]
     if: needs.prepare-release.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -362,7 +422,7 @@ jobs:
           push-to-registry: true
 
   build-ffmpeg-worker:
-    needs: prepare-release
+    needs: [prepare-release, reserve-release-tags]
     if: needs.prepare-release.outputs.worker == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -420,7 +480,7 @@ jobs:
           push-to-registry: true
 
   publish-github-releases:
-    needs: [prepare-release, build-backend, build-frontend, build-ffmpeg-worker]
+    needs: [prepare-release, reserve-release-tags, build-backend, build-frontend, build-ffmpeg-worker]
     if: >-
       always() && needs.prepare-release.result == 'success' &&
       (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') &&
