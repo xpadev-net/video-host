@@ -18,6 +18,8 @@ const database = vi.hoisted(() => ({
     findFirst: vi.fn(),
     create: vi.fn(),
     aggregate: vi.fn(),
+    deleteMany: vi.fn(),
+    updateMany: vi.fn(),
   },
   playlist: { findUnique: vi.fn() },
   $transaction: vi.fn(),
@@ -168,6 +170,45 @@ describe("seriesId on movie update", () => {
     expect(res.status).toBe(403);
     expect(database.movie.update).not.toHaveBeenCalled();
   });
+
+  it("persists an explicit null description and rejects invalid paging input", async () => {
+    database.movie.findUnique.mockResolvedValue({
+      id: "m1",
+      authorId: "alice",
+      title: "Movie",
+      description: "old description",
+      visibility: "PUBLIC",
+      order: 0,
+    });
+    database.movie.update.mockResolvedValue({
+      id: "m1",
+      title: "Movie",
+      description: null,
+      duration: 0,
+      variants: [],
+      thumbnailUrl: null,
+      visibility: "PUBLIC",
+      author: alice,
+      series: null,
+      viewers: [],
+      createdAt: new Date(),
+    });
+
+    const updated = await appFor(alice).request(
+      "/movies/m1",
+      json("PATCH", { description: null }),
+    );
+    expect(updated.status).toBe(200);
+    expect(database.movie.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ description: null }),
+      }),
+    );
+
+    const invalidPage = await appFor(alice).request("/movies?page=0");
+    expect(invalidPage.status).toBe(400);
+    expect(database.movie.count).not.toHaveBeenCalled();
+  });
 });
 
 describe("playlist movie addition", () => {
@@ -188,5 +229,29 @@ describe("playlist movie addition", () => {
     );
     expect(res.status).toBe(404);
     expect(database.movieOnPlaylist.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects add, remove, and reorder operations on another user's playlist", async () => {
+    database.playlist.findUnique.mockResolvedValue(playlist);
+    const app = appFor(alice);
+
+    const added = await app.request(
+      "/playlists/p1/movies",
+      json("POST", { movieId: "m1" }),
+    );
+    const removed = await app.request("/playlists/p1/movies/m1", {
+      method: "DELETE",
+    });
+    const reordered = await app.request(
+      "/playlists/p1/movies",
+      json("PATCH", { movieIds: ["m1"] }),
+    );
+
+    expect([added.status, removed.status, reordered.status]).toEqual([
+      403, 403, 403,
+    ]);
+    expect(database.movieOnPlaylist.create).not.toHaveBeenCalled();
+    expect(database.movieOnPlaylist.deleteMany).not.toHaveBeenCalled();
+    expect(database.movieOnPlaylist.updateMany).not.toHaveBeenCalled();
   });
 });
