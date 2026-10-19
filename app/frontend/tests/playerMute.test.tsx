@@ -6,7 +6,7 @@ import {
   renderHook,
   waitFor,
 } from "@testing-library/react";
-import { createStore, Provider, useAtomValue } from "jotai";
+import { createStore, Provider, useAtomValue, useSetAtom } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PlayerConfigAtom,
@@ -105,7 +105,7 @@ describe("VolumeSlider while muted", () => {
     );
     const slider = getByRole("slider");
     expect(slider.getAttribute("aria-valuenow")).toBe("80");
-    expect(slider.getAttribute("aria-valuetext")).toBe("ミュート中");
+    expect(slider.getAttribute("aria-valuetext")).toBe("ミュート中(80%)");
 
     // ArrowDown moves from the announced 80% to 75% and unmutes.
     fireEvent.keyDown(slider, { key: "ArrowDown" });
@@ -219,7 +219,7 @@ describe("autoplay setting rename", () => {
     expect("autoPlay" in result.current).toBe(false);
   });
 
-  it("prefers the new key when both exist and defaults to on", async () => {
+  it("lets the old name win when the two differ (an old tab wrote it) and defaults to on", async () => {
     localStorage.setItem(
       "playerConfig",
       JSON.stringify({
@@ -230,9 +230,34 @@ describe("autoplay setting rename", () => {
       }),
     );
     const config = readConfig();
-    await waitFor(() => expect(config.current.autoPlayNext).toBe(true));
+    await waitFor(() => expect(config.current.autoPlayNext).toBe(false));
     cleanup();
     localStorage.clear();
     expect(readConfig().current.autoPlayNext).toBe(true);
+  });
+
+  it("keeps writing the old name so tabs on the previous release see the setting", async () => {
+    const store = createStore();
+    const { result } = renderHook(
+      () => ({
+        config: useAtomValue(PlayerConfigAtom),
+        set: useSetAtom(PlayerConfigAtom),
+      }),
+      {
+        wrapper: ({ children }) => (
+          <Provider store={store}>{children}</Provider>
+        ),
+      },
+    );
+    act(() => {
+      result.current.set((pv) => ({ ...pv, autoPlayNext: false }));
+    });
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem("playerConfig") ?? "{}");
+      expect(stored.autoPlayNext).toBe(false);
+      expect(stored.autoPlay).toBe(false);
+    });
+    // In memory the legacy field is not exposed.
+    expect("autoPlay" in result.current.config).toBe(false);
   });
 });

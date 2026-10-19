@@ -31,7 +31,13 @@ const PlayerStateAtom = atom<PlayerState>({
   error: null,
 });
 // "autoPlay" was renamed to "autoPlayNext" (it only ever meant "play the next
-// movie"). Keep the value people already chose when reading older storage.
+// movie"). During the transition both names are kept in storage:
+// - reads/subscriptions migrate whatever shape arrives, so a choice saved under
+//   the old name is not lost;
+// - writes also store the old name, so a tab still on the previous release
+//   keeps seeing the setting.
+// This writer always stores the two equal, so when they differ an old tab wrote
+// the old one last and it wins.
 const baseConfigStorage = createJSONStorage<PlayerConfig>();
 
 const migrateConfig = (stored: PlayerConfig): PlayerConfig => {
@@ -40,15 +46,24 @@ const migrateConfig = (stored: PlayerConfig): PlayerConfig => {
     return stored;
   }
   const { autoPlay, ...rest } = legacy;
-  return { ...rest, autoPlayNext: rest.autoPlayNext ?? autoPlay ?? true };
+  return {
+    ...rest,
+    autoPlayNext:
+      typeof autoPlay === "boolean" ? autoPlay : (rest.autoPlayNext ?? true),
+  };
 };
 
 const playerConfigStorage = {
   ...baseConfigStorage,
   getItem: (key: string, initialValue: PlayerConfig): PlayerConfig =>
     migrateConfig(baseConfigStorage.getItem(key, initialValue)),
-  // Updates written by another tab still on the old release arrive here, not
-  // through getItem, so they need the same migration.
+  setItem: (key: string, value: PlayerConfig) =>
+    baseConfigStorage.setItem(key, {
+      ...value,
+      autoPlay: value.autoPlayNext,
+    } as PlayerConfig),
+  // Updates written by another tab arrive here, not through getItem, so they
+  // need the same migration.
   subscribe: baseConfigStorage.subscribe
     ? (
         key: string,

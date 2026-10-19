@@ -85,7 +85,9 @@ const VolumeSlider = () => {
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(configVolume * 100)}
-      aria-valuetext={muted ? "ミュート中" : undefined}
+      aria-valuetext={
+        muted ? `ミュート中(${Math.round(configVolume * 100)}%)` : undefined
+      }
     >
       <div className="absolute top-5 -translate-y-1/2 w-full h-1 bg-white/20 rounded-full overflow-hidden">
         <div
