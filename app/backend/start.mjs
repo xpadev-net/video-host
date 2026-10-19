@@ -1,5 +1,5 @@
-import { PrismaClient } from "@prisma/client";
 import { spawn } from "node:child_process";
+import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 const migrationLockName = "video-host-prisma-migrate";
