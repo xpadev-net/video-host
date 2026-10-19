@@ -6,6 +6,7 @@ import { CALLBACK_SECRET } from "@/env";
 import { prisma } from "@/lib/prisma";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
+import { safeEqual } from "@/utils/safeEqual";
 
 const EncodeCompleteSchema = z.object({
   movieId: z.string(),
@@ -26,7 +27,7 @@ export const callbackRoute = app.post(
     // Verify callback secret
     const authHeader = c.req.header("Authorization");
     const expectedAuth = `Bearer ${CALLBACK_SECRET}`;
-    if (authHeader !== expectedAuth) {
+    if (!authHeader || !safeEqual(authHeader, expectedAuth)) {
       unauthorized("Invalid callback secret");
     }
 

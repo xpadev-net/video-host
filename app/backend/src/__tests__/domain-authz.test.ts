@@ -21,6 +21,7 @@ vi.mock("@aws-sdk/s3-request-presigner", () => ({
     .mockResolvedValue("https://storage.example.test/video.mp4?signature=test"),
 }));
 
+import { createVodToken } from "../lib/vod-token";
 import { callbackRoute } from "../routes/api/v4/callback";
 import { systemAccountsRoute } from "../routes/api/v4/system-accounts";
 import { vodRoute } from "../routes/api/v4/vod";
@@ -185,13 +186,29 @@ describe("machine authentication remains separate", () => {
       ).status,
     ).toBe(401);
   });
-  it("accepts the independent VOD secret", async () => {
+  it("accepts the independent VOD secret with a valid playback token", async () => {
+    const key = "uploads/u1/movie.mp4";
     expect(
       (
-        await appFor().request("/api/v4/vod/mapping/movie.mp4", {
-          headers: { "X-Vod-Internal-Secret": "test-vod-internal-secret" },
-        })
+        await appFor().request(
+          `/api/v4/vod/mapping/${createVodToken(key)}/${key}`,
+          { headers: { "X-Vod-Internal-Secret": "test-vod-internal-secret" } },
+        )
       ).status,
     ).toBe(200);
+  });
+  it("rejects VOD mapping without a valid playback token", async () => {
+    const headers = { "X-Vod-Internal-Secret": "test-vod-internal-secret" };
+    const key = "uploads/u1/movie.mp4";
+    const other = createVodToken("uploads/u2/other.mp4");
+    const expired = createVodToken(key, Date.now() - 7 * 3600 * 1000);
+    for (const path of [
+      `/api/v4/vod/mapping/${key}`, // guessed key, no token
+      `/api/v4/vod/mapping/bogus/${key}`,
+      `/api/v4/vod/mapping/${other}/${key}`, // token for another key
+      `/api/v4/vod/mapping/${expired}/${key}`,
+    ]) {
+      expect((await appFor().request(path, { headers })).status).toBe(401);
+    }
   });
 });
