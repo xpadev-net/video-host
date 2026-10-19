@@ -45,9 +45,17 @@ try {
   const databaseUrl = new URL(process.env.DATABASE_URL);
   const sslCert = databaseUrl.searchParams.get("sslcert");
   const sslIdentity = databaseUrl.searchParams.get("sslidentity");
-  const sslAccept = databaseUrl.searchParams.get("sslaccept");
+  const sslAcceptValue = databaseUrl.searchParams.get("sslaccept");
+  const sslAccept = sslAcceptValue?.toLowerCase();
+  const sslModeValue =
+    databaseUrl.searchParams.get("sslmode") ??
+    databaseUrl.searchParams.get("ssl-mode");
+  const sslMode = sslModeValue?.toLowerCase();
+  if (sslAccept && !["strict", "accept_invalid_certs"].includes(sslAccept)) {
+    throw new Error(`Unsupported MySQL sslaccept mode: ${sslAccept}`);
+  }
   const ssl =
-    sslCert || sslIdentity || sslAccept
+    sslCert || sslIdentity || sslAccept || (sslMode && sslMode !== "disable")
       ? {
             ...(sslCert
               ? { ca: readFileSync(path.resolve("prisma", sslCert)) }
@@ -58,7 +66,9 @@ try {
           ...(databaseUrl.searchParams.has("sslpassword")
             ? { passphrase: databaseUrl.searchParams.get("sslpassword") }
             : {}),
-          rejectUnauthorized: sslAccept !== "accept_invalid_certs",
+          rejectUnauthorized: sslAccept
+            ? sslAccept === "strict"
+            : sslMode !== "require",
         }
       : undefined;
   const connection = await mysql.createConnection({
@@ -97,9 +107,10 @@ try {
     }
   }
 
-  if (!shutdownSignal) {
-    await runChild(process.execPath, ["dist/index.js"]);
+  if (shutdownSignal) {
+    process.exit(0);
   }
+  await runChild(process.execPath, ["dist/index.js"]);
 } catch (error) {
   if (!shutdownSignal) {
     console.error(error);
