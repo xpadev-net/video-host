@@ -1,7 +1,9 @@
 import type {
   FilteredMovie,
+  FilteredPlaylist,
   FilteredSeries,
   FormattedMovie,
+  FormattedPlaylist,
   FormattedSeries,
 } from "@/types";
 
@@ -17,5 +19,14 @@ export const formatSeries = (series: FilteredSeries): FormattedSeries => {
   return {
     ...series,
     movies: series.movies?.map(formatMovie),
+  };
+};
+
+export const formatPlaylist = (
+  playlist: FilteredPlaylist,
+): FormattedPlaylist => {
+  return {
+    ...playlist,
+    movies: playlist.movies?.map(formatMovie),
   };
 };

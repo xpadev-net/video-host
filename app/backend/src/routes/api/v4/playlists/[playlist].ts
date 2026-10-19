@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import { ZBasicVisibility } from "@/@types/models";
 import { filterPlaylist } from "@/lib/filter";
+import { formatPlaylist } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import {
   buildMovieAccessWhere,
@@ -74,7 +75,7 @@ export const playlistDetailRoute = app
     }
 
     return ok(c, {
-      ...filterPlaylist(playlist),
+      ...formatPlaylist(filterPlaylist(playlist)),
       isOwner: user?.id === playlist.authorId,
     });
   })
@@ -128,7 +129,7 @@ export const playlistDetailRoute = app
         },
       },
     });
-    return ok(c, filterPlaylist(playlist));
+    return ok(c, formatPlaylist(filterPlaylist(playlist)));
   })
   .delete("/:playlist", async (c) => {
     const user = c.get("user");
@@ -245,7 +246,7 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
-    return ok(c, filterPlaylist(updatedPlaylist));
+    return ok(c, formatPlaylist(filterPlaylist(updatedPlaylist)));
   })
   .delete("/:playlist/movies/:movie", async (c) => {
     const user = c.get("user");
@@ -341,7 +342,7 @@ export const playlistDetailRoute = app
         notFound("Playlist not found");
       }
 
-      return ok(c, filterPlaylist(updatedPlaylist));
+      return ok(c, formatPlaylist(filterPlaylist(updatedPlaylist)));
     },
   );
 

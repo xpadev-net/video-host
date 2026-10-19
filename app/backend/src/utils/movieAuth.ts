@@ -18,7 +18,7 @@ export const resolveAuthorId = async (
   const targetUser = await prisma.user.findUnique({
     where: { id: asUserId },
   });
-  if (!targetUser || targetUser.kind !== "SYSTEM") {
+  if (targetUser?.kind !== "SYSTEM") {
     badRequest("Target user must be a system account");
   }
   return asUserId;

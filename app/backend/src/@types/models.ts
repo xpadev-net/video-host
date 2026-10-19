@@ -48,6 +48,10 @@ export type FilteredMovieVariant = {
   status: "UPLOADING" | "PROCESSING" | "READY" | "FAILED";
 };
 
+export type FormattedPlaylist = Omit<FilteredPlaylist, "movies"> & {
+  movies?: FormattedMovie[];
+};
+
 export type FilteredPlaylist = {
   id: string;
   title: string;

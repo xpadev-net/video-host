@@ -4,11 +4,12 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import {
-  type FilteredPlaylist,
+  type FormattedPlaylist,
   type PaginatedResponse,
   ZBasicVisibility,
 } from "@/@types/models";
 import { filterPlaylist } from "@/lib/filter";
+import { formatPlaylist } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import {
   buildMovieAccessWhere,
@@ -93,8 +94,8 @@ export const playlistsRoute = app
     const hasNext = page < totalPages;
     const hasPrev = page > 1;
 
-    const response: PaginatedResponse<FilteredPlaylist> = {
-      items: playlists.map(filterPlaylist),
+    const response: PaginatedResponse<FormattedPlaylist> = {
+      items: playlists.map((p) => formatPlaylist(filterPlaylist(p))),
       pagination: {
         page,
         limit,
@@ -140,7 +141,7 @@ export const playlistsRoute = app
       },
     });
 
-    return ok(c, filterPlaylist(playlist));
+    return ok(c, formatPlaylist(filterPlaylist(playlist)));
   })
   .route("/", playlistDetailRoute);
 
