@@ -1,27 +1,14 @@
-import type { User } from "@prisma/client";
+import type { Prisma, User } from "@prisma/client";
 import type { Visibility } from "@/@types/models";
 
-type FilterSchema = {
-  visibility?: Visibility | { in?: Visibility[] };
-  title?: {
-    search?: string;
-  };
-  description?: {
-    search?: string;
-  };
-  authorId?: string;
-  viewers?: {
-    some?: {
-      userId?: string;
-    };
-  };
-  variants?: {
-    some?: {
-      status?: "UPLOADING" | "PROCESSING" | "READY" | "FAILED";
-    };
-  };
-  OR?: FilterSchema[];
-  AND?: FilterSchema[];
+type WhereInput =
+  | Prisma.MovieWhereInput
+  | Prisma.SeriesWhereInput
+  | Prisma.PlaylistWhereInput;
+
+type FilterSchema<T extends WhereInput> = Omit<T, "OR" | "AND" | "NOT"> & {
+  OR?: FilterSchema<T>[];
+  AND?: FilterSchema<T>[];
 };
 
 type AccessFilterOptions = {
@@ -33,14 +20,22 @@ type AccessFilterOptions = {
   requireReadyVariant?: boolean;
 };
 
-const readyVariantClause = (requireReadyVariant?: boolean): FilterSchema =>
-  requireReadyVariant ? { variants: { some: { status: "READY" } } } : {};
+const readyVariantClause = <T extends WhereInput>(
+  requireReadyVariant?: boolean,
+): FilterSchema<T> =>
+  (requireReadyVariant
+    ? { variants: { some: { status: "READY" } } }
+    : {}) as FilterSchema<T>;
 
-const anyoneClause = (opts?: AccessFilterOptions): FilterSchema => {
-  const ready = readyVariantClause(opts?.requireReadyVariant);
-  return opts?.includeUnlisted
-    ? { visibility: { in: ["PUBLIC", "UNLISTED"] }, ...ready }
-    : { visibility: "PUBLIC", ...ready };
+const anyoneClause = <T extends WhereInput>(
+  opts?: AccessFilterOptions,
+): FilterSchema<T> => {
+  const ready = readyVariantClause<T>(opts?.requireReadyVariant);
+  return (
+    opts?.includeUnlisted
+      ? { visibility: { in: ["PUBLIC", "UNLISTED"] }, ...ready }
+      : { visibility: "PUBLIC", ...ready }
+  ) as FilterSchema<T>;
 };
 
 /**
@@ -50,22 +45,28 @@ const anyoneClause = (opts?: AccessFilterOptions): FilterSchema => {
  *   LIMITED entries whose viewer list contains the user
  * - admin: everything
  */
-const buildAccessFilter = (user?: User, opts?: AccessFilterOptions) => {
+const buildAccessFilter = <T extends WhereInput>(
+  user?: User,
+  opts?: AccessFilterOptions,
+): FilterSchema<T> => {
   if (!user) {
-    return anyoneClause(opts);
+    return anyoneClause<T>(opts);
   }
   if (user.role === "ADMIN") {
-    return {};
+    return {} as FilterSchema<T>;
   }
-  const or: FilterSchema[] = [anyoneClause(opts), { authorId: user.id }];
+  const or: FilterSchema<T>[] = [
+    anyoneClause<T>(opts),
+    { authorId: user.id } as FilterSchema<T>,
+  ];
   if (opts?.includeLimitedViewers) {
     or.push({
       visibility: "LIMITED",
       viewers: { some: { userId: user.id } },
-      ...readyVariantClause(opts?.requireReadyVariant),
-    });
+      ...readyVariantClause<T>(opts?.requireReadyVariant),
+    } as FilterSchema<T>);
   }
-  return { OR: or };
+  return { OR: or } as unknown as FilterSchema<T>;
 };
 
 /**
@@ -74,17 +75,21 @@ const buildAccessFilter = (user?: User, opts?: AccessFilterOptions) => {
  * author and admins, regardless of the stored visibility. FAILED is treated
  * the same way (not READY). Admins see everything.
  */
-export const readyOrOwnMovieFilter = (user?: User): FilterSchema => {
+export const readyOrOwnMovieFilter = (
+  user?: User,
+): FilterSchema<Prisma.MovieWhereInput> => {
   if (user?.role === "ADMIN") {
     return {};
   }
-  const conditions: FilterSchema[] = [
+  const conditions: FilterSchema<Prisma.MovieWhereInput>[] = [
     { variants: { some: { status: "READY" } } },
   ];
   if (user) {
-    conditions.push({ authorId: user.id });
+    conditions.push({
+      authorId: user.id,
+    } as FilterSchema<Prisma.MovieWhereInput>);
   }
-  return { OR: conditions };
+  return { OR: conditions } as FilterSchema<Prisma.MovieWhereInput>;
 };
 
 /**
@@ -95,8 +100,10 @@ export const readyOrOwnMovieFilter = (user?: User): FilterSchema => {
  * while PRIVATE and non-shared LIMITED movies stay hidden. Others' movies
  * also need a READY variant, so in-flight uploads never leak through embeds.
  */
-export const buildMovieAccessWhere = (user?: User): FilterSchema => {
-  return buildAccessFilter(user, {
+export const buildMovieAccessWhere = (
+  user?: User,
+): FilterSchema<Prisma.MovieWhereInput> => {
+  return buildAccessFilter<Prisma.MovieWhereInput>(user, {
     includeLimitedViewers: true,
     includeUnlisted: true,
     requireReadyVariant: true,
@@ -141,16 +148,18 @@ export const canViewMovie = (
   return canViewOwnedEntity(movie, user);
 };
 
-export const buildVisibilityFilter = (
+export const buildVisibilityFilter = <
+  T extends WhereInput = Prisma.MovieWhereInput,
+>(
   user?: User,
   query?: string,
   authorId?: string,
   includeLimitedViewers = false,
-) => {
-  const where: FilterSchema = {};
-  const or: FilterSchema[] = [];
+): FilterSchema<T> => {
+  const where: Record<string, unknown> = {};
+  const or: Record<string, unknown>[] = [];
 
-  const access = buildAccessFilter(user, { includeLimitedViewers });
+  const access = buildAccessFilter<T>(user, { includeLimitedViewers });
   if (access.OR) {
     or.push({ OR: access.OR });
   } else if (access.visibility) {
@@ -184,5 +193,5 @@ export const buildVisibilityFilter = (
     where.AND = or;
   }
 
-  return where;
+  return where as FilterSchema<T>;
 };

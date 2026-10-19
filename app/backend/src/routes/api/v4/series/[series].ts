@@ -17,6 +17,7 @@ import {
 import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
 import { canManageOwned } from "@/utils/movieAuth";
 import {
+  MAX_RELATION_MOVIES,
   PageNumberSchema,
   pageSizeSchema,
   paginationQuerySchema,
@@ -32,7 +33,7 @@ import { ok } from "@/utils/response/ok";
 const app = new Hono<Env>();
 
 const DEFAULT_MOVIES_LIMIT = 20;
-const MAX_MOVIES_LIMIT = 100;
+const MAX_MOVIES_LIMIT = MAX_RELATION_MOVIES;
 
 const SeriesDetailQuerySchema = z.object({
   moviesPage: PageNumberSchema,
@@ -173,6 +174,7 @@ export const seriesDetailRoute = app
           orderBy: {
             createdAt: "asc",
           },
+          take: MAX_RELATION_MOVIES,
           include: {
             author: true,
             variants: true,
@@ -357,6 +359,7 @@ export const seriesDetailRoute = app
         movies: {
           where: buildMovieAccessWhere(user),
           orderBy: { order: "asc" },
+          take: MAX_RELATION_MOVIES,
           include: { author: true, variants: true },
         },
       },
@@ -459,6 +462,7 @@ export const seriesDetailRoute = app
           movies: {
             where: buildMovieAccessWhere(user),
             orderBy: { order: "asc" },
+            take: MAX_RELATION_MOVIES,
             include: { author: true, variants: true },
           },
         },

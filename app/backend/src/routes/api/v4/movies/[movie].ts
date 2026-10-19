@@ -18,6 +18,7 @@ import {
   TitleSchema,
 } from "@/utils/inputSchemas";
 import { assertCanManageSeries, canManageOwned } from "@/utils/movieAuth";
+import { MAX_RELATION_MOVIES } from "@/utils/pagination";
 import {
   badRequest,
   forbidden,
@@ -63,6 +64,7 @@ export const movieRoute = app
                   createdAt: "asc",
                 },
               ],
+              take: MAX_RELATION_MOVIES,
               include: {
                 author: true,
                 variants: true,
@@ -184,6 +186,7 @@ export const movieRoute = app
               orderBy: {
                 createdAt: "asc",
               },
+              take: MAX_RELATION_MOVIES,
               include: {
                 author: true,
                 variants: true,

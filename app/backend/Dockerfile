@@ -11,10 +11,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY app/contracts/package.json ./app/contracts/
 COPY app/backend/package.json ./app/backend/
 COPY app/backend/prisma ./app/backend/prisma/
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/backend
 
+COPY app/contracts/ ./app/contracts/
 COPY app/backend/ ./app/backend/
 RUN pnpm --filter @video-host/backend build
 RUN pnpm --filter @video-host/backend --prod deploy --legacy /prod/backend
