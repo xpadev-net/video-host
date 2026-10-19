@@ -36,6 +36,10 @@ interface UseUploadResult {
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException && error.name === "AbortError";
 
+// Must match the Content-Type the presigned URL was signed with.
+const contentTypeOf = (file: File): string =>
+  file.type || "application/octet-stream";
+
 export const useUpload = (): UseUploadResult => {
   const [state, setState] = useState<UploadState>({
     phase: "idle",
@@ -68,7 +72,7 @@ export const useUpload = (): UseUploadResult => {
         const xhr = new XMLHttpRequest();
         xhrRef.current = xhr;
         xhr.open("PUT", uploadUrl);
-        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.setRequestHeader("Content-Type", contentTypeOf(file));
 
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
@@ -120,7 +124,8 @@ export const useUpload = (): UseUploadResult => {
         const res = await client.api.v4.upload.init.$post({
           json: {
             filename: file.name,
-            contentType: file.type,
+            contentType: contentTypeOf(file),
+            size: file.size,
             asUserId: options?.asUserId,
           },
         });
@@ -172,7 +177,8 @@ export const useUpload = (): UseUploadResult => {
           param: { movieId },
           json: {
             filename: file.name,
-            contentType: file.type,
+            contentType: contentTypeOf(file),
+            size: file.size,
           },
         });
         if (!res.ok) {

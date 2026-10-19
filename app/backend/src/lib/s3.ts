@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
@@ -110,21 +111,28 @@ export const initializeS3Buckets = async (): Promise<void> => {
   console.log("S3 bucket initialization complete");
 };
 
+// Key prefix every upload of this user lives under; POST /movies relies on it
+// to refuse keys pointing at someone else's objects.
+export const uploadKeyPrefix = (userId: string): string => `uploads/${userId}/`;
+
 export const generateUploadKey = (userId: string, filename: string): string => {
-  const timestamp = Date.now();
-  const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-  return `uploads/${userId}/${timestamp}_${sanitizedFilename}`;
+  const extension = /\.[a-zA-Z0-9]{1,16}$/.exec(filename)?.[0] ?? "";
+  return `${uploadKeyPrefix(userId)}${randomUUID()}${extension.toLowerCase()}`;
 };
 
 export const getPresignedUploadUrl = async (
   key: string,
   contentType: string,
+  size: number,
   expiresIn = 3600,
 ): Promise<string> => {
+  // Content-Length is part of the signature, so the URL (even if replayed)
+  // can only ever store an object of exactly this size.
   const command = new PutObjectCommand({
     Bucket: S3_TMP_BUCKET,
     Key: key,
     ContentType: contentType,
+    ContentLength: size,
   });
 
   return getSignedUrl(s3Client, command, { expiresIn });
@@ -153,6 +161,24 @@ export const tmpFileExists = async (key: string): Promise<boolean> => {
       (error.$metadata.httpStatusCode === 404 || error.name === "NotFound")
     ) {
       return false;
+    }
+    throw error;
+  }
+};
+
+// Size in bytes of an object in the tmp bucket, or null when it is missing.
+export const getTmpFileSize = async (key: string): Promise<number | null> => {
+  try {
+    const head = await s3Client.send(
+      new HeadObjectCommand({ Bucket: S3_TMP_BUCKET, Key: key }),
+    );
+    return head.ContentLength ?? 0;
+  } catch (error) {
+    if (
+      error instanceof S3ServiceException &&
+      (error.$metadata.httpStatusCode === 404 || error.name === "NotFound")
+    ) {
+      return null;
     }
     throw error;
   }

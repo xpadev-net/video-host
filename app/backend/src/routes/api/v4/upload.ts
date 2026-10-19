@@ -2,6 +2,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
+import { MAX_UPLOAD_BYTES } from "@/env";
 import { filterMovie } from "@/lib/filter";
 import { formatMovie } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
@@ -10,27 +11,32 @@ import {
   deleteTmpFile,
   generateUploadKey,
   getPresignedUploadUrl,
-  tmpFileExists,
+  getTmpFileSize,
 } from "@/lib/s3";
 import { canManageMovie, resolveAuthorId } from "@/utils/movieAuth";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
-const PresignedUrlSchema = z.object({
-  filename: z.string(),
-  contentType: z.string(),
-});
+const FilenameSchema = z.string().min(1).max(255);
+const UploadSizeSchema = z.number().int().positive().max(MAX_UPLOAD_BYTES);
+// Browsers report an empty File.type for containers they do not know; the
+// frontend sends application/octet-stream for those.
+const VideoContentTypeSchema = z
+  .string()
+  .regex(/^(video\/[\w.+-]+|application\/octet-stream)$/);
 
 const InitUploadSchema = z.object({
-  filename: z.string(),
-  contentType: z.string(),
-  title: z.string().optional(),
+  filename: FilenameSchema,
+  contentType: VideoContentTypeSchema,
+  size: UploadSizeSchema,
+  title: z.string().max(255).optional(),
   asUserId: z.string().optional(), // Admin only
 });
 
 const RetryUploadSchema = z.object({
-  filename: z.string(),
-  contentType: z.string(),
+  filename: FilenameSchema,
+  contentType: VideoContentTypeSchema,
+  size: UploadSizeSchema,
 });
 
 const titleFromFilename = (filename: string): string => {
@@ -41,21 +47,6 @@ const titleFromFilename = (filename: string): string => {
 const app = new Hono<Env>();
 
 export const uploadRoute = app
-  .post("/presigned-url", zValidator("json", PresignedUrlSchema), async (c) => {
-    const user = c.get("user");
-    if (!user) {
-      unauthorized("Unauthorized");
-    }
-
-    const { filename, contentType } = c.req.valid("json");
-    const key = generateUploadKey(user.id, filename);
-    const uploadUrl = await getPresignedUploadUrl(key, contentType);
-
-    return ok(c, {
-      uploadUrl,
-      key,
-    });
-  })
   // Create the movie record as soon as a file is picked, before the upload
   // itself starts, so metadata can be edited while the file uploads and the
   // encode runs (YouTube-style upload flow). The variant stays UPLOADING and
@@ -68,7 +59,8 @@ export const uploadRoute = app
       unauthorized("Unauthorized");
     }
 
-    const { filename, contentType, title, asUserId } = c.req.valid("json");
+    const { filename, contentType, size, title, asUserId } =
+      c.req.valid("json");
     const authorId = await resolveAuthorId(user, asUserId);
     const key = generateUploadKey(authorId, filename);
 
@@ -92,7 +84,7 @@ export const uploadRoute = app
       },
     });
 
-    const uploadUrl = await getPresignedUploadUrl(key, contentType);
+    const uploadUrl = await getPresignedUploadUrl(key, contentType, size);
 
     return ok(c, {
       movie: formatMovie(filterMovie(movie)),
@@ -126,7 +118,7 @@ export const uploadRoute = app
       badRequest("Movie is not awaiting upload");
     }
 
-    const { filename, contentType } = c.req.valid("json");
+    const { filename, contentType, size } = c.req.valid("json");
     const key = generateUploadKey(movie.authorId, filename);
 
     // Claim atomically: if /complete flipped the variant to PROCESSING between
@@ -146,7 +138,7 @@ export const uploadRoute = app
       await deleteTmpFile(variant.s3Key).catch(() => {});
     }
 
-    const uploadUrl = await getPresignedUploadUrl(key, contentType);
+    const uploadUrl = await getPresignedUploadUrl(key, contentType, size);
 
     return ok(c, {
       uploadUrl,
@@ -181,8 +173,15 @@ export const uploadRoute = app
       return ok(c, { success: true });
     }
 
-    if (!variant.s3Key || !(await tmpFileExists(variant.s3Key))) {
+    const size = variant.s3Key ? await getTmpFileSize(variant.s3Key) : null;
+    if (size === null || !variant.s3Key) {
       badRequest("Upload has not finished yet");
+    }
+    if (size > MAX_UPLOAD_BYTES) {
+      // The presigned PUT cannot cap the size, so reject oversized objects
+      // here and drop them instead of feeding them to the encoder.
+      await deleteTmpFile(variant.s3Key).catch(() => {});
+      badRequest("Uploaded file is too large");
     }
 
     // Claim the transition atomically so a duplicate request can't queue a

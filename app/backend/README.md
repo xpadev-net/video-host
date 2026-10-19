@@ -29,6 +29,7 @@ The root Compose file provides a disposable MySQL 8.4 database on `127.0.0.1:330
 | `PASSWORD_AUTH_ENABLED` | Defaults true; false disables email/password authentication |
 | `SIGNUP_ENABLED` | Defaults false; governs password signup |
 | `SIGNUP_CODE` | Optional additional shared registration code, checked server-side |
+| `MAX_UPLOAD_BYTES` | Maximum upload size in bytes (default 5 GiB, the S3 single-PUT limit; uploads are one presigned PUT). Bound into the presigned PUT URL and re-checked when an upload completes; k8s key `max-upload-bytes` |
 | `PUBLIC_ENDPOINTS` | Optional comma-separated application API path prefixes; visibility/ownership guards still apply |
 | `CALLBACK_SECRET`, `VOD_INTERNAL_SECRET` | Independent machine authentication secrets; not browser credentials |
 

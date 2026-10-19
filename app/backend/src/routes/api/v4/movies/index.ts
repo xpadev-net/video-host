@@ -3,20 +3,15 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Env } from "@/@types/hono";
 import type { FormattedMovie, PaginatedResponse } from "@/@types/models";
-import { ZVisibility } from "@/@types/models";
 import { filterMovie } from "@/lib/filter";
 import { formatMovie } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
-import { addEncodeJob, setEncodeProgress } from "@/lib/redis";
 import { movieRoute } from "@/routes/api/v4/movies/[movie]";
 import {
-  buildMovieAccessWhere,
   buildVisibilityFilter,
   canViewOwnedEntity,
   readyOrOwnMovieFilter,
 } from "@/utils/buildVisibilityFilter";
-import { assertCanManageSeries, resolveAuthorId } from "@/utils/movieAuth";
-import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const DEFAULT_PAGE_SIZE = 100;
@@ -36,17 +31,6 @@ const QuerySchema = z.object({
   query: z.string().optional(),
   author: z.string().optional(),
   mine: z.string().optional(),
-});
-
-const MovieBodySchema = z.object({
-  title: z.string(),
-  description: z.string().optional(),
-  seriesId: z.string().optional(),
-  s3Key: z.string(),
-  visibility: ZVisibility.optional().default("PUBLIC"),
-  viewerIds: z.array(z.string()).optional(),
-  asUserId: z.string().optional(), // Admin only
-  order: z.number().optional(),
 });
 
 const app = new Hono<Env>();
@@ -113,112 +97,5 @@ export const moviesRoute = app
     };
 
     return ok(c, response);
-  })
-  .post("/", zValidator("json", MovieBodySchema), async (c) => {
-    const user = c.get("user");
-    if (!user) {
-      unauthorized("Unauthorized");
-    }
-    const data = c.req.valid("json");
-    // The zValidator already handles invalid data, so this check is technically redundant
-    // but kept for consistency if the schema was more complex or had custom refinements.
-    if (!data) {
-      badRequest("Invalid data");
-    }
-
-    // Handle asUserId for admin proxy
-    const authorId = await resolveAuthorId(user, data.asUserId);
-
-    if (data.seriesId) {
-      await assertCanManageSeries(user, data.seriesId);
-    }
-
-    const viewerIds = [...new Set(data.viewerIds ?? [])];
-    if (viewerIds.length > 0) {
-      const existing = await prisma.user.findMany({
-        where: { id: { in: viewerIds } },
-        select: { id: true },
-      });
-      if (existing.length !== viewerIds.length) {
-        badRequest("viewerIds contains unknown users");
-      }
-    }
-
-    const movie = await prisma.movie.create({
-      data: {
-        title: data.title,
-        description: data.description,
-        authorId,
-        seriesId: data.seriesId,
-        visibility: data.visibility,
-        order: data.order ?? 0,
-        variants: {
-          create: {
-            variantId: "original",
-            contentUrl: "", // Will be set after encoding
-            s3Key: data.s3Key,
-            status: "PROCESSING",
-          },
-        },
-        viewers: {
-          create: viewerIds.map((userId) => ({ userId })),
-        },
-      },
-      include: {
-        series: {
-          include: {
-            author: true,
-            movies: {
-              where: buildMovieAccessWhere(user),
-              orderBy: {
-                createdAt: "asc",
-              },
-              include: {
-                author: true,
-                variants: true,
-              },
-            },
-          },
-        },
-        author: true,
-        variants: true,
-        viewers: {
-          include: {
-            user: true,
-          },
-        },
-      },
-    });
-
-    // Add encode job to Redis queue
-    await addEncodeJob({
-      movieId: movie.id,
-      s3Key: data.s3Key,
-      userId: authorId,
-      createdAt: new Date().toISOString(),
-    });
-
-    // Set initial queued status for progress tracking
-    await setEncodeProgress(movie.id, { status: "queued" });
-
-    if (data.seriesId) {
-      await prisma.series.update({
-        where: {
-          id: data.seriesId,
-        },
-        data: {
-          updatedAt: new Date(),
-        },
-      });
-    }
-    return ok(
-      c,
-      formatMovie(
-        filterMovie({
-          ...movie,
-          viewers: movie.viewers.map((viewer) => viewer.user),
-        }),
-      ),
-    );
   })
   .route("/", movieRoute);

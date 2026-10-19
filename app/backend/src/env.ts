@@ -121,6 +121,14 @@ export const BackendEnvSchema = z.object({
     .transform((val) => val === "true")
     .default(false),
 
+  // Largest accepted upload; enforced when an upload is completed because a
+  // presigned PUT cannot carry a size limit.
+  MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5 * 1024 * 1024 * 1024),
+
   // Redis Configuration
   REDIS_URL: z.string().default("redis://localhost:6379"),
   REDIS_SENTINEL_HOSTS: z.string().optional(),
@@ -272,6 +280,7 @@ export const {
   S3_SECRET_ACCESS_KEY,
   S3_ENDPOINT,
   S3_FORCE_PATH_STYLE,
+  MAX_UPLOAD_BYTES,
   REDIS_URL,
   REDIS_SENTINEL_HOSTS,
   REDIS_SENTINEL_NAME,

@@ -5,6 +5,7 @@ import type { Env } from "../@types/hono";
 
 const database = vi.hoisted(() => ({
   series: { findUnique: vi.fn() },
+  movieVariant: { findFirst: vi.fn().mockResolvedValue(null) },
   movie: {
     findUnique: vi.fn(),
     update: vi.fn(),
@@ -22,9 +23,11 @@ const database = vi.hoisted(() => ({
   $transaction: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: database }));
-vi.mock("@/lib/s3", () => ({
+vi.mock("@/lib/s3", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/s3")>()),
   deleteProdFile: vi.fn(),
   deleteTmpFile: vi.fn(),
+  getTmpFileSize: vi.fn().mockResolvedValue(1024),
 }));
 vi.mock("@/lib/redis", () => ({
   addEncodeJob: vi.fn(),
@@ -151,25 +154,7 @@ describe("series movie association authorization", () => {
   });
 });
 
-describe("seriesId on movie create/update", () => {
-  it("rejects creating a movie in someone else's series", async () => {
-    database.series.findUnique.mockResolvedValue({ authorId: "bob" });
-    const res = await appFor(alice).request(
-      "/movies",
-      json("POST", { title: "t", s3Key: "k", seriesId: "s2" }),
-    );
-    expect(res.status).toBe(401);
-  });
-
-  it("reports an unknown series as 404 instead of a 500", async () => {
-    database.series.findUnique.mockResolvedValue(null);
-    const res = await appFor(alice).request(
-      "/movies",
-      json("POST", { title: "t", s3Key: "k", seriesId: "nope" }),
-    );
-    expect(res.status).toBe(404);
-  });
-
+describe("seriesId on movie update", () => {
   it("rejects moving a movie into someone else's series", async () => {
     database.movie.findUnique.mockResolvedValue({
       id: "m1",
