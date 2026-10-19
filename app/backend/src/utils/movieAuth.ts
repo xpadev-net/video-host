@@ -1,6 +1,6 @@
 import type { User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { badRequest, notFound, unauthorized } from "@/utils/response";
+import { badRequest, forbidden, notFound } from "@/utils/response";
 import { isSystemAccount } from "@/utils/systemAccountCache";
 
 // Admins may act on behalf of a system account (a user row explicitly marked SYSTEM).
@@ -13,7 +13,7 @@ export const resolveAuthorId = async (
     return user.id;
   }
   if (user.role !== "ADMIN") {
-    unauthorized("Only admins can post as other users");
+    forbidden("Only admins can post as other users");
   }
   const targetUser = await prisma.user.findUnique({
     where: { id: asUserId },
@@ -24,7 +24,7 @@ export const resolveAuthorId = async (
   return asUserId;
 };
 
-export const canManageMovie = async (
+export const canManageOwned = async (
   user: User,
   authorId: string,
 ): Promise<boolean> => {
@@ -47,7 +47,7 @@ export const assertCanManageSeries = async (
   if (!series) {
     notFound("Series not found");
   }
-  if (!(await canManageMovie(user, series.authorId))) {
-    unauthorized("Not authorized to edit this series");
+  if (!(await canManageOwned(user, series.authorId))) {
+    forbidden("Not authorized to edit this series");
   }
 };

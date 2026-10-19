@@ -14,10 +14,14 @@ import {
   buildMovieAccessWhere,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
-import { canManageMovie } from "@/utils/movieAuth";
-import { badRequest, notFound, unauthorized } from "@/utils/response";
+import { canManageOwned } from "@/utils/movieAuth";
+import {
+  badRequest,
+  forbidden,
+  notFound,
+  unauthorized,
+} from "@/utils/response";
 import { ok } from "@/utils/response/ok";
-import { isSystemAccount } from "@/utils/systemAccountCache";
 
 const app = new Hono<Env>();
 
@@ -139,12 +143,8 @@ export const seriesDetailRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    const isOwner = existingSeries.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(existingSeries.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this series");
+    if (!(await canManageOwned(user, existingSeries.authorId))) {
+      forbidden("Not authorized to edit this series");
     }
 
     const { title, description, visibility } = c.req.valid("json");
@@ -191,12 +191,8 @@ export const seriesDetailRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    const isOwner = series.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(series.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to delete this series");
+    if (!(await canManageOwned(user, series.authorId))) {
+      forbidden("Not authorized to delete this series");
     }
 
     // Unlink movies from series (don't delete them)
@@ -307,12 +303,8 @@ export const seriesDetailRoute = app
       notFound("Series not found");
     }
 
-    const isOwner = series.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(series.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this series");
+    if (!(await canManageOwned(user, series.authorId))) {
+      forbidden("Not authorized to edit this series");
     }
 
     const { movieId } = c.req.valid("json");
@@ -327,7 +319,7 @@ export const seriesDetailRoute = app
 
     // Only movies the caller may manage can be pulled into a series; a
     // movie they merely know the id of is reported as missing.
-    if (!(await canManageMovie(user, movie.authorId))) {
+    if (!(await canManageOwned(user, movie.authorId))) {
       notFound("Movie not found");
     }
 
@@ -389,12 +381,8 @@ export const seriesDetailRoute = app
       notFound("Series not found");
     }
 
-    const isOwner = series.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(series.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this series");
+    if (!(await canManageOwned(user, series.authorId))) {
+      forbidden("Not authorized to edit this series");
     }
 
     // Remove movie from series (don't delete the movie)
@@ -430,12 +418,8 @@ export const seriesDetailRoute = app
         notFound("Series not found");
       }
 
-      const isOwner = series.authorId === user.id;
-      const isAdminForSystemAccount =
-        user.role === "ADMIN" && (await isSystemAccount(series.authorId));
-
-      if (!isOwner && !isAdminForSystemAccount) {
-        unauthorized("Not authorized to edit this series");
+      if (!(await canManageOwned(user, series.authorId))) {
+        forbidden("Not authorized to edit this series");
       }
 
       const { movieIds } = c.req.valid("json");

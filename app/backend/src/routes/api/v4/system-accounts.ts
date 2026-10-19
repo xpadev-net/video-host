@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import { prisma } from "@/lib/prisma";
-import { badRequest, unauthorized } from "@/utils/response";
+import { badRequest, forbidden, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const CreateSystemAccountSchema = z.object({
@@ -16,8 +16,11 @@ const app = new Hono<Env>();
 export const systemAccountsRoute = app
   .get("/", async (c) => {
     const user = c.get("user");
-    if (!user || user.role !== "ADMIN") {
-      unauthorized("Admin access required");
+    if (!user) {
+      unauthorized("Unauthorized");
+    }
+    if (user.role !== "ADMIN") {
+      forbidden("Admin access required");
     }
 
     const systemAccounts = await prisma.user.findMany({
@@ -40,8 +43,11 @@ export const systemAccountsRoute = app
   })
   .post("/", zValidator("json", CreateSystemAccountSchema), async (c) => {
     const user = c.get("user");
-    if (!user || user.role !== "ADMIN") {
-      unauthorized("Admin access required");
+    if (!user) {
+      unauthorized("Unauthorized");
+    }
+    if (user.role !== "ADMIN") {
+      forbidden("Admin access required");
     }
 
     const { username, name } = c.req.valid("json");
@@ -73,8 +79,11 @@ export const systemAccountsRoute = app
   })
   .delete("/:id", async (c) => {
     const user = c.get("user");
-    if (!user || user.role !== "ADMIN") {
-      unauthorized("Admin access required");
+    if (!user) {
+      unauthorized("Unauthorized");
+    }
+    if (user.role !== "ADMIN") {
+      forbidden("Admin access required");
     }
 
     const id = c.req.param("id");
