@@ -131,7 +131,7 @@ configMapGenerator:
       - s3-endpoint=https://s3.ap-northeast-1.amazonaws.com
       - s3-force-path-style=false
       - backend-callback-url=http://backend:3000/api/internal/video/callback
-      - vod-base-url=https://your-vod-domain.com
+      - vod-base-url=https://your-frontend-domain.com
       - poll-interval-ms=5000
       - min-disk-space-gb=1
       - job-timeout-seconds=7200

@@ -17,7 +17,7 @@ data:
   # Callback
   backend-callback-url: "http://backend:3000/api/internal/video/callback"
   # VOD
-  vod-base-url: "https://your-vod-domain.com"
+  vod-base-url: "https://your-frontend-domain.com"
   # Worker
   poll-interval-ms: "5000"
   min-disk-space-gb: "1"

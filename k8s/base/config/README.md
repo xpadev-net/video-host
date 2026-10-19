@@ -39,8 +39,8 @@ be provided by your cluster or changed to your external service endpoints.
 and is not the Kubernetes configuration. `vod-nginx-config.sample.yaml` is the ConfigMap template used by the VOD
 Deployment. The nginx container runs as UID 101 and listens on port 8080; its
 Service exposes port 80. The Ingress terminates public TLS and routes `/vod/*`
-to that Service. Set the worker's `vod-base-url` to the public Ingress origin
-without a trailing `/vod` path.
+to that Service. The worker's `vod-base-url` defaults to the public Ingress
+origin without a trailing `/vod` path; keep it aligned with the Ingress host.
 
 The production overlay generates the VOD ConfigMap from `k8s/overlays/prod/nginx.conf`.
 It routes mapping requests to `backend:3000` and reconstructs presigned S3
