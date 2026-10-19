@@ -10,7 +10,7 @@ export const MAX_WATCHED_HISTORY_ENTRIES = 200;
 const normalizeWatchedHistory = (value: unknown): WatchedHistory => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
 
-  const entries = Object.entries(value).flatMap(([key, raw]) => {
+  const entries = Object.entries(value).flatMap(([key, raw], index) => {
     if (!raw || typeof raw !== "object") return [];
     const item = raw as Record<string, unknown>;
     const movie =
@@ -41,10 +41,14 @@ const normalizeWatchedHistory = (value: unknown): WatchedHistory => {
       thumbnailUrl: typeof thumbnailUrl === "string" ? thumbnailUrl : null,
       duration: Math.max(0, duration),
       watched: Math.max(0, Math.min(1, watched)),
+      // Legacy entries were inserted in watch order and the old history page
+      // reversed that order to show newest first. Keep that recency on migration.
       updatedAt:
         typeof updatedAt === "number" && Number.isFinite(updatedAt)
           ? updatedAt
-          : 0,
+          : item.movie
+            ? index + 1
+            : 0,
     };
     return [entry];
   });
@@ -65,17 +69,25 @@ const watchedHistoryStorage = createJSONStorage<WatchedHistory>(() => {
       removeItem: () => {},
     };
   }
+  const getLocalStorage = () => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  };
+
   return {
     getItem: (key) => {
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return null;
       try {
+        const raw = getLocalStorage()?.getItem(key);
+        if (!raw) return null;
         const normalized = JSON.stringify(
           normalizeWatchedHistory(JSON.parse(raw)),
         );
         if (normalized !== raw) {
           try {
-            window.localStorage.setItem(key, normalized);
+            getLocalStorage()?.setItem(key, normalized);
           } catch {
             // Keep the normalized in-memory value even if migration cannot be saved.
           }
@@ -85,10 +97,44 @@ const watchedHistoryStorage = createJSONStorage<WatchedHistory>(() => {
         return null;
       }
     },
-    setItem: (key, value) => window.localStorage.setItem(key, value),
-    removeItem: (key) => window.localStorage.removeItem(key),
+    setItem: (key, value) => {
+      try {
+        getLocalStorage()?.setItem(key, value);
+      } catch {
+        // Keep the atom usable when browser storage is unavailable.
+      }
+    },
+    removeItem: (key) => {
+      try {
+        getLocalStorage()?.removeItem(key);
+      } catch {
+        // Keep the atom usable when browser storage is unavailable.
+      }
+    },
   };
 });
+
+watchedHistoryStorage.subscribe = (key, callback) => {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== key) return;
+    try {
+      callback(
+        event.newValue
+          ? normalizeWatchedHistory(JSON.parse(event.newValue))
+          : {},
+      );
+    } catch {
+      callback({});
+    }
+  };
+
+  try {
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  } catch {
+    return undefined;
+  }
+};
 
 const watchedHistoryAtom = atomWithStorage<WatchedHistory>(
   "WatchedHistory",
