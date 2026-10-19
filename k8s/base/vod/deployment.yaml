@@ -30,6 +30,9 @@ spec:
                 echo "No DNS resolver found in /etc/resolv.conf" >&2
                 exit 1
               fi
+              case "$DNS_RESOLVER" in
+                *:*) DNS_RESOLVER="[$DNS_RESOLVER]" ;;
+              esac
               export DNS_RESOLVER
               if [ -n "$S3_ENDPOINT" ]; then
                 S3_PROXY_SCHEME="${S3_ENDPOINT%%://*}"
