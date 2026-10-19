@@ -428,6 +428,16 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 
     if (!result.success) {
       console.error(`Encoding failed: ${result.error}`);
+      if (result.permanent) {
+        await setEncodeProgress(job.movieId, { status: "failed" });
+        await sendCallback({
+          movieId: job.movieId,
+          variantId: "original",
+          status: "failed",
+          s3Key: job.s3Key,
+        });
+        return "failed";
+      }
       // Try to retry the job
       const retryCount = job.retryCount || 0;
       if (retryCount < 3) {
