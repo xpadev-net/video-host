@@ -27,6 +27,7 @@ import { findNext } from "@/components/Player/utils/findPrevNext";
 import { isApiUrl } from "@/lib/api-origin";
 
 const MAX_RECOVERY_ATTEMPTS = 3;
+const RECOVERY_PROGRESS_SECONDS = 5;
 const PLAYBACK_ERROR_MESSAGE = "動画を再生できません";
 
 type props = {
@@ -53,6 +54,10 @@ const Video = ({ className, videoRef, movie }: props) => {
   const hlsRef = useRef<Hls | null>(null);
   const lastHistorySaveRef = useRef({ at: 0, movieId: "", watched: -1 });
   const selectedAudioTrackRef = useRef(-1);
+  // Last known playback position. Read when the source is swapped: by the time
+  // the effect body runs, its cleanup has already detached the old source and
+  // reset the element's currentTime to 0.
+  const lastPlaybackTimeRef = useRef(0);
 
   const navigate = useNavigate();
 
@@ -144,6 +149,7 @@ const Video = ({ className, videoRef, movie }: props) => {
   };
 
   const onVideoTimeUpdate = () => {
+    lastPlaybackTimeRef.current = videoRef.current?.currentTime || 0;
     setMetadata((pv) => ({
       ...pv,
       currentTime: videoRef.current?.currentTime || 0,
@@ -209,6 +215,18 @@ const Video = ({ className, videoRef, movie }: props) => {
         });
         let networkRetries = 0;
         let mediaRecoveries = 0;
+        // Where playback was when the last media recovery started. Recoveries
+        // only count as successful once playback advanced well past it.
+        let recoveredAt = 0;
+        const onTimeUpdate = () => {
+          if (
+            mediaRecoveries > 0 &&
+            video.currentTime - recoveredAt >= RECOVERY_PROGRESS_SECONDS
+          ) {
+            mediaRecoveries = 0;
+          }
+        };
+        video.addEventListener("timeupdate", onTimeUpdate);
         hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
           setAudioTracks(
             data.audioTracks.map((track) => ({
@@ -228,10 +246,10 @@ const Video = ({ className, videoRef, movie }: props) => {
           selectedAudioTrackRef.current = data.id;
           setAudioTrackId(data.id);
         });
-        // Healthy fragments mean earlier errors were transient.
+        // A fetched fragment says nothing about whether it can be decoded, so
+        // only the network retry budget is restored here.
         hls.on(Hls.Events.FRAG_LOADED, () => {
           networkRetries = 0;
-          mediaRecoveries = 0;
         });
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal) return;
@@ -248,6 +266,7 @@ const Video = ({ className, videoRef, movie }: props) => {
             mediaRecoveries < MAX_RECOVERY_ATTEMPTS
           ) {
             mediaRecoveries += 1;
+            recoveredAt = video.currentTime;
             hls.recoverMediaError();
             return;
           }
@@ -256,6 +275,7 @@ const Video = ({ className, videoRef, movie }: props) => {
             hlsRef.current = null;
             setHls(null);
           }
+          video.removeEventListener("timeupdate", onTimeUpdate);
           hls.destroy();
           setState((pv) => ({
             ...pv,
@@ -270,6 +290,7 @@ const Video = ({ className, videoRef, movie }: props) => {
         video.crossOrigin = "anonymous";
         video.disableRemotePlayback = true;
         return () => {
+          video.removeEventListener("timeupdate", onTimeUpdate);
           if (hlsRef.current === hls) {
             hlsRef.current = null;
             setHls(null);
@@ -336,8 +357,11 @@ const Video = ({ className, videoRef, movie }: props) => {
     const previousUrl = loadedUrlRef.current;
     const sameSource =
       previousUrl !== "" && sameVodSource(contentUrl, previousUrl);
-    const resumeAt = sameSource ? videoEl.currentTime : 0;
-    if (!sameSource) selectedAudioTrackRef.current = -1;
+    const resumeAt = sameSource ? lastPlaybackTimeRef.current : 0;
+    if (!sameSource) {
+      selectedAudioTrackRef.current = -1;
+      lastPlaybackTimeRef.current = 0;
+    }
     loadedUrlRef.current = contentUrl;
 
     setState((pv) => (pv.error ? { ...pv, error: null } : pv));

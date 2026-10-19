@@ -102,12 +102,22 @@ describe("Video", () => {
     expect(hlsMock.instances[1].config.startPosition).toBe(-1);
   });
 
-  it("resumes from the current position when only the token rotates", () => {
+  it("resumes from the last playback position when only the token rotates", () => {
     const { rerender, videoRef } = renderVideo(movieWith(url("1.a")));
-    if (!videoRef.current) throw new Error("no video element");
-    Object.defineProperty(videoRef.current, "currentTime", {
+    const video = videoRef.current;
+    if (!video) throw new Error("no video element");
+    // Playback reached 42 s; the cleanup of the old source then resets the
+    // element (as detaching hls.js does), so only the tracked position works.
+    Object.defineProperty(video, "currentTime", {
       value: 42,
       configurable: true,
+      writable: true,
+    });
+    act(() => {
+      video.dispatchEvent(new Event("timeupdate"));
+    });
+    hlsMock.instances[0].destroy.mockImplementation(() => {
+      (video as unknown as { currentTime: number }).currentTime = 0;
     });
     rerender(movieWith(url("2.b")));
     expect(hlsMock.instances).toHaveLength(2);
@@ -146,6 +156,45 @@ describe("Video", () => {
     expect(hls.startLoad).toHaveBeenCalledTimes(3);
     expect(hls.destroy).toHaveBeenCalled();
     expect(store.get(PlayerStateAtom).error).toBeTruthy();
+  });
+
+  it("does not reset the media recovery budget when a fragment merely loads", () => {
+    renderVideo(movieWith(url("1.a")));
+    const hls = hlsMock.instances[0];
+    for (let i = 0; i < 5; i++) {
+      act(() => hls.emit("error", { fatal: true, type: "mediaError" }));
+      // The corrupt fragment downloads fine every time, then fails to decode.
+      act(() => hls.emit("fragLoaded", {}));
+    }
+    expect(hls.recoverMediaError).toHaveBeenCalledTimes(3);
+    expect(hls.destroy).toHaveBeenCalled();
+    expect(store.get(PlayerStateAtom).error).toBeTruthy();
+  });
+
+  it("restores the media recovery budget after playback advances", () => {
+    const { videoRef } = renderVideo(movieWith(url("1.a")));
+    const video = videoRef.current;
+    if (!video) throw new Error("no video element");
+    const hls = hlsMock.instances[0];
+    const setTime = (value: number) =>
+      Object.defineProperty(video, "currentTime", {
+        value,
+        configurable: true,
+        writable: true,
+      });
+    setTime(10);
+    for (let i = 0; i < 3; i++) {
+      act(() => hls.emit("error", { fatal: true, type: "mediaError" }));
+    }
+    expect(hls.recoverMediaError).toHaveBeenCalledTimes(3);
+    // Playback moves on by more than the threshold: the budget is restored.
+    setTime(30);
+    act(() => {
+      video.dispatchEvent(new Event("timeupdate"));
+    });
+    act(() => hls.emit("error", { fatal: true, type: "mediaError" }));
+    expect(hls.recoverMediaError).toHaveBeenCalledTimes(4);
+    expect(store.get(PlayerStateAtom).error).toBeNull();
   });
 
   it("ignores non-fatal errors", () => {
