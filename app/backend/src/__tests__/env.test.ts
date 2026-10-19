@@ -55,6 +55,22 @@ describe("authentication environment", () => {
         .filter((key): key is string => key !== undefined),
     );
     expect([...schemaKeys].every((key) => rootKeys.has(key))).toBe(true);
+
+    const rootValues = new Map(
+      rootExample
+        .split(/\r?\n/)
+        .map((line) => line.match(/^([A-Z][A-Z0-9_]*)=(.*)$/))
+        .filter((match): match is RegExpMatchArray => match !== null)
+        .map((match) => [match[1], match[2]]),
+    );
+    const frontendExample = readFileSync(
+      resolve(workspaceRoot, "app/frontend/.env.example"),
+      "utf8",
+    );
+    for (const line of frontendExample.split(/\r?\n/)) {
+      const match = line.match(/^(API_UPSTREAM_URL|VITE_[A-Z0-9_]+)=(.*)$/);
+      if (match) expect(rootValues.get(match[1])).toBe(match[2]);
+    }
   });
   it("accepts complete production configuration", () => {
     expect(EnvSchema.safeParse(production()).success).toBe(true);

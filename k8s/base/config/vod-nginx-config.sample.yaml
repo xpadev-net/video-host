@@ -78,8 +78,12 @@ data:
         resolver kube-dns.kube-system.svc.cluster.local valid=10s;
 
         server {
-            listen 80;
+            listen 443 ssl;
             server_name localhost;
+
+            ssl_certificate /etc/nginx/ssl/tls.crt;
+            ssl_certificate_key /etc/nginx/ssl/tls.key;
+            ssl_protocols TLSv1.2 TLSv1.3;
 
             # Health check endpoint
             location /health {
@@ -94,8 +98,7 @@ data:
                 # REPLACE_BACKEND_URL: バックエンドのサービス名を設定
                 proxy_pass http://backend:3000/api/v4/vod/mapping/;
                 proxy_set_header Host $http_host;
-                # VOD_INTERNAL_SECRETは環境変数から取得するか、ここに直接設定
-                proxy_set_header X-Vod-Internal-Secret "vod-internal-secret";
+                proxy_set_header X-Vod-Internal-Secret "${VOD_INTERNAL_SECRET}";
             }
 
             # Remote proxy for presigned S3 URLs

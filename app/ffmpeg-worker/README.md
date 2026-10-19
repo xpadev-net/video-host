@@ -4,14 +4,14 @@ The worker reads encoding jobs from Redis, downloads source media from S3-compat
 
 ## Local development
 
-Use Node.js 22.12 and pnpm 10.25.0. From the repository root, start Redis and MinIO with `docker compose up -d`, then start the worker:
+Use Node.js 22.12, pnpm 10.25.0, and FFmpeg with `ffmpeg` and `ffprobe` on `PATH` (for example, install `ffmpeg` with Homebrew on macOS or your distribution's package manager on Linux). From the repository root, start Redis and MinIO with `docker compose up -d`, then copy `app/ffmpeg-worker/.env.example` to `app/ffmpeg-worker/.env`. Set its `CALLBACK_SECRET` to the same value used by the backend.
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm -F @video-host/ffmpeg-worker dev
 ```
 
-Copy `app/ffmpeg-worker/.env.example` to `app/ffmpeg-worker/.env` and keep `CALLBACK_SECRET` identical in the backend configuration. The root `.env.example` is a combined reference for environment managers that inject variables into workspace commands; pnpm package processes do not load it automatically. Local MinIO credentials and development secrets are only for a private local setup; replace them before deployment.
+The root `.env.example` is a combined reference for environment managers that inject variables into workspace commands; pnpm package processes do not load it automatically. Local MinIO credentials and development secrets are only for a private local setup; replace them before deployment. The worker container image installs FFmpeg itself; the host-based command above requires both binaries to be installed locally.
 
 ## Configuration
 

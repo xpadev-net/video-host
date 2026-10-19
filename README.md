@@ -7,6 +7,7 @@ Video Host is a self-hosted media library. The frontend uses TanStack Start and 
 - Node.js 22.12 (see `.nvmrc`) and pnpm 10.25.0 (the repository's package manager version)
 - Docker Compose for Redis, MinIO and the VOD server
 - A disposable MySQL 8 database for the backend; the compose file does not start MySQL
+- If running the worker directly on the host, `ffmpeg` and `ffprobe` on `PATH` (the worker image includes them)
 
 ## Local development
 
@@ -15,7 +16,6 @@ From the repository root:
 ```sh
 pnpm install --frozen-lockfile
 docker compose up -d
-pnpm -F @video-host/backend prisma:generate
 ```
 
 The compose stack does not include MySQL. For a disposable local database, run this in a separate terminal (or provide your own MySQL 8 instance):
@@ -40,6 +40,7 @@ cp app/frontend/.env.example app/frontend/.env
 Set `DATABASE_URL` in `app/backend/.env` for the disposable database. Keep `CALLBACK_SECRET` the same in backend and worker files. The root `.env.example` is a combined reference for environment managers that inject variables into workspace commands; pnpm package processes do not load it automatically. Then apply migrations and start services in separate terminals:
 
 ```sh
+pnpm -F @video-host/backend prisma:generate
 pnpm -F @video-host/backend exec prisma migrate deploy
 pnpm dev:backend
 pnpm dev:frontend

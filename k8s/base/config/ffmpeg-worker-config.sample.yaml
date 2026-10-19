@@ -12,8 +12,8 @@ data:
   s3-tmp-bucket: "video-tmp"
   s3-prod-bucket: "video-prod"
   s3-region: "ap-northeast-1"
-  s3-endpoint: ""
-  s3-force-path-style: "false"
+  s3-endpoint: "http://minio:9000"
+  s3-force-path-style: "true"
   # Callback
   backend-callback-url: "http://backend:3000/api/internal/video/callback"
   # VOD

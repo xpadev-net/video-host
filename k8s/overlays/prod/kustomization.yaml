@@ -57,8 +57,8 @@ configMapGenerator:
       - s3-tmp-bucket=video-tmp
       - s3-prod-bucket=video-prod
       - s3-region=ap-northeast-1
-      - s3-endpoint=
-      - s3-force-path-style=false
+      - s3-endpoint=https://s3.ap-northeast-1.amazonaws.com
+      - s3-force-path-style=true
       - redis-url=redis://redis:6379
       - redis-sentinel-hosts=
       - redis-sentinel-name=
@@ -84,8 +84,8 @@ configMapGenerator:
       - s3-tmp-bucket=video-tmp
       - s3-prod-bucket=video-prod
       - s3-region=ap-northeast-1
-      - s3-endpoint=
-      - s3-force-path-style=false
+      - s3-endpoint=https://s3.ap-northeast-1.amazonaws.com
+      - s3-force-path-style=true
       - backend-callback-url=http://backend:3000/api/internal/video/callback
       - vod-base-url=https://vod/vod
       - poll-interval-ms=5000
