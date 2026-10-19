@@ -127,7 +127,7 @@ export const BackendEnvSchema = z.object({
     .number()
     .int()
     .positive()
-    .default(20 * 1024 * 1024 * 1024),
+    .default(5 * 1024 * 1024 * 1024),
 
   // Redis Configuration
   REDIS_URL: z.string().default("redis://localhost:6379"),

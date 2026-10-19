@@ -1,4 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
+import { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env } from "@/@types/hono";
@@ -168,51 +169,63 @@ export const moviesRoute = app
       }
     }
 
-    const movie = await prisma.movie.create({
-      data: {
-        title: data.title,
-        description: data.description,
-        authorId,
-        seriesId: data.seriesId,
-        visibility: data.visibility,
-        order: data.order ?? 0,
-        variants: {
-          create: {
-            variantId: "original",
-            contentUrl: "", // Will be set after encoding
-            s3Key: data.s3Key,
-            status: "PROCESSING",
+    // s3Key is unique, so a concurrent request claiming the same tmp object
+    // fails here even if it passed the pre-check above.
+    const movie = await prisma.movie
+      .create({
+        data: {
+          title: data.title,
+          description: data.description,
+          authorId,
+          seriesId: data.seriesId,
+          visibility: data.visibility,
+          order: data.order ?? 0,
+          variants: {
+            create: {
+              variantId: "original",
+              contentUrl: "", // Will be set after encoding
+              s3Key: data.s3Key,
+              status: "PROCESSING",
+            },
+          },
+          viewers: {
+            create: viewerIds.map((userId) => ({ userId })),
           },
         },
-        viewers: {
-          create: viewerIds.map((userId) => ({ userId })),
-        },
-      },
-      include: {
-        series: {
-          include: {
-            author: true,
-            movies: {
-              where: buildMovieAccessWhere(user),
-              orderBy: {
-                createdAt: "asc",
-              },
-              include: {
-                author: true,
-                variants: true,
+        include: {
+          series: {
+            include: {
+              author: true,
+              movies: {
+                where: buildMovieAccessWhere(user),
+                orderBy: {
+                  createdAt: "asc",
+                },
+                include: {
+                  author: true,
+                  variants: true,
+                },
               },
             },
           },
-        },
-        author: true,
-        variants: true,
-        viewers: {
-          include: {
-            user: true,
+          author: true,
+          variants: true,
+          viewers: {
+            include: {
+              user: true,
+            },
           },
         },
-      },
-    });
+      })
+      .catch((error: unknown) => {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002"
+        ) {
+          badRequest("s3Key is already in use");
+        }
+        throw error;
+      });
 
     // Add encode job to Redis queue
     await addEncodeJob({
