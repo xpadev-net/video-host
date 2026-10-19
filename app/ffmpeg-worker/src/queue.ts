@@ -131,9 +131,11 @@ export const getEncodeProgress = async (
 const REQUEUE_INTERRUPTED_JOB_SCRIPT = `
   if ARGV[1] ~= '' then
     -- This worker was running the job. A completion record means its output
-    -- is already committed, so it must not go back as a fresh encode.
+    -- is already committed, so it must not go back as a fresh encode; the
+    -- claim is dropped because whoever recorded the completion finalizes it.
     if redis.call('EXISTS', KEYS[4]) == 1 then
-      return 0
+      redis.call('ZREM', KEYS[1], ARGV[1])
+      return 2
     end
     -- Only the worker that still holds the claim may hand the job off; if a
     -- reaper already took it the job is theirs.
@@ -154,11 +156,12 @@ const REQUEUE_INTERRUPTED_JOB_SCRIPT = `
 // job did nothing wrong, the worker was just replaced. Releasing the claim,
 // queueing and publishing "queued" happen in one atomic step, so another
 // worker can neither run alongside a stale claim nor have its newer progress
-// overwritten. Returns false when the job is no longer ours to requeue.
+// overwritten. "gone": the claim was already taken by a reaper; "completed":
+// a completion record exists, so the claim was dropped instead.
 export const requeueInterruptedJob = async (
   job: EncodeJob,
   claimMember: string | null,
-): Promise<boolean> => {
+): Promise<"requeued" | "gone" | "completed"> => {
   const client = await getRedisClient();
   const result = await (client as RedisClientType).eval(
     REQUEUE_INTERRUPTED_JOB_SCRIPT,
@@ -172,7 +175,7 @@ export const requeueInterruptedJob = async (
       arguments: [claimMember ?? "", JSON.stringify(job)],
     },
   );
-  return result === 1;
+  return result === 1 ? "requeued" : result === 2 ? "completed" : "gone";
 };
 
 export const addJobToRetryQueue = async (job: EncodeJob): Promise<void> => {

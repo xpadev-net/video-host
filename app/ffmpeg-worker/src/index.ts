@@ -250,20 +250,70 @@ const checkDiskSpace = async (): Promise<boolean> => {
 // "error" marks unexpected processJob rejections (no confirmed terminal
 // outcome), distinct from handled "failed" paths. "relinquished" marks a
 // job whose ownership was transferred to the queue during shutdown.
+// Progress writes still in flight. Requeueing waits for them so a late
+// "processing" cannot overwrite the "queued" published by the handoff.
+const pendingProgressWrites = new Set<Promise<unknown>>();
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// The handoff is the only thing keeping an interrupted job alive, so a
+// transient Redis error is retried a few times within the shutdown budget.
+const requeueWithRetry = async (
+  job: EncodeJob,
+  claim: string | null,
+): Promise<Awaited<ReturnType<typeof requeueInterruptedJob>>> => {
+  const attempts = 5;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await requeueInterruptedJob(job, claim);
+    } catch (error) {
+      if (attempt >= attempts) throw error;
+      console.error(
+        `Shutdown requeue failed (attempt ${attempt}/${attempts}): movieId=${job.movieId}`,
+        error,
+      );
+      await sleep(500);
+    }
+  }
+};
+
 // A shutdown interrupted this job. Hand it back to the queue untouched; if the
 // claim is already gone (a reaper took it) the job belongs to someone else.
+// Never throws and never falls into the normal failure path: a shutdown must
+// not cost the job a retry.
 const requeueForShutdown = async (job: EncodeJob): Promise<JobResult> => {
   console.warn(
     `Requeueing job interrupted by shutdown: movieId=${job.movieId}`,
   );
-  const requeued = await requeueInterruptedJob(job, activeJobClaim);
-  if (!requeued) {
+  await Promise.allSettled([...pendingProgressWrites]);
+  const claim = activeJobClaim;
+  try {
+    const outcome = await requeueWithRetry(job, claim);
+    activeJobClaim = null;
+    if (outcome === "requeued") {
+      return "requeued";
+    }
+    // Someone else owns the job now (claim taken, or completion recorded and
+    // the claim dropped by the handoff).
     jobRelinquished = true;
     return "relinquished";
+  } catch (error) {
+    console.error(
+      `Failed to requeue interrupted job, leaving it to the reaper: movieId=${job.movieId}`,
+      error,
+    );
+    jobRelinquished = true;
+    if (claim) {
+      // An expired claim is requeued by the reaper without a retry penalty.
+      await expireProcessingJob(claim).catch((expireError) =>
+        console.error(
+          `Failed to expire processing claim: movieId=${job.movieId}`,
+          expireError,
+        ),
+      );
+    }
+    return "relinquished";
   }
-  // The claim was released inside the handoff.
-  activeJobClaim = null;
-  return "requeued";
 };
 
 type JobResult =
@@ -380,16 +430,22 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       inputPath,
       outputPath,
       async (progress) => {
-        if (jobRelinquished) {
+        if (jobRelinquished || abortController.signal.aborted) {
           return;
         }
         // Update progress in Redis
-        await setEncodeProgress(job.movieId, {
+        const write = setEncodeProgress(job.movieId, {
           status: "processing",
           progress: progress.percent,
           currentTime: progress.currentTime,
           duration: progress.duration,
         });
+        pendingProgressWrites.add(write);
+        try {
+          await write;
+        } finally {
+          pendingProgressWrites.delete(write);
+        }
       },
       abortController.signal,
     );
@@ -661,7 +717,12 @@ const pollForJobs = async (): Promise<void> => {
       if (job && isShuttingDown) {
         // Popped while SIGTERM was being handled: not started, so hand it
         // straight back instead of encoding through the shutdown window.
-        await requeueInterruptedJob(job, null);
+        await requeueWithRetry(job, null).catch((error) =>
+          console.error(
+            `Failed to hand back a job popped during shutdown: movieId=${job.movieId}`,
+            error,
+          ),
+        );
         break;
       }
       if (job) {
