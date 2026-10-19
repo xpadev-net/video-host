@@ -11,6 +11,7 @@ import {
 import { filterSeries } from "@/lib/filter";
 import { formatSeries } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
+import { getDistinctSuggestPage } from "@/lib/suggest";
 import { seriesDetailRoute } from "@/routes/api/v4/series/[series]";
 import {
   buildMovieAccessWhere,
@@ -18,7 +19,7 @@ import {
 } from "@/utils/buildVisibilityFilter";
 import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
 import { resolveAuthorId } from "@/utils/movieAuth";
-import { paginationQuerySchema } from "@/utils/pagination";
+import { MAX_RELATION_MOVIES, paginationQuerySchema } from "@/utils/pagination";
 import { unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
@@ -49,43 +50,76 @@ export const seriesRoute = app
     const user = c.get("user");
     const { page, limit, query, author, suggest, mine } = c.req.valid("query");
 
-    const where: Prisma.SeriesWhereInput = buildVisibilityFilter(
-      user,
-      query,
-      author,
-    );
+    const where: Prisma.SeriesWhereInput =
+      buildVisibilityFilter<Prisma.SeriesWhereInput>(user, query, author);
     if (mine) {
       if (!user) unauthorized("Authentication required");
       where.authorId = user.role === "ADMIN" && author ? author : user.id;
     }
 
+    if (suggest) {
+      const authorId = mine
+        ? user?.role === "ADMIN" && author
+          ? author
+          : user?.id
+        : author;
+      const { ids, totalCount } = await getDistinctSuggestPage({
+        table: "Series",
+        user,
+        query,
+        authorId,
+        page,
+        limit,
+      });
+      const rows = ids.length
+        ? await prisma.series.findMany({
+            where: { id: { in: ids } },
+            include: { author: true },
+          })
+        : [];
+      const rowsById = new Map(rows.map((row) => [row.id, row]));
+      const items = ids.flatMap((id) => {
+        const row = rowsById.get(id);
+        return row ? [formatSeries(filterSeries(row))] : [];
+      });
+      const totalPages = Math.ceil(totalCount / limit);
+
+      const response: PaginatedResponse<FormattedSeries> = {
+        items,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+        },
+      };
+      return ok(c, response);
+    }
+
     const totalCount = await prisma.series.count({ where });
 
     const series = await prisma.series.findMany({
-      include: suggest
-        ? {
-            author: true,
-          }
-        : {
-            movies: {
-              where: buildMovieAccessWhere(user),
-              orderBy: [
-                {
-                  order: "asc",
-                },
-                {
-                  createdAt: "asc",
-                },
-              ],
-              take: 10,
-              include: {
-                author: true,
-                variants: true,
-              },
+      include: {
+        movies: {
+          where: buildMovieAccessWhere(user),
+          orderBy: [
+            {
+              order: "asc",
             },
+            {
+              createdAt: "asc",
+            },
+          ],
+          take: 10,
+          include: {
             author: true,
+            variants: true,
           },
-      distinct: suggest ? ["title"] : undefined,
+        },
+        author: true,
+      },
       where,
       orderBy: {
         updatedAt: "desc",
@@ -132,6 +166,7 @@ export const seriesRoute = app
         author: true,
         movies: {
           where: buildMovieAccessWhere(user),
+          take: MAX_RELATION_MOVIES,
           include: {
             author: true,
             variants: true,

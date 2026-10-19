@@ -11,13 +11,14 @@ import {
 import { filterPlaylist } from "@/lib/filter";
 import { formatPlaylist } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
+import { getDistinctSuggestPage } from "@/lib/suggest";
 import {
   buildMovieAccessWhere,
   buildVisibilityFilter,
 } from "@/utils/buildVisibilityFilter";
 import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
 import { resolveAuthorId } from "@/utils/movieAuth";
-import { paginationQuerySchema } from "@/utils/pagination";
+import { MAX_RELATION_MOVIES, paginationQuerySchema } from "@/utils/pagination";
 import { unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { playlistDetailRoute } from "./[playlist]";
@@ -49,42 +50,75 @@ export const playlistsRoute = app
     const user = c.get("user");
     const { page, limit, author, query, mine, suggest } = c.req.valid("query");
 
-    const where: Prisma.PlaylistWhereInput = buildVisibilityFilter(
-      user,
-      query,
-      author,
-    );
+    const where: Prisma.PlaylistWhereInput =
+      buildVisibilityFilter<Prisma.PlaylistWhereInput>(user, query, author);
 
     if (mine) {
       if (!user) unauthorized("Authentication required");
       where.authorId = user.role === "ADMIN" && author ? author : user.id;
     }
 
+    if (suggest) {
+      const authorId = mine
+        ? user?.role === "ADMIN" && author
+          ? author
+          : user?.id
+        : author;
+      const { ids, totalCount } = await getDistinctSuggestPage({
+        table: "Playlist",
+        user,
+        query,
+        authorId,
+        page,
+        limit,
+      });
+      const rows = ids.length
+        ? await prisma.playlist.findMany({
+            where: { id: { in: ids } },
+            include: { author: true },
+          })
+        : [];
+      const rowsById = new Map(rows.map((row) => [row.id, row]));
+      const items = ids.flatMap((id) => {
+        const row = rowsById.get(id);
+        return row ? [formatPlaylist(filterPlaylist(row))] : [];
+      });
+      const totalPages = Math.ceil(totalCount / limit);
+
+      const response: PaginatedResponse<FormattedPlaylist> = {
+        items,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+        },
+      };
+      return ok(c, response);
+    }
+
     const totalCount = await prisma.playlist.count({ where });
 
     const playlists = await prisma.playlist.findMany({
       where,
-      include: suggest
-        ? {
-            author: true,
-          }
-        : {
-            movies: {
-              where: { movie: buildMovieAccessWhere(user) },
-              orderBy: { order: "asc" },
+      include: {
+        movies: {
+          where: { movie: buildMovieAccessWhere(user) },
+          orderBy: { order: "asc" },
+          include: {
+            movie: {
               include: {
-                movie: {
-                  include: {
-                    author: true,
-                    variants: true,
-                  },
-                },
+                author: true,
+                variants: true,
               },
-              take: 5,
             },
-            author: true,
           },
-      distinct: suggest ? ["title"] : undefined,
+          take: 5,
+        },
+        author: true,
+      },
       orderBy: { updatedAt: "desc" },
       take: limit,
       skip: (page - 1) * limit,
@@ -129,6 +163,7 @@ export const playlistsRoute = app
         movies: {
           where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
+          take: MAX_RELATION_MOVIES,
           include: {
             movie: {
               include: {

@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
+  type EncodeJob,
+  EncodeJobSchema,
+  type EncodeProgress,
+  EncodeProgressSchema,
+} from "@video-host/contracts";
+import {
   createClient,
   createSentinel,
   type RedisClientType,
@@ -11,6 +17,8 @@ import {
   REDIS_SENTINEL_PASSWORD,
   REDIS_URL,
 } from "./env";
+
+export type { EncodeJob, EncodeProgress } from "@video-host/contracts";
 
 let redisClient: RedisClientType | RedisSentinelType | null = null;
 
@@ -60,24 +68,8 @@ export const RETRY_QUEUE_KEY = "video:encode:retry:queue"; // Sorted set (ZSET)
 export const MAX_RETRY_COUNT = 3;
 export const INITIAL_RETRY_DELAY_SECONDS = 10;
 
-export interface EncodeJob {
-  movieId: string;
-  s3Key: string;
-  userId: string;
-  createdAt: string;
-  retryCount?: number;
-  retryAfter?: number; // Unix timestamp in seconds
-}
-
 // Progress tracking
 export const ENCODE_PROGRESS_PREFIX = "video:encode:progress:";
-
-export interface EncodeProgress {
-  status: "queued" | "processing" | "retrying" | "completed" | "failed";
-  progress?: number;
-  currentTime?: number;
-  duration?: number;
-}
 
 export const setEncodeProgress = async (
   movieId: string,
@@ -87,7 +79,7 @@ export const setEncodeProgress = async (
   await client.setEx(
     `${ENCODE_PROGRESS_PREFIX}${movieId}`,
     3600, // 1 hour TTL
-    JSON.stringify(progress),
+    JSON.stringify(EncodeProgressSchema.parse(progress)),
   );
 };
 
@@ -105,7 +97,8 @@ export const getEncodeProgress = async (
     return null;
   }
   try {
-    return JSON.parse(raw) as EncodeProgress;
+    const parsed = EncodeProgressSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
@@ -244,7 +237,7 @@ const processRetryQueueWithClient = async (
     // Log moved jobs
     for (const jobJson of movedJobs) {
       try {
-        const job = JSON.parse(jobJson) as EncodeJob;
+        const job = EncodeJobSchema.parse(JSON.parse(jobJson));
         console.log(
           `Moved job from retry queue to main queue: movieId=${job.movieId}, retryCount=${job.retryCount}`,
         );
@@ -321,7 +314,9 @@ export const claimNextEncodeJob = async (): Promise<
       arguments: [randomUUID(), Date.now().toString()],
     },
   )) as string | null;
-  return member ? { ...(JSON.parse(member) as ProcessingClaim), member } : null;
+  if (!member) return null;
+  const claim = JSON.parse(member) as ProcessingClaim;
+  return { ...claim, job: EncodeJobSchema.parse(claim.job), member };
 };
 
 // A job's recorded outcome once its input is deleted: unlike progress keys

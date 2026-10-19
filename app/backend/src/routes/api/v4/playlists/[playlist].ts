@@ -13,6 +13,7 @@ import {
 } from "@/utils/buildVisibilityFilter";
 import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
 import { canManageOwned } from "@/utils/movieAuth";
+import { MAX_RELATION_MOVIES } from "@/utils/pagination";
 import {
   badRequest,
   forbidden,
@@ -54,6 +55,7 @@ export const playlistDetailRoute = app
         movies: {
           where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
+          take: MAX_RELATION_MOVIES,
           include: {
             movie: {
               include: {
@@ -118,6 +120,7 @@ export const playlistDetailRoute = app
         movies: {
           where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
+          take: MAX_RELATION_MOVIES,
           include: {
             movie: {
               include: {
@@ -230,6 +233,7 @@ export const playlistDetailRoute = app
         movies: {
           where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
+          take: MAX_RELATION_MOVIES,
           include: {
             movie: {
               include: {
@@ -326,6 +330,7 @@ export const playlistDetailRoute = app
           movies: {
             where: { movie: buildMovieAccessWhere(user) },
             orderBy: { order: "asc" },
+            take: MAX_RELATION_MOVIES,
             include: {
               movie: {
                 include: {

@@ -1,4 +1,10 @@
 import {
+  type EncodeJob,
+  EncodeJobSchema,
+  type EncodeProgress,
+  EncodeProgressSchema,
+} from "@video-host/contracts";
+import {
   createClient,
   createSentinel,
   type RedisClientType,
@@ -56,28 +62,16 @@ export const getRedisClient = async (): Promise<
 
 export const ENCODE_QUEUE_KEY = "video:encode:queue";
 
-export interface EncodeJob {
-  movieId: string;
-  s3Key: string;
-  userId: string;
-  createdAt: string;
-}
-
 export const addEncodeJob = async (job: EncodeJob): Promise<void> => {
   const client = await getRedisClient();
-  await client.lPush(ENCODE_QUEUE_KEY, JSON.stringify(job));
+  await client.lPush(
+    ENCODE_QUEUE_KEY,
+    JSON.stringify(EncodeJobSchema.parse(job)),
+  );
 };
 
 // Progress tracking
 export const ENCODE_PROGRESS_PREFIX = "video:encode:progress:";
-
-export interface EncodeProgress {
-  status: "queued" | "processing" | "retrying" | "completed" | "failed";
-  progress?: number; // 0-100 percentage
-  queuePosition?: number;
-  currentTime?: number;
-  duration?: number;
-}
 
 export const setEncodeProgress = async (
   movieId: string,
@@ -87,7 +81,7 @@ export const setEncodeProgress = async (
   await client.setEx(
     `${ENCODE_PROGRESS_PREFIX}${movieId}`,
     3600, // 1 hour TTL
-    JSON.stringify(progress),
+    JSON.stringify(EncodeProgressSchema.parse(progress)),
   );
 };
 
@@ -97,7 +91,12 @@ export const getEncodeProgress = async (
   const client = await getRedisClient();
   const result = await client.get(`${ENCODE_PROGRESS_PREFIX}${movieId}`);
   if (!result) return null;
-  return JSON.parse(result) as EncodeProgress;
+  try {
+    const parsed = EncodeProgressSchema.safeParse(JSON.parse(result));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 };
 
 const QUEUE_SNAPSHOT_TTL_MS = 2000;
@@ -112,7 +111,7 @@ const loadQueuePositions = async (): Promise<Map<string, number>> => {
   const positions = new Map<string, number>();
   for (let i = 0; i < queue.length; i++) {
     try {
-      const job = JSON.parse(queue[i]) as EncodeJob;
+      const job = EncodeJobSchema.parse(JSON.parse(queue[i]));
       // Position from end (1 = next to process)
       if (!positions.has(job.movieId)) {
         positions.set(job.movieId, queue.length - i);
