@@ -35,10 +35,7 @@ export const usersRoute = app
 
     const where = query
       ? {
-          OR: [
-            { username: { contains: query } },
-            { name: { contains: query } },
-          ],
+          OR: [{ username: { search: query } }, { name: { search: query } }],
         }
       : {};
 

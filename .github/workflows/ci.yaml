@@ -12,6 +12,48 @@ env:
   NODE_VERSION: '22.12.x'
 
 jobs:
+  # Replaying migrations against a temporary MySQL shadow DB catches schema drift.
+  schema-drift:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: video_host
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      NODE_VERSION: '22.12.x'
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/video_host
+      SHADOW_DATABASE_URL: mysql://root:root@127.0.0.1:3306/video_host_shadow
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create Prisma shadow database
+        run: docker exec "${{ job.services.mysql.id }}" mysql -uroot -proot -e "CREATE DATABASE video_host_shadow;"
+
+      - name: Check migration history matches Prisma schema
+        run: pnpm -F @video-host/backend prisma:schema-check
+
   # Backend CI
   backend-ci:
     runs-on: ubuntu-latest

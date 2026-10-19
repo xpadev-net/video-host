@@ -14,6 +14,7 @@
     "format:check": "biome format .",
     "typecheck": "tsc --noEmit --skipLibCheck --pretty --noErrorTruncation --skipDefaultLibCheck --project tsconfig.json",
     "prisma:generate": "prisma generate",
+    "prisma:schema-check": "test -n \"$SHADOW_DATABASE_URL\" || { echo 'SHADOW_DATABASE_URL is required' >&2; exit 1; }; prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url \"$SHADOW_DATABASE_URL\" --exit-code",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
@@ -28,11 +29,11 @@
     "@opentelemetry/resources": "^2.12.0",
     "@opentelemetry/sdk-metrics": "^2.12.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
-    "@prisma/client": "6.19.0",
+    "@prisma/client": "6.19.3",
     "better-auth": "1.7.7",
     "dotenv": "^17.4.2",
     "hono": "^4.13.13",
-    "prisma": "^6.19.3",
+    "prisma": "6.19.3",
     "redis": "^5.12.1",
     "zod": "^4.6.7"
   },
