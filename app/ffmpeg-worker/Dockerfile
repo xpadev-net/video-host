@@ -11,6 +11,7 @@ COPY app/ffmpeg-worker/package.json ./app/ffmpeg-worker/
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/ffmpeg-worker
 COPY app/ffmpeg-worker/ ./app/ffmpeg-worker/
 RUN pnpm --filter @video-host/ffmpeg-worker build
+RUN pnpm --filter @video-host/ffmpeg-worker --prod deploy --legacy /prod/worker
 
 FROM node:${NODE_VERSION} AS runner
 ARG COMMIT_HASH
@@ -20,15 +21,7 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY app/ffmpeg-worker/package.json ./app/ffmpeg-worker/
-ENV PNPM_HOME=/pnpm
-ENV PATH=$PNPM_HOME:$PATH
-RUN npm install --global corepack@0.34.5 \
-    && corepack enable \
-    && pnpm install --prod --frozen-lockfile --ignore-scripts --filter @video-host/ffmpeg-worker
-COPY --from=builder --chown=node:node /app/app/ffmpeg-worker/dist ./app/ffmpeg-worker/dist
-WORKDIR /app/app/ffmpeg-worker
+COPY --from=builder /prod/worker/ ./
 USER node
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD ["node", "-e", "try { process.kill(1, 0) } catch { process.exit(1) }"]
+WORKDIR /app
 CMD ["node", "dist/index.js"]

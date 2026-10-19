@@ -6,6 +6,9 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN npm install --global corepack@0.34.5 \
     && corepack enable
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY app/backend/package.json ./app/backend/
@@ -25,7 +28,7 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openssl \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder --chown=node:node /prod/backend/ ./
+COPY --from=builder /prod/backend/ ./
 RUN chmod +x ./start.sh
 USER node
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.PORT || 3000}/healthz`).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

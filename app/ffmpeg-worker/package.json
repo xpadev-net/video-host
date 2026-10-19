@@ -3,6 +3,9 @@
   "version": "0.0.11",
   "private": true,
   "license": "MIT",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
