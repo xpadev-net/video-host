@@ -24,10 +24,11 @@ New logins create a HUMAN domain profile with ordinary USER role. One AuthUser c
 
 ## Apply schema and bootstrap
 
-With a backup and only the new build selected, run from the repository root:
+The backend container entrypoint runs `prisma migrate deploy` before starting the API. Take a database backup and review pending migrations before deploying. For a migration that drops or renames data, or otherwise breaks compatibility with the previous backend, use a maintenance window: stop the old backend replicas before starting the new image, then verify migrations and the API before restoring traffic. Ordinary rolling updates are safe only when migrations retain compatibility with both application versions while old and new replicas overlap.
+
+To apply migrations manually when operating a disposable or stopped deployment, run from the repository root:
 
     pnpm -F @video-host/backend exec prisma migrate deploy
-    pnpm -F @video-host/backend prisma:generate
 
 Migration `20261001060000_better_auth` drops the old `Session` table and `User.password` column. It preserves content rows and adds the authentication models/mapping. Do not run `db push --accept-data-loss` as a substitute.
 

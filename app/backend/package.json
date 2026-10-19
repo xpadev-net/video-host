@@ -38,12 +38,12 @@
     "better-auth": "1.7.7",
     "dotenv": "^17.4.2",
     "hono": "^4.13.13",
+    "prisma": "6.19.3",
     "redis": "^5.12.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.12.0",
-    "prisma": "6.19.3",
     "@vitest/coverage-v8": "^4.1.11",
     "tsc-alias": "^1.9.7",
     "tsx": "^4.23.15",
