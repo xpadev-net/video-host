@@ -1,6 +1,7 @@
 import type { CallbackPayload, CallbackResult } from "./callback";
 import { PROCESSING_JOB_LEASE_MS } from "./config";
 import { getVodContentUrl } from "./env";
+import { createJobFinalizer } from "./job-finalizer";
 import { log, withLogContext } from "./logger";
 import { reaperEvents } from "./metrics";
 import {
@@ -23,38 +24,18 @@ type SendCallbackObserved = (
 
 export const createReaper = (sendCallbackObserved: SendCallbackObserved) => {
   let reaperInFlight = false;
+  const jobFinalizer = createJobFinalizer({
+    setProgress: setEncodeProgress,
+    callback: sendCallbackObserved,
+    deleteOutput: deleteFromProd,
+  });
 
   const finalizeCommittedClaim = async (
     member: string,
     job: ProcessingClaim["job"],
     completion: ProcessingClaimCompletion,
   ): Promise<void> => {
-    await setEncodeProgress(job.movieId, {
-      status: "completed",
-      progress: 100,
-      duration: completion.duration,
-    });
-    const result = await sendCallbackObserved({
-      movieId: job.movieId,
-      variantId: "original",
-      status: "success",
-      s3Key: job.s3Key,
-      contentUrl: completion.contentUrl,
-      duration: completion.duration,
-      thumbnailKey: completion.thumbnailKey,
-    });
-    if (result === "rejected") {
-      await deleteFromProd(job.s3Key).catch((error) =>
-        log.error("Failed to remove rejected output", error),
-      );
-      await setEncodeProgress(job.movieId, { status: "failed" });
-      await sendCallbackObserved({
-        movieId: job.movieId,
-        variantId: "original",
-        status: "failed",
-        s3Key: job.s3Key,
-      });
-    }
+    await jobFinalizer.finalizeSuccess(job, completion);
     await finishProcessingJob(member, job);
   };
 

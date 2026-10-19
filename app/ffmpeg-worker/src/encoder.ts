@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { PROCESS_KILL_GRACE_MS } from "./config";
 import { FFMPEG_THREADS, JOB_TIMEOUT_SECONDS, TEMP_DIR } from "./env";
 import { log } from "./logger";
 
 const PROBE_TIMEOUT_MS = 30_000;
-const PROCESS_KILL_GRACE_MS = 5_000;
 const MAX_PROBE_OUTPUT_BYTES = 1024 * 1024;
 const MAX_FFMPEG_STDERR_BYTES = 8 * 1024;
 const THUMBNAIL_TIMEOUT_MS = 60_000;
