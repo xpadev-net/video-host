@@ -11,6 +11,7 @@ import { PaginationControls } from "@/components/Dashboard/PaginationControls";
 import { useConfirm, useNotify } from "@/components/Feedback/FeedbackProvider";
 import { useMyMovies } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 import { time2str } from "@/libraries/time";
 import { visibility2str } from "@/utils/visibility2str";
@@ -22,23 +23,28 @@ export const Route = createFileRoute("/_app/dashboard/videos/")({
 
 function VideosPage() {
   const { data: user, isLoading: isUserLoading } = useSelf();
+  const { data: authSession } = authClient.useSession();
+  const sessionUserId = authSession?.user.id;
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   const [pagination, setPagination] = useState({
     accountId: selectedAccountId,
     profileId: selectedProfileId,
+    sessionUserId,
     page: 1,
   });
   useEffect(() => {
     setPagination({
       accountId: selectedAccountId,
       profileId: selectedProfileId,
+      sessionUserId,
       page: 1,
     });
-  }, [selectedAccountId, selectedProfileId]);
+  }, [selectedAccountId, selectedProfileId, sessionUserId]);
   const page =
     pagination.accountId === selectedAccountId &&
-    pagination.profileId === selectedProfileId
+    pagination.profileId === selectedProfileId &&
+    pagination.sessionUserId === sessionUserId
       ? pagination.page
       : 1;
   const setPage = useCallback(
@@ -46,18 +52,20 @@ function VideosPage() {
       setPagination((current) => {
         const currentPage =
           current.accountId === selectedAccountId &&
-          current.profileId === selectedProfileId
+          current.profileId === selectedProfileId &&
+          current.sessionUserId === sessionUserId
             ? current.page
             : 1;
         return {
           accountId: selectedAccountId,
           profileId: selectedProfileId,
+          sessionUserId,
           page:
             typeof nextPage === "function" ? nextPage(currentPage) : nextPage,
         };
       });
     },
-    [selectedAccountId, selectedProfileId],
+    [selectedAccountId, selectedProfileId, sessionUserId],
   );
   const { data: moviesData, error, mutate } = useMyMovies(page);
   const confirm = useConfirm();

@@ -46,7 +46,7 @@ export const AccountSwitcher: FC = () => {
       setSelectedProfileId(null);
       return;
     }
-    if (selectedProfile || profilesLoadError) return;
+    if (selectedProfile) return;
     if (refreshingUnknownProfilesRef.current.has(selectedProfileId)) return;
     refreshingUnknownProfilesRef.current.add(selectedProfileId);
     void mutateProfiles()
@@ -65,13 +65,7 @@ export const AccountSwitcher: FC = () => {
       .finally(() => {
         refreshingUnknownProfilesRef.current.delete(selectedProfileId);
       });
-  }, [
-    profiles,
-    profilesLoadError,
-    selectedProfileId,
-    setSelectedProfileId,
-    mutateProfiles,
-  ]);
+  }, [profiles, selectedProfileId, setSelectedProfileId, mutateProfiles]);
 
   useEffect(() => {
     if (user && !isAdmin) {
@@ -132,9 +126,9 @@ export const AccountSwitcher: FC = () => {
 
   return (
     <div className="account-switcher">
-      {profilesLoadError && !profiles && (
+      {profilesLoadError && (
         <p role="alert">
-          プロフィールを読み込めませんでした。{" "}
+          プロフィールを更新できませんでした。{" "}
           <button type="button" onClick={() => void mutateProfiles()}>
             再試行
           </button>
