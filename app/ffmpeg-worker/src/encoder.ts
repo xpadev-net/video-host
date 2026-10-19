@@ -26,6 +26,7 @@ class PermanentMediaInputError extends Error {}
 interface ProbeResult {
   duration: number;
   videoMap: string;
+  hdr: boolean;
 }
 
 const probeMedia = async (
@@ -37,7 +38,7 @@ const probeMedia = async (
       "-v",
       "error",
       "-show_entries",
-      "format=duration,format_name:stream=index,codec_type,width,height:stream_disposition=attached_pic",
+      "format=duration,format_name:stream=index,codec_type,width,height,color_transfer,color_primaries,color_space:stream_disposition=attached_pic",
       "-show_format",
       "-show_streams",
       "-of",
@@ -57,6 +58,9 @@ const probeMedia = async (
       codec_type?: string;
       width?: number;
       height?: number;
+      color_transfer?: string;
+      color_primaries?: string;
+      color_space?: string;
       disposition?: { attached_pic?: number };
     }[];
   };
@@ -108,6 +112,9 @@ const probeMedia = async (
   return {
     duration,
     videoMap: `0:${bestVideo.index}`,
+    hdr: ["smpte2084", "arib-std-b67", "bt2020-10", "bt2020-12"].includes(
+      bestVideo.color_transfer ?? "",
+    ),
   };
 };
 
@@ -210,19 +217,6 @@ if (!existsSync(TEMP_DIR)) {
   mkdirSync(TEMP_DIR, { recursive: true });
 }
 
-// Parse time=HH:MM:SS.XX from ffmpeg stderr
-const parseTimeFromStderr = (line: string): number | null => {
-  const match = line.match(/time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
-  if (match) {
-    const hours = parseInt(match[1], 10);
-    const minutes = parseInt(match[2], 10);
-    const seconds = parseInt(match[3], 10);
-    const centiseconds = parseInt(match[4], 10);
-    return hours * 3600 + minutes * 60 + seconds + centiseconds / 100;
-  }
-  return null;
-};
-
 export const encodeVideo = async (
   inputPath: string,
   outputPath: string,
@@ -247,7 +241,7 @@ export const encodeVideo = async (
       error: `Failed to probe input: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
-  const { duration: inputDuration, videoMap } = inputMetadata;
+  const { duration: inputDuration, videoMap, hdr } = inputMetadata;
 
   return new Promise((resolve) => {
     // Ensure output directory exists
@@ -259,6 +253,11 @@ export const encodeVideo = async (
     // FFmpeg command for re-encoding to mp4
     // Keep all audio streams so multi-audio sources stay selectable when
     // packaged as HLS by nginx-vod-module.
+    const scaleFilter =
+      "scale=1920:1920:force_original_aspect_ratio=decrease:force_divisible_by=2";
+    const videoFilter = hdr
+      ? `zscale=transfer=linear:npl=100,format=gbrpf32le,tonemap=tonemap=hable:desat=0,zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=tv,${scaleFilter}`
+      : scaleFilter;
     const ffmpegArgs = [
       "-nostdin",
       "-protocol_whitelist",
@@ -275,6 +274,34 @@ export const encodeVideo = async (
       "fast",
       "-crf",
       "23",
+      "-vf",
+      videoFilter,
+      ...(hdr
+        ? [
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+            "-color_range",
+            "tv",
+          ]
+        : []),
+      "-pix_fmt",
+      "yuv420p",
+      "-profile:v",
+      "high",
+      "-level:v",
+      "4.1",
+      "-g",
+      "240",
+      "-keyint_min",
+      "48",
+      "-sc_threshold",
+      "0",
+      "-force_key_frames",
+      "expr:gte(t,n_forced*2)",
     ];
 
     // Add thread limit if specified
@@ -287,6 +314,8 @@ export const encodeVideo = async (
       "aac",
       "-ac",
       "2",
+      "-ar",
+      "48000",
       "-b:a",
       "128k",
       "-movflags",
@@ -338,14 +367,23 @@ export const encodeVideo = async (
     let lastProgressAt = 0;
     let lastProgressPercent = -1;
     let progressCallbackInFlight = false;
+    let progressRemainder = "";
     ffmpeg.stderr.on("data", (data) => {
       const line = data.toString();
       stderrTail = (stderrTail + line).slice(-MAX_FFMPEG_STDERR_BYTES);
 
       // Parse progress if callback provided and we have duration
       if (onProgress && inputDuration > 0) {
-        const currentTime = parseTimeFromStderr(line);
-        if (currentTime !== null) {
+        const progressLines = `${progressRemainder}${line}`.split(/\r?\n/);
+        progressRemainder = progressLines.pop() ?? "";
+        const progressLine = progressLines
+          .reverse()
+          .find((candidate) => candidate.startsWith("out_time_us="));
+        const outTimeUs = progressLine
+          ? Number.parseInt(progressLine.slice("out_time_us=".length), 10)
+          : Number.NaN;
+        if (Number.isFinite(outTimeUs) && outTimeUs >= 0) {
+          const currentTime = outTimeUs / 1_000_000;
           const percent = Math.min(
             100,
             Math.round((currentTime / inputDuration) * 100),

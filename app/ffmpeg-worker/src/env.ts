@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { availableParallelism } from "node:os";
 
 /**
  * Requires an environment variable to be set.
@@ -70,7 +71,7 @@ export const JOB_TIMEOUT_SECONDS = parseInt(
 );
 export const FFMPEG_THREADS = process.env.FFMPEG_THREADS
   ? parseInt(process.env.FFMPEG_THREADS, 10)
-  : undefined; // undefined means use default (all available CPUs)
+  : Math.min(2, availableParallelism());
 
 // OpenTelemetry metrics export (disabled when the endpoint is unset)
 export const OTEL_EXPORTER_OTLP_ENDPOINT =
