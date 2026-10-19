@@ -1,7 +1,6 @@
 import type { InferResponseType } from "hono";
-import { useAtom, useSetAtom } from "jotai";
+import { useAtom } from "jotai";
 import { type FC, useEffect, useRef, useState } from "react";
-import { StopPlayerAtom } from "@/atoms/Player";
 import {
   selectedAccountIdAtom,
   selectedProfileIdAtom,
@@ -30,8 +29,6 @@ export const AccountSwitcher: FC = () => {
   const [selectedProfileId, setSelectedProfileId] = useAtom(
     selectedProfileIdAtom,
   );
-  const stopPlayer = useSetAtom(StopPlayerAtom);
-  const previousProfileIdRef = useRef(selectedProfileId);
   const refreshingUnknownProfilesRef = useRef(new Set<string>());
   const [newName, setNewName] = useState("");
   const [newUsername, setNewUsername] = useState("");
@@ -39,12 +36,6 @@ export const AccountSwitcher: FC = () => {
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
 
   const profileList = profiles ?? [];
-
-  useEffect(() => {
-    if (previousProfileIdRef.current === selectedProfileId) return;
-    previousProfileIdRef.current = selectedProfileId;
-    stopPlayer();
-  }, [selectedProfileId, stopPlayer]);
 
   useEffect(() => {
     if (!selectedProfileId || !profiles) return;
@@ -108,7 +99,6 @@ export const AccountSwitcher: FC = () => {
   const handleProfileChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const value = event.target.value;
     const nextProfileId = value || null;
-    if (nextProfileId !== selectedProfileId) stopPlayer();
     setSelectedProfileId(nextProfileId);
   };
 
@@ -132,7 +122,6 @@ export const AccountSwitcher: FC = () => {
       });
       setNewName("");
       setNewUsername("");
-      if (profile.id !== selectedProfileId) stopPlayer();
       setSelectedProfileId(profile.id);
     } catch {
       setProfileError("プロフィールを作成できませんでした。");
@@ -208,8 +197,6 @@ export const AccountSwitcher: FC = () => {
             id="account-select"
             value={selectedAccountId || ""}
             onChange={(event) => {
-              if ((event.target.value || null) !== selectedAccountId)
-                stopPlayer();
               setSelectedAccountId(event.target.value || null);
               setSelectedProfileId(null);
             }}

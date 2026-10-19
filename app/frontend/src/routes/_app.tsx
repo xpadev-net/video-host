@@ -9,6 +9,7 @@ import { useEffect, useRef } from "react";
 import { App } from "@/components/App";
 import { PipPlayer } from "@/components/Player/PipPlayer";
 import { PortalPlayer } from "@/components/Player/PortalPlayer";
+import { ProfileChangeWatcher } from "@/components/Player/ProfileChangeWatcher";
 
 NProgress.configure({
   showSpinner: false,
@@ -39,6 +40,7 @@ function AppLayout() {
 
   return (
     <App>
+      <ProfileChangeWatcher />
       <Outlet />
       <PipPlayer />
       <PortalPlayer fallback={fallbackVideoRef.current} />
