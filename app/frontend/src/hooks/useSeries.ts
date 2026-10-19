@@ -26,11 +26,12 @@ const fetcher = async ([seriesId, profileId]: readonly [
 };
 
 export const useSeries = (query?: string) => {
-  const { data: authSession } = authClient.useSession();
+  const { data: authSession, isPending: sessionPending } =
+    authClient.useSession();
   const sessionUserId = authSession?.user.id;
   const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   return useStickySWR(
-    query
+    query && !sessionPending
       ? ([query, selectedProfileId, sessionUserId ?? "anonymous"] as const)
       : null,
     fetcher,

@@ -55,6 +55,7 @@ function PlaylistsPage() {
   const notify = useNotify();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const handleDelete = async (id: string) => {
+    const profileId = selectedProfileId;
     if (
       !(await confirm({
         title: "プレイリストを削除しますか？",
@@ -66,9 +67,10 @@ function PlaylistsPage() {
       return;
     setDeletingId(id);
     try {
-      const res = await client.api.v4.playlists[":playlist"].$delete({
-        param: { playlist: id },
-      });
+      const res = await client.api.v4.playlists[":playlist"].$delete(
+        { param: { playlist: id } },
+        { headers: { "X-Profile-Id": profileId ?? "" } },
+      );
 
       if (!res.ok) {
         throw new Error("Failed to delete");

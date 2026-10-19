@@ -55,6 +55,7 @@ function SeriesPage() {
   const notify = useNotify();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const handleDelete = async (id: string) => {
+    const profileId = selectedProfileId;
     if (
       !(await confirm({
         title: "シリーズを削除しますか？",
@@ -67,9 +68,10 @@ function SeriesPage() {
 
     setDeletingId(id);
     try {
-      const res = await client.api.v4.series[":series"].$delete({
-        param: { series: id },
-      });
+      const res = await client.api.v4.series[":series"].$delete(
+        { param: { series: id } },
+        { headers: { "X-Profile-Id": profileId ?? "" } },
+      );
 
       if (!res.ok) {
         throw new Error("Failed to delete");

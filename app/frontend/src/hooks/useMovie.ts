@@ -22,7 +22,8 @@ const fetcher = async ([movieId, profileId]: readonly [
 };
 
 export const useMovie = (query?: string) => {
-  const { data: authSession } = authClient.useSession();
+  const { data: authSession, isPending: sessionPending } =
+    authClient.useSession();
   const sessionUserId = authSession?.user.id;
   const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   // Playback URLs embed a token that expires after 6+ hours; refetching well
@@ -30,7 +31,7 @@ export const useMovie = (query?: string) => {
   // data object while the response is unchanged, so nothing reloads until
   // the token actually rotates).
   return useStickySWR(
-    query
+    query && !sessionPending
       ? ([query, selectedProfileId, sessionUserId ?? "anonymous"] as const)
       : null,
     fetcher,
