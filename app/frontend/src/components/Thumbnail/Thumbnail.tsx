@@ -18,9 +18,8 @@ const Thumbnail = ({ movie, hideMetadata }: ThumbnailProps) => {
         <ImageWithFallback
           src={movie.thumbnailUrl ?? ""}
           alt={`${movie.series?.title} ${movie.title}`}
-          fill={true}
           sizes={"360px"}
-          className="object-cover"
+          className="absolute inset-0 h-full w-full object-cover"
         />
       )}
       {movie && !hideMetadata && (

@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { AuthForm, AuthLayout, FormField } from "@/components/Auth";
 import { RequireSignupCode, SiteName } from "@/contexts/env";
 import { getSafeCallback, useAuth } from "@/hooks/useAuth";
+import { useAuthConfig } from "@/hooks/useAuthConfig";
 import { authClient } from "@/lib/auth-client";
-import { type AuthConfig, getAuthConfig } from "@/service/getAuthConfig";
 import { getAuthErrorMessage } from "@/utils/authErrorMessage";
 import {
   validatePassword,
@@ -33,8 +33,8 @@ function RegisterRoute() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [signupCode, setSignupCode] = useState("");
-  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
-  const [configLoaded, setConfigLoaded] = useState(false);
+  const { authConfig, isLoading: isAuthConfigLoading } = useAuthConfig();
+  const [sessionLoading, setSessionLoading] = useState(true);
   const requireSignupCode = authConfig?.requireSignupCode ?? RequireSignupCode;
   const passwordAuthEnabled = authConfig?.passwordAuthEnabled ?? false;
 
@@ -42,10 +42,7 @@ function RegisterRoute() {
     let cancelled = false;
     void (async () => {
       try {
-        const [config, session] = await Promise.all([
-          getAuthConfig(),
-          authClient.getSession(),
-        ]);
+        const session = await authClient.getSession();
         if (cancelled) return;
         if (session.data) {
           await navigate({
@@ -54,11 +51,10 @@ function RegisterRoute() {
           });
           return;
         }
-        setAuthConfig(config);
       } catch {
-        if (!cancelled) setAuthConfig(null);
+        // The shared auth config hook reports configuration fetch failures.
       } finally {
-        if (!cancelled) setConfigLoaded(true);
+        if (!cancelled) setSessionLoading(false);
       }
     })();
     return () => {
@@ -104,7 +100,7 @@ function RegisterRoute() {
     password &&
     confirmPassword &&
     (!requireSignupCode || signupCode);
-  if (!configLoaded) {
+  if (sessionLoading || isAuthConfigLoading) {
     return (
       <AuthLayout title="新規登録" description="読み込み中...">
         <div className="flex justify-center">

@@ -8,9 +8,8 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-
-import { Providers } from "@/app/providers";
 import { SiteName } from "@/contexts/env";
+import { Providers } from "@/providers";
 
 export const Route = createRootRoute({
   head: () => ({

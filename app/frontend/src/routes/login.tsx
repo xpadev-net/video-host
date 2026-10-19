@@ -5,8 +5,8 @@ import { AuthForm, AuthLayout, FormField } from "@/components/Auth";
 import { Button } from "@/components/ui/button";
 import { SiteName } from "@/contexts/env";
 import { getSafeCallback, useAuth } from "@/hooks/useAuth";
+import { useAuthConfig } from "@/hooks/useAuthConfig";
 import { authClient } from "@/lib/auth-client";
-import { type AuthConfig, getAuthConfig } from "@/service/getAuthConfig";
 import { getAuthErrorMessage } from "@/utils/authErrorMessage";
 
 type LoginSearch = { callback?: string; error?: string };
@@ -48,7 +48,7 @@ function LoginRoute() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
-  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+  const { authConfig, isLoading: isAuthConfigLoading } = useAuthConfig();
   const passwordAuthEnabled = authConfig?.passwordAuthEnabled ?? false;
   const ssoEnabled = Boolean(
     authConfig?.ssoEnabled && authConfig.ssoProviderId,
@@ -58,10 +58,7 @@ function LoginRoute() {
     let cancelled = false;
     void (async () => {
       try {
-        const [config, sessionResult] = await Promise.all([
-          getAuthConfig(),
-          authClient.getSession(),
-        ]);
+        const sessionResult = await authClient.getSession();
         if (cancelled) return;
         if (ssoError) {
           setError(ssoErrorMessages[ssoError] ?? "SSOログインに失敗しました");
@@ -69,11 +66,6 @@ function LoginRoute() {
           await navigate({ to: callback ?? "/", replace: true });
           return;
         }
-        setAuthConfig(config);
-        if (!config)
-          setError(
-            "認証設定を取得できませんでした。ページを再読み込みしてください",
-          );
       } catch {
         if (!cancelled)
           setError(
@@ -87,6 +79,14 @@ function LoginRoute() {
       cancelled = true;
     };
   }, [callback, navigate, setError, ssoError]);
+
+  useEffect(() => {
+    if (!isAuthConfigLoading && !authConfig) {
+      setError(
+        "認証設定を取得できませんでした。ページを再読み込みしてください",
+      );
+    }
+  }, [authConfig, isAuthConfigLoading, setError]);
 
   const handleSignIn = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -120,7 +120,7 @@ function LoginRoute() {
     }
   };
 
-  if (initialLoading) {
+  if (initialLoading || isAuthConfigLoading) {
     return (
       <AuthLayout title="ログイン" description="読み込み中...">
         <div className="flex justify-center">

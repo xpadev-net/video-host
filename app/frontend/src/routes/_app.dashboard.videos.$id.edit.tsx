@@ -69,8 +69,7 @@ function EditVideoPage() {
       }
 
       const json = await res.json();
-      // biome-ignore lint/suspicious/noExplicitAny: loose typing
-      const movieData = json.data as any;
+      const movieData = json.data;
       setMovie(movieData);
       setTitle(movieData.title);
       setDescription(movieData.description || "");
@@ -145,8 +144,7 @@ function EditVideoPage() {
                 .then(async (res) => {
                   if (!disposed && res.ok) {
                     const json = await res.json();
-                    // biome-ignore lint/suspicious/noExplicitAny: loose typing
-                    setMovie(json.data as any);
+                    setMovie(json.data);
                     setEncodeProgress(null);
                   }
                 })

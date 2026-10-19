@@ -1,6 +1,6 @@
 import { ArrowLeft, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { AuthButton } from "src/components/App/Header/Auth";
+import { AuthButton } from "@/components/App/Header/Auth";
 import { Search } from "@/components/App/Header/Search";
 import { ToggleTheme } from "@/components/App/Header/Theme";
 import { HeaderMenu } from "@/components/App/Menu";
@@ -67,12 +67,6 @@ const MobileHeader = ({ className }: props) => {
         <button
           className="fixed -z-10 top-0 left-0 w-screen h-screen bg-black/30"
           onClick={closeSearch}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              closeSearch();
-            }
-          }}
           type="button"
           tabIndex={0}
         />

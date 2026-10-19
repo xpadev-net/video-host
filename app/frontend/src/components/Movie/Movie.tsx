@@ -38,14 +38,7 @@ const MovieCard_ = (
         </Link>
         <div className="flex-1 pl-2.5 flex flex-col gap-2">
           <Link to="/movies/$movie" params={{ movie: movie.id }}>
-            <span
-              className="text-xl overflow-hidden text-ellipsis block text-[var(--color-text)] max-h-[60px] leading-normal"
-              style={{
-                display: "-webkit-box",
-                WebkitBoxOrient: "vertical",
-                WebkitLineClamp: 2,
-              }}
-            >
+            <span className="text-xl line-clamp-2 block text-[var(--color-text)] max-h-[60px] leading-normal">
               {movie.title}
             </span>
           </Link>
@@ -56,12 +49,7 @@ const MovieCard_ = (
                 <Link
                   to="/series/$series"
                   params={{ series: movie.series.id }}
-                  className="text-text no-underline hover:underline overflow-hidden text-ellipsis block"
-                  style={{
-                    display: "-webkit-box",
-                    WebkitBoxOrient: "vertical",
-                    WebkitLineClamp: 1,
-                  }}
+                  className="text-text no-underline hover:underline line-clamp-1 block"
                 >
                   {movie.series.title}
                 </Link>

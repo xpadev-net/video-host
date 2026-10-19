@@ -32,9 +32,9 @@ describe("ImageWithFallback", () => {
     ).toBe("/fallback.jpg");
   });
 
-  it("loads priority images eagerly and resets on source changes", () => {
+  it("loads explicitly eager images and resets on source changes", () => {
     const { rerender } = render(
-      <ImageWithFallback src="/first.jpg" alt="Poster" priority />,
+      <ImageWithFallback src="/first.jpg" alt="Poster" loading="eager" />,
     );
     expect(
       screen.getByRole("img", { name: "Poster" }).getAttribute("loading"),

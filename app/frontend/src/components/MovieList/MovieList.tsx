@@ -34,33 +34,31 @@ const MovieList = ({ movies, type, active, className, showSeries }: props) => {
     return `${className || ""} ${baseClasses} ${typeClasses[type]}`;
   }, [className, type]);
 
-  return useMemo(() => {
-    return (
-      <div className={wrapperClasses} ref={wrapperRef}>
-        {movies.map((movie, index) => {
-          const indexLabel = (() => {
-            if (active === undefined) return undefined;
-            if (movie.id === active) return "active";
-            return index + 1;
-          })();
-          return (
-            <MovieCard
-              key={movie.id}
-              movie={movie}
-              type={type}
-              ref={
-                active !== undefined && movie.id === active
-                  ? activeRef
-                  : undefined
-              }
-              index={indexLabel}
-              showSeries={showSeries}
-            />
-          );
-        })}
-      </div>
-    );
-  }, [movies, type, active, wrapperClasses, showSeries]);
+  return (
+    <div className={wrapperClasses} ref={wrapperRef}>
+      {movies.map((movie, index) => {
+        const indexLabel = (() => {
+          if (active === undefined) return undefined;
+          if (movie.id === active) return "active";
+          return index + 1;
+        })();
+        return (
+          <MovieCard
+            key={movie.id}
+            movie={movie}
+            type={type}
+            ref={
+              active !== undefined && movie.id === active
+                ? activeRef
+                : undefined
+            }
+            index={indexLabel}
+            showSeries={showSeries}
+          />
+        );
+      })}
+    </div>
+  );
 };
 
 export { MovieList };

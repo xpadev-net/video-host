@@ -17,9 +17,7 @@ interface SystemAccount {
 }
 
 function SystemAccountsPage() {
-  const { data: response, isLoading: isUserLoading } = useSelf();
-  // biome-ignore lint/suspicious/noExplicitAny: complex type inference
-  const user = response?.status === "ok" ? (response as any).data : null;
+  const { data: user, isLoading: isUserLoading } = useSelf();
   const { data: accounts, mutate } = useSystemAccounts();
   const [username, setUsername] = useState("");
   const [name, setName] = useState("");

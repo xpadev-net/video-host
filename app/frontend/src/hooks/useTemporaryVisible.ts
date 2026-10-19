@@ -1,23 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export const useTemporaryVisible = (duration: number = 1500) => {
   const [visible, setVisible] = useState(false);
-  const [count, setCount] = useState(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const show = useCallback(() => {
-    setCount((pv) => pv + 1);
-  }, []);
+    setVisible(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setVisible(false), duration);
+  }, [duration]);
 
   useEffect(() => {
-    setVisible(true);
-    console.debug(`Showing temporary element (count: ${count})`);
-
-    const timer = setTimeout(() => {
-      setVisible(false);
-    }, duration);
-
-    return () => clearTimeout(timer);
-  }, [duration, count]);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
 
   return { visible, show };
 };

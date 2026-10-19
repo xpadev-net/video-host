@@ -1,14 +1,11 @@
+import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { type FC, useCallback, useEffect, useState } from "react";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
-interface Movie {
-  id: string;
-  title: string;
-  thumbnailUrl?: string;
-}
+type Movie = Pick<FormattedMovie, "id" | "title" | "thumbnailUrl">;
 
 interface MovieItem {
   movie: Movie;
@@ -52,7 +49,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
 
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
-      const allMovies = (json.data.items || []) as Movie[];
+      const allMovies = json.data.items;
       // Filter out movies already in the list
       const movieIds = new Set(movies.map((m) => m.movie.id));
       setAvailableMovies(
@@ -63,8 +60,8 @@ export const MovieManager: FC<MovieManagerProps> = ({
             thumbnailUrl: m.thumbnailUrl ?? undefined,
           })),
       );
-    } catch {
-      console.error("Failed to fetch movies");
+    } catch (error) {
+      console.error("Failed to fetch movies", error);
     } finally {
       setIsLoadingMovies(false);
     }
