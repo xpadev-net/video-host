@@ -27,13 +27,21 @@ export function Slider({
     onPointerMove,
     onPointerUp,
     onPointerCancel,
+    onKeyDown,
   } = useSeekSlider();
 
   return (
-    <button
+    <div
+      role="slider"
       aria-label="シーク"
+      aria-orientation="horizontal"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Number.isFinite(progress) ? Math.round(progress) : 0}
+      aria-valuetext={`${time2str((progress / 100) * metadata.duration)} / ${time2str(metadata.duration)}`}
+      tabIndex={0}
       className={cn(
-        "relative h-4 w-full cursor-pointer touch-none group",
+        "relative h-4 w-full cursor-pointer touch-none group focus-visible:outline focus-visible:outline-2 focus-visible:outline-white",
         className,
       )}
       ref={trackRef}
@@ -41,8 +49,8 @@ export function Slider({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
+      onKeyDown={onKeyDown}
       onClick={(event) => event.stopPropagation()}
-      type="button"
     >
       <div
         className={cn(
@@ -56,7 +64,7 @@ export function Slider({
             "absolute h-[3px] rounded-full bg-white/80 transition-all duration-250 ease-in-out",
             centered ? "top-1/2 -translate-y-1/2" : "bottom-0",
           )}
-          key={`${range.left}-${range.width}`}
+          key={range.id}
           style={{ left: `${range.left}%`, width: `${range.width}%` }}
         />
       ))}
@@ -90,6 +98,6 @@ export function Slider({
           {time2str((previewProgress / 100) * metadata.duration)}
         </span>
       )}
-    </button>
+    </div>
   );
 }

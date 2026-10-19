@@ -77,7 +77,7 @@ export const useSettingDefinitions = (): Record<
           ?.requestFullscreen()
           .catch(() => setState((pv) => ({ ...pv, isFullscreen: false })));
       } else {
-        document.fullscreenElement && void document.exitFullscreen();
+        if (document.fullscreenElement) void document.exitFullscreen();
       }
     }
   };

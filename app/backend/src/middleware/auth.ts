@@ -20,6 +20,7 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
     isPathWithin(path, "/api/v4/callback") ||
     isPathWithin(path, "/api/v4/vod") ||
     path === "/healthz" ||
+    path === "/readyz" ||
     c.req.method === "OPTIONS"
   ) {
     await next();

@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { HonoApp } from "@/@types/hono";
 import { PORT } from "@/env";
+import { startAuthRateLimitCleanup } from "@/lib/auth-maintenance";
 import { startStaleUploadCleanup } from "@/lib/cleanup-stale-uploads";
 import { prisma } from "@/lib/prisma";
 import { closeRedis } from "@/lib/redis";
@@ -20,9 +21,11 @@ registerMiddleware(app);
 registerRoute(app);
 
 const port = PORT;
+let authCleanupTimer: NodeJS.Timeout | undefined;
 
 const startServer = async (): Promise<ServerType> => {
   await initializeS3Buckets();
+  authCleanupTimer = startAuthRateLimitCleanup();
   const server = serve({
     fetch: app.fetch,
     port,
@@ -43,6 +46,7 @@ const shutdown = (signal: NodeJS.Signals): Promise<void> => {
   shuttingDown = (async () => {
     console.log(`Received ${signal}; shutting down gracefully`);
     if (cleanupTimer) clearInterval(cleanupTimer);
+    if (authCleanupTimer) clearInterval(authCleanupTimer);
     try {
       const server = await serverPromise;
       await new Promise<void>((resolve, reject) => {

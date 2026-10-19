@@ -40,11 +40,12 @@ vi.mock("better-auth/adapters/prisma", async () => {
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: {
-      upsert: vi.fn(async ({ where, create }) => {
-        const prior = fixture.profiles.get(where.authUserId);
-        if (prior) return prior;
-        const profile = { id: `domain-${where.authUserId}`, ...create };
-        fixture.profiles.set(where.authUserId, profile);
+      findUnique: vi.fn(
+        async ({ where }) => fixture.profiles.get(where.authUserId) ?? null,
+      ),
+      create: vi.fn(async ({ data }) => {
+        const profile = { id: `domain-${data.authUserId}`, ...data };
+        fixture.profiles.set(data.authUserId, profile);
         return profile;
       }),
     },

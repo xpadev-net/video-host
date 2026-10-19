@@ -137,6 +137,8 @@ model AuthRateLimit {
   key         String @unique
   count       Int
   lastRequest BigInt
+
+  @@index([lastRequest])
 }
 
 model Series {

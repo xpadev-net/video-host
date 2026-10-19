@@ -1,5 +1,6 @@
 import { useAtomValue } from "jotai";
 import {
+  type KeyboardEvent,
   type PointerEvent,
   useCallback,
   useEffect,
@@ -9,11 +10,11 @@ import {
 
 import { VideoRefAtom } from "@/atoms/Player";
 
-type BufferedRange = { left: number; width: number };
+type BufferedRange = { id: number; left: number; width: number };
 
 export function useSeekSlider() {
   const video = useAtomValue(VideoRefAtom);
-  const trackRef = useRef<HTMLButtonElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
   const [buffered, setBuffered] = useState<BufferedRange[]>([]);
   const [progress, setProgress] = useState(0);
   const [previewProgress, setPreviewProgress] = useState(0);
@@ -28,7 +29,7 @@ export function useSeekSlider() {
     );
   }, []);
 
-  const onPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (!video || !Number.isFinite(video.duration) || video.duration <= 0)
       return;
     event.preventDefault();
@@ -40,14 +41,14 @@ export function useSeekSlider() {
     setPreviewProgress(nextProgress);
   };
 
-  const onPointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const nextProgress = getProgress(event.clientX);
     if (nextProgress === null) return;
     setPreviewProgress(nextProgress);
     if (isDragging) setProgress(nextProgress);
   };
 
-  const finishDragging = (event: PointerEvent<HTMLButtonElement>) => {
+  const finishDragging = (event: PointerEvent<HTMLDivElement>) => {
     if (!isDragging) return;
     const nextProgress = getProgress(event.clientX);
     if (video && nextProgress !== null && Number.isFinite(video.duration)) {
@@ -58,6 +59,35 @@ export function useSeekSlider() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const isSliderKey = [
+      "ArrowLeft",
+      "ArrowDown",
+      "ArrowRight",
+      "ArrowUp",
+      "Home",
+      "End",
+    ].includes(event.key);
+    if (!isSliderKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0)
+      return;
+    const step = event.shiftKey ? 10 : 5;
+    let nextTime: number | null = null;
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown")
+      nextTime = video.currentTime - step;
+    if (event.key === "ArrowRight" || event.key === "ArrowUp")
+      nextTime = video.currentTime + step;
+    if (event.key === "Home") nextTime = 0;
+    if (event.key === "End") nextTime = video.duration;
+    if (nextTime === null) return;
+    video.currentTime = Math.max(0, Math.min(video.duration, nextTime));
+    const nextProgress = (video.currentTime / video.duration) * 100;
+    setProgress(nextProgress);
+    setPreviewProgress(nextProgress);
   };
 
   useEffect(() => {
@@ -75,6 +105,7 @@ export function useSeekSlider() {
       const ranges: BufferedRange[] = [];
       for (let i = 0; i < video.buffered.length; i += 1) {
         ranges.push({
+          id: i,
           left: (video.buffered.start(i) / video.duration) * 100,
           width:
             ((video.buffered.end(i) - video.buffered.start(i)) /
@@ -87,7 +118,13 @@ export function useSeekSlider() {
     const updateProgress = () => {
       if (isDragging || !Number.isFinite(video.duration) || video.duration <= 0)
         return;
-      setProgress((video.currentTime / video.duration) * 100);
+      if (!Number.isFinite(video.currentTime)) {
+        setProgress(0);
+        return;
+      }
+      setProgress(
+        Math.max(0, Math.min(100, (video.currentTime / video.duration) * 100)),
+      );
     };
 
     video.addEventListener("progress", updateBuffered);
@@ -110,5 +147,6 @@ export function useSeekSlider() {
     onPointerMove,
     onPointerUp: finishDragging,
     onPointerCancel: () => setIsDragging(false),
+    onKeyDown,
   };
 }

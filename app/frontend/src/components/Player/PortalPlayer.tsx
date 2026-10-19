@@ -3,6 +3,7 @@ import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { useEffect, useId, useRef, useState } from "react";
 import { CurrentMovieAtom, DurablePlayerAtom } from "@/atoms/Player";
+import { isPipRoute } from "@/components/Player/utils/isPipRoute";
 import { DesktopPlayer } from "./DesktopPlayer";
 import { MobilePlayer } from "./MobilePlayer";
 
@@ -21,7 +22,7 @@ export const PortalPlayer = ({
   const target = portalTarget || fallback;
 
   // PiPモードの判定: パスが/movies/[movie]でない場合
-  const isPipMode = !/^\/movies\/[^/]+\/?$/.test(pathname);
+  const isPipMode = isPipRoute(pathname);
 
   useEffect(() => {
     const player = document.getElementById(id);
