@@ -5,8 +5,9 @@ node_modules/
 
 # env
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
+!.env.*.example
 .dev.vars
 
 # build output
@@ -19,7 +20,6 @@ dist/
 
 # testing
 coverage/
-.playwright-cli/
 
 # logs
 logs/
@@ -40,9 +40,3 @@ lerna-debug.log*
 .DS_Store
 *.pem
 *.tsbuildinfo
-
-# vercel
-.vercel
-
-# husky/lefthook
-.husky/

@@ -24,3 +24,13 @@
 > ```bash
 > echo -n 'your-secret-value' | base64
 > ```
+
+## VOD 用 nginx 設定
+
+- `nginx/nginx.conf` はローカルの `docker-compose.yml` が `./nginx` ディレクトリごとコンテナへマウントする HTTP 設定です。ローカル開発用で、Kubernetes には適用しません。
+- `k8s/base/config/vod-nginx-config.sample.yaml` は、base マニフェストを独自に適用する場合の ConfigMap テンプレートです。環境の VOD 内部シークレットや S3 アドレスに合わせて編集してください。
+- 通常の本番 Kustomize 経路では `k8s/overlays/prod/kustomization.yaml` が同じ `vod-nginx-config` を生成し、同じディレクトリの `nginx.conf` を読み込みます。この設定は HTTPS を listen し、`/etc/nginx/ssl/tls.crt` と `/etc/nginx/ssl/tls.key` を参照します。
+
+現行の `k8s/base/vod/deployment.yaml` はこのパスを空の `emptyDir` でマウントしており、証明書は供給しません。運用環境で HTTPS 設定を使う前に、証明書マウントを用意してください。
+
+本番 overlay を確認するには、リポジトリルートで `kubectl kustomize k8s/overlays/prod` を実行し、生成された `vod-nginx-config` と `vod` Deployment の設定・証明書マウントを一緒に確認してください。ローカル用 HTTP 設定を本番の HTTPS ConfigMap に置き換えたり、sample ConfigMap を overlay 生成物へ重ねて適用したりしないでください。
