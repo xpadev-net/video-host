@@ -4,6 +4,7 @@ import { once } from "node:events";
 import http from "node:http";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 // Run after `pnpm -F @video-host/frontend build`. This uses an isolated local
 // upstream and exercises the actual production Nitro proxy, not an auth mock.
@@ -70,15 +71,17 @@ test("production proxy preserves cookies, Origin, bodies, redirects and SSE", as
     logs += chunk;
   });
   let ready = false;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
     if (server.exitCode !== null) throw new Error(logs);
     try {
-      const health = await fetch(`${origin}/api/healthz`);
+      const health = await fetch(`${origin}/api/healthz`, {
+        signal: AbortSignal.timeout(2_000),
+      });
       assert.deepEqual(await health.json(), { message: "OK" });
       ready = true;
       break;
     } catch {
-      await delay(50);
+      await delay(100);
     }
   }
   assert.ok(ready, logs || "Production server did not become ready");
@@ -114,7 +117,9 @@ test("production proxy preserves cookies, Origin, bodies, redirects and SSE", as
     redirect.headers.get("location"),
     "https://example.invalid/do-not-follow",
   );
-  const stream = await fetch(`${origin}/api/v4/progress/test`);
+  const stream = await fetch(`${origin}/api/v4/progress/test`, {
+    signal: AbortSignal.timeout(10_000),
+  });
   assert.match(stream.headers.get("content-type"), /text\/event-stream/);
   const reader = stream.body.getReader();
   const first = new TextDecoder().decode((await reader.read()).value);
@@ -147,7 +152,11 @@ test("Vite proxy anchors forged IP headers to the actual transport peer", async 
   await new Promise((resolve) => reserve.close(resolve));
   const server = spawn(
     process.execPath,
-    ["node_modules/vite/bin/vite.js", "--port", String(port)],
+    [
+      fileURLToPath(new URL("../../bin/vite.js", import.meta.resolve("vite"))),
+      "--port",
+      String(port),
+    ],
     {
       cwd: new URL("..", import.meta.url),
       env: {
@@ -166,10 +175,11 @@ test("Vite proxy anchors forged IP headers to the actual transport peer", async 
     logs += chunk;
   });
   let headers;
-  for (let attempt = 0; attempt < 200; attempt++) {
+  for (let attempt = 0; attempt < 150; attempt++) {
     if (server.exitCode !== null) throw new Error(logs);
     try {
       const result = await fetch(`http://127.0.0.1:${port}/api/auth/probe`, {
+        signal: AbortSignal.timeout(2_000),
         headers: {
           "x-forwarded-for": "198.51.100.99",
           "x-real-ip": "198.51.100.88",
@@ -183,7 +193,7 @@ test("Vite proxy anchors forged IP headers to the actual transport peer", async 
       headers = await result.json();
       break;
     } catch {
-      await delay(50);
+      await delay(100);
     }
   }
   assert.ok(headers, logs || "Vite proxy did not become ready");

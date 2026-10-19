@@ -144,12 +144,7 @@ jobs:
         run: pnpm -F @video-host/frontend build
 
       - name: Test frontend
-        run: pnpm -F @video-host/frontend test
-
-      - name: Verify production API proxy
-        run: |
-          pnpm -F @video-host/frontend test:proxy
-          pnpm -F @video-host/frontend test:runtime-env
+        run: pnpm -F @video-host/frontend test:all
 
   ffmpeg-worker-ci:
     runs-on: ubuntu-latest

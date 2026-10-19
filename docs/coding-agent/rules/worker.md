@@ -2,7 +2,7 @@
 rule_schema_version: 2
 suite_id: "rules-20260831-tanstack-start"
 rule_file: "worker"
-last_updated: "2026-10-01"
+last_updated: "2026-10-19"
 ---
 
 # Worker Repository Rules
@@ -20,8 +20,8 @@ last_updated: "2026-10-01"
 
 | Change Type | Required Checks | Notes |
 |---|---|---|
-| Frontend TS/TSX/CSS | frontend lint, typecheck, build, test | Build backend declarations first. |
-| Frontend dependencies/config | frozen install, backend build, frontend typecheck, build, test:proxy and test:runtime-env | Confirm generated route-tree handling. |
+| Frontend TS/TSX/CSS | frontend lint, format:check, typecheck, build, test | `test` includes Node unit tests and Vitest hook/component tests. Build backend declarations first. |
+| Frontend dependencies/config | frozen install, backend build, frontend lint, format:check, typecheck, build with `app/frontend/docker/.env.placeholder`, then test:all | `test:all` includes unit, Vitest, proxy, and runtime env checks. Confirm generated route-tree handling. |
 | Routes/navigation/player | frontend checks, frontend test, backend auth tests plus browser probe | Verify dynamic params, auth callback, and player continuity. |
 | Docker/env/start | image build, container start, runtime env replacement, health request | Confirm port 3000 and `/api/healthz`. |
 | CI/release | workflow review plus representative local commands | CI format checks must not mutate files. Release builds wait for CI on both the version-bump PR and merge commit, then publish immutable version/SHA image tags with SBOM and signed provenance. |

@@ -52,7 +52,7 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
     {
       name: "explicit-origin",
       endpoint: "https://api.example.test",
-      site: "Runtime $HOME & | \\path ` ${window.name}",
+      site: `Runtime $HOME & | \\path \` ${String.fromCharCode(36)}{window.name}`,
       flag: false,
       replace: true,
     },

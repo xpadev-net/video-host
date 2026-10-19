@@ -9,7 +9,7 @@ import {
 } from "./src/server/api-upstream";
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "API_UPSTREAM_URL");
+  const env = loadEnv(mode, process.cwd(), "");
   const upstream =
     process.env.API_UPSTREAM_URL ||
     env.API_UPSTREAM_URL ||
@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
   getApiProxyTarget("/api/auth/get-session", upstream);
   return {
     server: {
-      host: "127.0.0.1",
+      host: process.env.DEV_SERVER_HOST || env.DEV_SERVER_HOST || "127.0.0.1",
       port: 3000,
       strictPort: true,
       proxy: {
