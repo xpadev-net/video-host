@@ -9,68 +9,81 @@ services:
     command: redis-server --appendonly yes
     restart: unless-stopped
 
-  minio:
-    image: minio/minio:latest
-    container_name: video-host-minio
-    ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+  mysql:
+    image: mysql:8.4.11
+    container_name: video-host-mysql
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in the root .env file}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-video_host}
+      MYSQL_USER: ${MYSQL_USER:-video_host}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in the root .env file}
+    ports:
+      - "127.0.0.1:3306:3306"
     volumes:
-      - minio-data:/data
-    command: server /data --console-address ":9001"
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping --host=127.0.0.1 --user=root --password="$${MYSQL_ROOT_PASSWORD}" --silent
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
     restart: unless-stopped
 
-  # Create default buckets on startup
-  minio-init:
-    image: minio/mc:latest
-    container_name: video-host-minio-init
+  object-storage:
+    image: chrislusf/seaweedfs:4.48
+    container_name: video-host-object-storage
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?Set S3_ACCESS_KEY_ID in the root .env file}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY in the root .env file}
+      S3_BUCKET: video-tmp
+    command: ["mini", "-dir=/data", "-ip.bind=0.0.0.0"]
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - object-storage-data:/data
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8333"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  object-storage-init:
+    image: amazon/aws-cli:2.36.37
+    container_name: video-host-object-storage-init
+    entrypoint: ["/bin/sh", "/scripts/object-storage-init.sh"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?Set S3_ACCESS_KEY_ID in the root .env file}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY in the root .env file}
+      AWS_DEFAULT_REGION: ${S3_REGION:-ap-northeast-1}
+      S3_ENDPOINT_URL: http://object-storage:8333
+    volumes:
+      - ./scripts/object-storage-init.sh:/scripts/object-storage-init.sh:ro
     depends_on:
-      - minio
-    entrypoint: >
-      /bin/sh -c "
-      sleep 5;
-      mc alias set myminio http://minio:9000 minioadmin minioadmin;
-      mc mb myminio/video-tmp --ignore-existing;
-      mc mb myminio/video-prod --ignore-existing;
-      mc anonymous set download myminio/video-prod;
-      
-      # Configure CORS for video-tmp bucket
-      cat > /tmp/cors.json << 'EOF'
-      {
-        \"CORSRules\": [{
-          \"AllowedOrigins\": [\"*\"],
-          \"AllowedMethods\": [\"GET\", \"PUT\", \"POST\", \"DELETE\", \"HEAD\"],
-          \"AllowedHeaders\": [\"*\"],
-          \"ExposeHeaders\": [\"ETag\", \"x-amz-meta-*\"],
-          \"MaxAgeSeconds\": 3600
-        }]
-      }
-      EOF
-      mc anonymous set upload myminio/video-tmp;
-      mc cors set /tmp/cors.json myminio/video-tmp || echo 'CORS set via policy';
-      mc cors set /tmp/cors.json myminio/video-prod || echo 'CORS set via policy';
-      
-      echo 'Buckets and CORS configured successfully';
-      "
+      object-storage:
+        condition: service_healthy
 
   # VOD streaming server (nginx-vod-module)
   vod:
-    image: ghcr.io/xpadev-net/nginx-vod-module-docker:latest
+    image: ghcr.io/xpadev-net/nginx-vod-module-docker@sha256:f6adc8d8c94ee38726d3c2ffdcb637f3622f2404bbc4654242da4025970aa5ff
     platform: linux/amd64
     container_name: video-host-vod
     ports:
       - "127.0.0.1:3002:80"
     volumes:
-      - ./nginx:/etc/nginx:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - minio
+      object-storage:
+        condition: service_healthy
     extra_hosts:
+      # Lets the container reach the backend when it runs directly on the host, including Linux.
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:
   redis-data:
-  minio-data:
+  mysql-data:
+  object-storage-data:

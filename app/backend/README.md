@@ -13,7 +13,7 @@ Use Node 22.12 and the pinned pnpm 10.25.0. Copy `app/backend/.env.example` to `
 
 The frontend runs on http://localhost:3000. Leave `VITE_API_ENDPOINT` empty; the Vite and production Nitro proxies forward only `/api/auth/*` and `/api/v4/*` to the server-only `API_UPSTREAM_URL`. Set `BETTER_AUTH_URL` and `FRONTEND_URL` to the browser's exact origin (http://localhost:3000), not the upstream backend address. Access the same hostname consistently: localhost and 127.0.0.1 are different cookie origins.
 
-Provide your own disposable MySQL database and run `pnpm -F @video-host/backend exec prisma migrate deploy` before starting. Production cutover is described in [the migration guide](../../docs/better-auth-migration.md). Do not apply the destructive credential migration to an existing database without the guide's backup and ownership review.
+The root Compose file provides a disposable MySQL 8.4 database on `127.0.0.1:3306`; wait for its health check, then run `pnpm -F @video-host/backend exec prisma migrate deploy` before starting. You can also point `DATABASE_URL` at another disposable MySQL 8 database. Production cutover is described in [the migration guide](../../docs/better-auth-migration.md). Do not apply the destructive credential migration to an existing database without the guide's backup and ownership review.
 
 ## Configuration
 
