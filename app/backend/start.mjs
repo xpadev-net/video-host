@@ -33,8 +33,6 @@ function runChild(command, args) {
       activeChild = undefined;
       if (code === 0) {
         resolve();
-      } else if (shutdownSignal) {
-        resolve();
       } else {
         reject(new Error(`${command} exited with code ${code ?? signal}`));
       }
@@ -58,7 +56,7 @@ try {
           ...(databaseUrl.searchParams.has("sslpassword")
             ? { passphrase: databaseUrl.searchParams.get("sslpassword") }
             : {}),
-          rejectUnauthorized: sslAccept === "strict",
+          rejectUnauthorized: sslAccept !== "accept_invalid_certs",
         }
       : undefined;
   const connection = await mysql.createConnection({
@@ -101,6 +99,8 @@ try {
     await runChild(process.execPath, ["dist/index.js"]);
   }
 } catch (error) {
-  console.error(error);
+  if (!shutdownSignal) {
+    console.error(error);
+  }
   process.exitCode = shutdownSignal ? 0 : 1;
 }
