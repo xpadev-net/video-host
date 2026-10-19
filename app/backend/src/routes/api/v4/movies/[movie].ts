@@ -12,7 +12,7 @@ import {
   canViewMovie,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
-import { canManageMovie } from "@/utils/movieAuth";
+import { assertCanManageSeries, canManageMovie } from "@/utils/movieAuth";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
@@ -129,6 +129,10 @@ export const movieRoute = app
 
     const { title, description, seriesId, visibility, viewerIds, order } =
       c.req.valid("json");
+
+    if (seriesId) {
+      await assertCanManageSeries(user, seriesId);
+    }
 
     const uniqueViewerIds = viewerIds ? [...new Set(viewerIds)] : undefined;
     if (uniqueViewerIds && uniqueViewerIds.length > 0) {

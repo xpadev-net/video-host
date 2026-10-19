@@ -15,7 +15,7 @@ import {
   canViewOwnedEntity,
   readyOrOwnMovieFilter,
 } from "@/utils/buildVisibilityFilter";
-import { resolveAuthorId } from "@/utils/movieAuth";
+import { assertCanManageSeries, resolveAuthorId } from "@/utils/movieAuth";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
@@ -128,6 +128,10 @@ export const moviesRoute = app
 
     // Handle asUserId for admin proxy
     const authorId = await resolveAuthorId(user, data.asUserId);
+
+    if (data.seriesId) {
+      await assertCanManageSeries(user, data.seriesId);
+    }
 
     const viewerIds = [...new Set(data.viewerIds ?? [])];
     if (viewerIds.length > 0) {

@@ -14,6 +14,7 @@ import {
   buildMovieAccessWhere,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
+import { canManageMovie } from "@/utils/movieAuth";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { isSystemAccount } from "@/utils/systemAccountCache";
@@ -324,6 +325,12 @@ export const seriesDetailRoute = app
       notFound("Movie not found");
     }
 
+    // Only movies the caller may manage can be pulled into a series; a
+    // movie they merely know the id of is reported as missing.
+    if (!(await canManageMovie(user, movie.authorId))) {
+      notFound("Movie not found");
+    }
+
     // Check if movie is already in this series
     if (movie.seriesId === seriesId) {
       badRequest("Movie is already in this series");
@@ -391,10 +398,14 @@ export const seriesDetailRoute = app
     }
 
     // Remove movie from series (don't delete the movie)
-    await prisma.movie.update({
-      where: { id: movieId },
+    // Scoped to this series so other series' movies cannot be detached.
+    const detached = await prisma.movie.updateMany({
+      where: { id: movieId, seriesId },
       data: { seriesId: null, order: 0 },
     });
+    if (detached.count === 0) {
+      notFound("Movie not found in this series");
+    }
 
     return ok(c, { success: true });
   })
@@ -429,8 +440,19 @@ export const seriesDetailRoute = app
 
       const { movieIds } = c.req.valid("json");
 
-      // Update order for each movie
-      await Promise.all(
+      const uniqueMovieIds = new Set(movieIds);
+      if (uniqueMovieIds.size !== movieIds.length) {
+        badRequest("movieIds contains duplicates");
+      }
+      const inSeries = await prisma.movie.count({
+        where: { id: { in: movieIds }, seriesId },
+      });
+      if (inSeries !== movieIds.length) {
+        badRequest("movieIds must all belong to this series");
+      }
+
+      // Update order for each movie atomically
+      await prisma.$transaction(
         movieIds.map((movieId, index) =>
           prisma.movie.update({
             where: { id: movieId },
