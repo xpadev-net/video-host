@@ -114,6 +114,12 @@ export const useUpload = (): UseUploadResult => {
       param: { movieId },
     });
     if (!res.ok) {
+      // Client errors indicate this uploaded object cannot be completed (for
+      // example, the server rejected its actual size). A retry must obtain a
+      // fresh URL instead of repeating /complete against the rejected object.
+      if (res.status >= 400 && res.status < 500) {
+        uploadedMovieIdRef.current = null;
+      }
       throw new Error("アップロードの完了処理に失敗しました");
     }
     if (uploadedMovieIdRef.current === movieId) {

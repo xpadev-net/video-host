@@ -43,9 +43,11 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const [selectedMovieId, setSelectedMovieId] = useState<string>("");
   const [isLoadingMovies, setIsLoadingMovies] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [isMembershipPending, setIsMembershipPending] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const orderingRef = useRef(false);
+  const membershipActionRef = useRef(false);
   const dragStartMoviesRef = useRef<MovieItem[]>([]);
   const availableRequestGenerationRef = useRef(0);
 
@@ -105,7 +107,15 @@ export const MovieManager: FC<MovieManagerProps> = ({
   }, [fetchAvailableMovies]);
 
   const handleAddMovie = async () => {
-    if (!selectedMovieId || !session || orderingRef.current || isAdding) return;
+    if (
+      !selectedMovieId ||
+      !session ||
+      orderingRef.current ||
+      membershipActionRef.current
+    )
+      return;
+    membershipActionRef.current = true;
+    setIsMembershipPending(true);
     setIsAdding(true);
     try {
       const res =
@@ -135,11 +145,15 @@ export const MovieManager: FC<MovieManagerProps> = ({
       notify("動画の追加に失敗しました");
     } finally {
       setIsAdding(false);
+      membershipActionRef.current = false;
+      setIsMembershipPending(false);
     }
   };
 
   const handleRemoveMovie = async (movieId: string) => {
-    if (!session || orderingRef.current || isAdding) return;
+    if (!session || orderingRef.current || membershipActionRef.current) return;
+    membershipActionRef.current = true;
+    setIsMembershipPending(true);
     try {
       const res =
         entityType === "series"
@@ -157,11 +171,14 @@ export const MovieManager: FC<MovieManagerProps> = ({
       onMoviesChange(movies.filter((m) => m.movie.id !== movieId));
     } catch {
       notify("動画の削除に失敗しました");
+    } finally {
+      membershipActionRef.current = false;
+      setIsMembershipPending(false);
     }
   };
 
   const handleDragStart = (e: DragEvent<HTMLLIElement>, index: number) => {
-    if (orderingRef.current || isAdding) {
+    if (orderingRef.current || membershipActionRef.current) {
       e.preventDefault();
       return;
     }
@@ -188,7 +205,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
     ids: string[],
     rollbackMovies: MovieItem[],
   ) => {
-    if (!session || orderingRef.current) return;
+    if (!session || orderingRef.current || membershipActionRef.current) return;
     orderingRef.current = true;
     setIsOrdering(true);
     try {
@@ -228,7 +245,13 @@ export const MovieManager: FC<MovieManagerProps> = ({
   };
 
   const handleMoveUp = async (index: number) => {
-    if (index === 0 || !session || orderingRef.current || isAdding) return;
+    if (
+      index === 0 ||
+      !session ||
+      orderingRef.current ||
+      membershipActionRef.current
+    )
+      return;
     const previousMovies = movies;
     const newMovies = [...movies];
     [newMovies[index - 1], newMovies[index]] = [
@@ -245,7 +268,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
       index === movies.length - 1 ||
       !session ||
       orderingRef.current ||
-      isAdding
+      membershipActionRef.current
     )
       return;
     const previousMovies = movies;
@@ -271,7 +294,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
           aria-label="追加する動画を選択"
           value={selectedMovieId}
           onChange={(e) => setSelectedMovieId(e.target.value)}
-          disabled={isLoadingMovies || isAdding || isOrdering}
+          disabled={isLoadingMovies || isMembershipPending || isOrdering}
           className="movie-select"
         >
           <option value="">動画を選択...</option>
@@ -286,7 +309,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
         <button
           type="button"
           onClick={handleAddMovie}
-          disabled={!selectedMovieId || isAdding || isOrdering}
+          disabled={!selectedMovieId || isMembershipPending || isOrdering}
           className="add-btn"
         >
           {isAdding ? "追加中..." : "追加"}
@@ -296,7 +319,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
         <button
           type="button"
           onClick={() => void fetchAvailableMovies(availablePage + 1, true)}
-          disabled={isLoadingMovies || isOrdering || isAdding}
+          disabled={isLoadingMovies || isOrdering || isMembershipPending}
           className="add-btn"
         >
           {isLoadingMovies ? "読み込み中..." : "さらに読み込む"}
@@ -312,7 +335,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
             <li
               key={m.movie.id}
               className={`movie-item ${draggedIndex === index ? "dragging" : ""}`}
-              draggable={!isOrdering && !isAdding}
+              draggable={!isOrdering && !isMembershipPending}
               onDragStart={(e) => handleDragStart(e, index)}
               onDragOver={(e) => handleDragOver(e, index)}
               onDrop={handleDrop}
@@ -324,7 +347,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => handleMoveUp(index)}
-                  disabled={index === 0 || isOrdering || isAdding}
+                  disabled={index === 0 || isOrdering || isMembershipPending}
                   className="move-btn"
                   title="上へ"
                   aria-label={`${m.movie.title}を上へ移動`}
@@ -335,7 +358,9 @@ export const MovieManager: FC<MovieManagerProps> = ({
                   type="button"
                   onClick={() => handleMoveDown(index)}
                   disabled={
-                    index === movies.length - 1 || isOrdering || isAdding
+                    index === movies.length - 1 ||
+                    isOrdering ||
+                    isMembershipPending
                   }
                   className="move-btn"
                   title="下へ"
@@ -346,7 +371,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => handleRemoveMovie(m.movie.id)}
-                  disabled={isOrdering || isAdding}
+                  disabled={isOrdering || isMembershipPending}
                   className="remove-btn"
                 >
                   削除

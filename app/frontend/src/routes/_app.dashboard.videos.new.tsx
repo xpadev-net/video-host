@@ -5,6 +5,7 @@ import { Film } from "lucide-react";
 import {
   type ChangeEvent,
   type FormEvent,
+  type MouseEvent,
   useEffect,
   useRef,
   useState,
@@ -92,19 +93,27 @@ function NewVideoPage() {
       setError("タイトルを入力してから保存してください");
       return false;
     }
+    const submitted = {
+      title: current.title.trim(),
+      description: current.description.trim(),
+      visibility: current.visibility,
+      viewerIds: current.viewers.map((viewer) => viewer.id),
+    };
     const res = await client.api.v4.movies[":movie"].$patch({
       param: { movie: id },
-      json: {
-        title: current.title.trim(),
-        description: current.description.trim(),
-        visibility: current.visibility,
-        viewerIds: current.viewers.map((viewer) => viewer.id),
-      },
+      json: submitted,
     });
     if (!res.ok) {
       throw new Error("メタデータの保存に失敗しました");
     }
-    setSaved(true);
+    const latest = metadataRef.current;
+    setSaved(
+      submitted.title === latest.title.trim() &&
+        submitted.description === latest.description.trim() &&
+        submitted.visibility === latest.visibility &&
+        submitted.viewerIds.join("\0") ===
+          latest.viewers.map((viewer) => viewer.id).join("\0"),
+    );
     return true;
   };
 
@@ -147,6 +156,7 @@ function NewVideoPage() {
 
     movieIdRef.current = result.movieId;
     setMovieId(result.movieId);
+    metadataRef.current = { ...metadataRef.current, title: result.title };
     setTitle(result.title);
 
     // Upload in the background; when it lands, persist the metadata the user
@@ -190,6 +200,14 @@ function NewVideoPage() {
     }
   };
 
+  const preventLeavingWithUnsavedChanges = (
+    e: MouseEvent<HTMLAnchorElement>,
+  ) => {
+    if (saved && !savePending && !isSaving) return;
+    e.preventDefault();
+    setError("変更を保存してから移動してください");
+  };
+
   const handleRetryUpload = async () => {
     if (!file || uploadActiveRef.current || savePending) return;
     uploadActiveRef.current = true;
@@ -205,6 +223,10 @@ function NewVideoPage() {
             if (!result) return false;
             movieIdRef.current = result.movieId;
             setMovieId(result.movieId);
+            metadataRef.current = {
+              ...metadataRef.current,
+              title: result.title,
+            };
             setTitle(result.title);
             return upload(result.movieId, result.uploadUrl, file);
           })();
@@ -352,12 +374,14 @@ function NewVideoPage() {
                   to="/dashboard/videos/$id/edit"
                   params={{ id: movieId ?? "" }}
                   className="font-medium text-green-500"
+                  onClick={preventLeavingWithUnsavedChanges}
                 >
                   動画ページへ
                 </Link>
                 <Link
                   to="/dashboard/videos"
                   className="font-medium text-green-500"
+                  onClick={preventLeavingWithUnsavedChanges}
                 >
                   動画一覧へ
                 </Link>
@@ -365,7 +389,7 @@ function NewVideoPage() {
                   type="button"
                   className="font-medium text-green-500"
                   onClick={handleStartNextUpload}
-                  disabled={savePending || !saved}
+                  disabled={savePending || isSaving || !saved}
                 >
                   次の動画をアップロード
                 </button>
@@ -395,7 +419,12 @@ function NewVideoPage() {
                   type="text"
                   value={title}
                   onChange={(e) => {
-                    setTitle(e.target.value);
+                    const nextTitle = e.target.value;
+                    metadataRef.current = {
+                      ...metadataRef.current,
+                      title: nextTitle,
+                    };
+                    setTitle(nextTitle);
                     setSaved(false);
                   }}
                   placeholder="動画のタイトルを入力"
@@ -409,7 +438,12 @@ function NewVideoPage() {
                   id="description"
                   value={description}
                   onChange={(e) => {
-                    setDescription(e.target.value);
+                    const nextDescription = e.target.value;
+                    metadataRef.current = {
+                      ...metadataRef.current,
+                      description: nextDescription,
+                    };
+                    setDescription(nextDescription);
                     setSaved(false);
                   }}
                   placeholder="動画の説明を入力（任意）"
@@ -423,7 +457,12 @@ function NewVideoPage() {
                   id="visibility"
                   value={visibility}
                   onChange={(e) => {
-                    setVisibility(e.target.value as Visibility);
+                    const nextVisibility = e.target.value as Visibility;
+                    metadataRef.current = {
+                      ...metadataRef.current,
+                      visibility: nextVisibility,
+                    };
+                    setVisibility(nextVisibility);
                     setSaved(false);
                   }}
                 >
@@ -444,6 +483,10 @@ function NewVideoPage() {
                     id="viewers"
                     selected={viewers}
                     onChange={(next) => {
+                      metadataRef.current = {
+                        ...metadataRef.current,
+                        viewers: next,
+                      };
                       setViewers(next);
                       setSaved(false);
                     }}
