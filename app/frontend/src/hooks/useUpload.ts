@@ -28,7 +28,7 @@ interface UseUploadResult {
   ) => Promise<InitUploadResult | null>;
   upload: (movieId: string, uploadUrl: string, file: File) => Promise<boolean>;
   resume: (movieId: string, file: File) => Promise<boolean>;
-  cancel: () => void;
+  cancel: () => boolean;
   state: UploadState;
   reset: () => void;
 }
@@ -47,15 +47,22 @@ export const useUpload = (): UseUploadResult => {
     error: null,
   });
   const xhrRef = useRef<XMLHttpRequest | null>(null);
+  const uploadedMovieIdRef = useRef<string | null>(null);
+  const uploadedFileRef = useRef<File | null>(null);
 
   const reset = useCallback(() => {
     xhrRef.current?.abort();
     xhrRef.current = null;
+    uploadedMovieIdRef.current = null;
+    uploadedFileRef.current = null;
     setState({ phase: "idle", progress: 0, error: null });
   }, []);
 
   const cancel = useCallback(() => {
-    xhrRef.current?.abort();
+    const xhr = xhrRef.current;
+    if (!xhr) return false;
+    xhr.abort();
+    return true;
   }, []);
 
   const fail = useCallback((error: unknown, fallback: string) => {
@@ -86,13 +93,13 @@ export const useUpload = (): UseUploadResult => {
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve();
           } else {
-            reject(new Error("Upload failed"));
+            reject(new Error("ファイルのアップロードに失敗しました"));
           }
         };
 
         xhr.onerror = () => {
           xhrRef.current = null;
-          reject(new Error("Upload failed"));
+          reject(new Error("ファイルのアップロードに失敗しました"));
         };
         xhr.onabort = () => {
           xhrRef.current = null;
@@ -109,7 +116,18 @@ export const useUpload = (): UseUploadResult => {
       param: { movieId },
     });
     if (!res.ok) {
-      throw new Error("Failed to finalize upload");
+      // Client errors indicate this uploaded object cannot be completed (for
+      // example, the server rejected its actual size). A retry must obtain a
+      // fresh URL instead of repeating /complete against the rejected object.
+      if (res.status >= 400 && res.status < 500) {
+        uploadedMovieIdRef.current = null;
+        uploadedFileRef.current = null;
+      }
+      throw new Error("アップロードの完了処理に失敗しました");
+    }
+    if (uploadedMovieIdRef.current === movieId) {
+      uploadedMovieIdRef.current = null;
+      uploadedFileRef.current = null;
     }
     setState({ phase: "done", progress: 100, error: null });
   }, []);
@@ -130,7 +148,7 @@ export const useUpload = (): UseUploadResult => {
           },
         });
         if (!res.ok) {
-          throw new Error("Failed to create upload");
+          throw new Error("アップロード情報の作成に失敗しました");
         }
         const json = await res.json();
         return {
@@ -155,6 +173,8 @@ export const useUpload = (): UseUploadResult => {
       setState((prev) => ({ ...prev, phase: "uploading", error: null }));
       try {
         await putFile(uploadUrl, file);
+        uploadedMovieIdRef.current = movieId;
+        uploadedFileRef.current = file;
         await completeUpload(movieId);
         return true;
       } catch (error) {
@@ -171,6 +191,19 @@ export const useUpload = (): UseUploadResult => {
 
   const resume = useCallback(
     async (movieId: string, file: File): Promise<boolean> => {
+      if (
+        uploadedMovieIdRef.current === movieId &&
+        uploadedFileRef.current === file
+      ) {
+        setState({ phase: "completing", progress: 100, error: null });
+        try {
+          await completeUpload(movieId);
+          return true;
+        } catch (error) {
+          fail(error, "アップロードの完了処理に失敗しました");
+          return false;
+        }
+      }
       setState({ phase: "creating", progress: 0, error: null });
       try {
         const res = await client.api.v4.upload[":movieId"].url.$post({
@@ -182,7 +215,7 @@ export const useUpload = (): UseUploadResult => {
           },
         });
         if (!res.ok) {
-          throw new Error("Failed to get upload URL");
+          throw new Error("再開用URLの取得に失敗しました");
         }
         const json = await res.json();
         return await upload(movieId, json.data.uploadUrl, file);
@@ -195,7 +228,7 @@ export const useUpload = (): UseUploadResult => {
         return false;
       }
     },
-    [fail, upload],
+    [completeUpload, fail, upload],
   );
 
   return { init, upload, resume, cancel, state, reset };
