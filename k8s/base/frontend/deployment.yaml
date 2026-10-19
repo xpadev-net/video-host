@@ -54,11 +54,6 @@ spec:
                 configMapKeyRef:
                   name: frontend-config
                   key: enable-comments
-            - name: VITE_REQUIRE_SIGNUP_CODE
-              valueFrom:
-                configMapKeyRef:
-                  name: frontend-config
-                  key: require-signup-code
             - name: VITE_SITE_NAME
               valueFrom:
                 configMapKeyRef:

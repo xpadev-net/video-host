@@ -27,6 +27,7 @@ WORKDIR /app
 COPY --from=builder --chown=node:node /app/app/frontend/.output ./app/frontend/.output
 COPY --from=builder --chown=node:node /app/app/frontend/start.sh ./start.sh
 COPY --chown=node:node app/frontend/docker/env-replacer.sh ./env-replacer.sh
+COPY --chown=node:node app/frontend/docker/replace-runtime-env.mjs ./replace-runtime-env.mjs
 RUN chmod +x ./env-replacer.sh ./start.sh
 ENTRYPOINT ["/app/env-replacer.sh"]
 EXPOSE 3000

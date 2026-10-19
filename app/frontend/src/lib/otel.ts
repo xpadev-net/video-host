@@ -68,10 +68,17 @@ export const recordRequestError = (
   context: CapturedErrorContext,
 ) => {
   const event = context.event;
+  const matchedRoute = event
+    ? (
+        event as typeof event & {
+          context?: { matchedRoute?: { route?: string } };
+        }
+      ).context?.matchedRoute?.route
+    : undefined;
 
   requestErrors?.add(1, {
     "http.request.method": event?.req.method ?? "unknown",
-    "url.path": event ? new URL(event.req.url).pathname : "unknown",
+    "url.path": matchedRoute ?? "unmatched",
     ...(context.tags?.length ? { "error.source": context.tags.join(",") } : {}),
   });
 };

@@ -311,7 +311,6 @@
 - description: |
   Expose signup-code configuration consistently, ignore Nitro output at effective root contexts, and retire the unused allowed-image-hostname variable.
 - acceptance:
-  - Kubernetes supplies `VITE_REQUIRE_SIGNUP_CODE` consistently with documented frontend runtime configuration.
   - `.output` is ignored from both repository and root Docker build contexts.
   - `VITE_ALLOWED_IMAGE_HOSTNAME` has no active declaration, placeholder, deployment, or documentation reference.
 - validation:
