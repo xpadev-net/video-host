@@ -40,10 +40,11 @@ export const useUser = (query?: string) => {
 
 export const useSelf = () => {
   const { data: session, isPending } = authClient.useSession();
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   // Better Auth identifies the login; domain profile, roles and system-account
   // permissions must continue to come from the application API.
   const swr = useSWR<FilteredUser | null>(
-    session ? ["self", session.user.id] : null,
+    session ? ["self", session.user.id, selectedProfileId] : null,
     async () => {
       const response = await client.api.v4.users.me.$get();
       const result = await response.json();
