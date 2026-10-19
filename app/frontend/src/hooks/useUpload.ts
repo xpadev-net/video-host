@@ -139,6 +139,9 @@ export const useUpload = (): UseUploadResult => {
     if (!res.ok) {
       throw new Error("Failed to finalize upload");
     }
+    if (sessionUserIdRef.current !== sessionId) {
+      throw new DOMException("Upload session changed", "AbortError");
+    }
     setState({ phase: "done", progress: 100, error: null });
   }, []);
 

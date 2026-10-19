@@ -220,7 +220,11 @@ function NewVideoPage() {
   const handleRetryUpload = async () => {
     if (!file) return;
     const sessionId = currentSessionUserIdRef.current;
-    if (!sessionId || movieSessionUserIdRef.current !== sessionId) return;
+    if (
+      !sessionId ||
+      (movieId !== null && movieSessionUserIdRef.current !== sessionId)
+    )
+      return;
     setError(null);
     const succeeded = movieId
       ? await resume(movieId, file)
@@ -229,8 +233,10 @@ function NewVideoPage() {
             asUserId: selectedAccountId || undefined,
           });
           if (!result) return false;
+          if (currentSessionUserIdRef.current !== sessionId) return false;
           setMovieId(result.movieId);
           movieProfileIdRef.current = result.profileId;
+          movieSessionUserIdRef.current = sessionId;
           setTitle(result.title);
           return upload(result.movieId, result.uploadUrl, file);
         })();
