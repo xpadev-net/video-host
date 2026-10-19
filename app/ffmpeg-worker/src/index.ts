@@ -444,7 +444,12 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     }
 
     if (!result.success) {
-      if (jobShutdownAbort.signal.aborted && !committedOutcome) {
+      // A timeout that fired before SIGTERM stays a timeout.
+      if (
+        jobShutdownAbort.signal.aborted &&
+        !committedOutcome &&
+        !jobTimedOut
+      ) {
         return await handBackOnShutdown(job);
       }
       console.error(`Encoding failed: ${result.error}`);
@@ -594,7 +599,8 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     if (jobRelinquished) {
       return "relinquished";
     }
-    if (jobShutdownAbort.signal.aborted && !committedOutcome) {
+    // A timeout that fired before SIGTERM stays a timeout.
+    if (jobShutdownAbort.signal.aborted && !committedOutcome && !jobTimedOut) {
       return await handBackOnShutdown(job);
     }
     if (committedOutcome) {
