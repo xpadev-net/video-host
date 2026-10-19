@@ -121,6 +121,7 @@ export const useUpload = (): UseUploadResult => {
           json: {
             filename: file.name,
             contentType: file.type,
+            size: file.size,
             asUserId: options?.asUserId,
           },
         });
@@ -173,6 +174,7 @@ export const useUpload = (): UseUploadResult => {
           json: {
             filename: file.name,
             contentType: file.type,
+            size: file.size,
           },
         });
         if (!res.ok) {

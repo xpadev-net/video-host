@@ -123,12 +123,16 @@ export const generateUploadKey = (userId: string, filename: string): string => {
 export const getPresignedUploadUrl = async (
   key: string,
   contentType: string,
+  size: number,
   expiresIn = 3600,
 ): Promise<string> => {
+  // Content-Length is part of the signature, so the URL (even if replayed)
+  // can only ever store an object of exactly this size.
   const command = new PutObjectCommand({
     Bucket: S3_TMP_BUCKET,
     Key: key,
     ContentType: contentType,
+    ContentLength: size,
   });
 
   return getSignedUrl(s3Client, command, { expiresIn });

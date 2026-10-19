@@ -5,12 +5,15 @@ import type { Env } from "../@types/hono";
 
 const database = vi.hoisted(() => ({
   movie: { create: vi.fn(), findUnique: vi.fn() },
-  movieVariant: { updateMany: vi.fn(), findUnique: vi.fn() },
+  movieVariant: {
+    updateMany: vi.fn(),
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+  },
   series: { findUnique: vi.fn() },
   user: { findUnique: vi.fn(), findMany: vi.fn() },
 }));
 const s3 = vi.hoisted(() => ({
-  tmpFileExists: vi.fn(),
   getTmpFileSize: vi.fn(),
   deleteTmpFile: vi.fn().mockResolvedValue(undefined),
   getPresignedUploadUrl: vi.fn().mockResolvedValue("https://s3.test/put"),
@@ -63,7 +66,8 @@ const post = (path: string, body: unknown) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  s3.tmpFileExists.mockResolvedValue(true);
+  s3.getTmpFileSize.mockResolvedValue(1024);
+  database.movieVariant.findFirst.mockResolvedValue(null);
 });
 
 describe("generateUploadKey", () => {
@@ -96,14 +100,50 @@ describe("POST /movies s3Key validation", () => {
   });
 
   it("rejects a key that does not exist in the tmp bucket", async () => {
-    s3.tmpFileExists.mockResolvedValue(false);
+    s3.getTmpFileSize.mockResolvedValue(null);
     const res = await post("/movies", body("uploads/alice/abc.mp4"));
     expect(res.status).toBe(400);
     expect(database.movie.create).not.toHaveBeenCalled();
   });
 });
 
+describe("POST /movies upload guards", () => {
+  const body = { title: "t", s3Key: "uploads/alice/abc.mp4" };
+
+  it("rejects oversized objects and removes them", async () => {
+    s3.getTmpFileSize.mockResolvedValue(Number.MAX_SAFE_INTEGER);
+    const res = await post("/movies", body);
+    expect(res.status).toBe(400);
+    expect(s3.deleteTmpFile).toHaveBeenCalledWith(body.s3Key);
+    expect(database.movie.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a key already backing another variant", async () => {
+    database.movieVariant.findFirst.mockResolvedValue({ id: "v1" });
+    const res = await post("/movies", body);
+    expect(res.status).toBe(400);
+    expect(database.movie.create).not.toHaveBeenCalled();
+  });
+});
+
 describe("upload validation", () => {
+  it("requires the file size so the presigned URL can be bound to it", async () => {
+    const res = await post("/upload/init", {
+      filename: "a.mp4",
+      contentType: "video/mp4",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects sizes above the limit", async () => {
+    const res = await post("/upload/init", {
+      filename: "a.mp4",
+      contentType: "video/mp4",
+      size: Number.MAX_SAFE_INTEGER,
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("no longer exposes the legacy presigned-url endpoint", async () => {
     const res = await post("/upload/presigned-url", {
       filename: "a.mp4",
@@ -116,6 +156,7 @@ describe("upload validation", () => {
     const res = await post("/upload/init", {
       filename: "a.html",
       contentType: "text/html",
+      size: 10,
     });
     expect(res.status).toBe(400);
   });

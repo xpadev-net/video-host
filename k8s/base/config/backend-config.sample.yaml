@@ -29,6 +29,7 @@ data:
   # S3
   s3-tmp-bucket: "video-tmp"
   s3-prod-bucket: "video-prod"
+  max-upload-bytes: "21474836480"  # 最大アップロードサイズ (bytes, 既定 20GiB)
   s3-region: "ap-northeast-1"
   s3-endpoint: "http://object-storage:8333"  # SeaweedFS S3 service
   s3-force-path-style: "true"

@@ -161,6 +161,12 @@ spec:
                 configMapKeyRef:
                   name: backend-config
                   key: s3-tmp-bucket
+            - name: MAX_UPLOAD_BYTES
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: max-upload-bytes
+                  optional: true
             - name: S3_PROD_BUCKET
               valueFrom:
                 configMapKeyRef:

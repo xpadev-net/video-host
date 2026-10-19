@@ -5,6 +5,7 @@ import type { Env } from "../@types/hono";
 
 const database = vi.hoisted(() => ({
   series: { findUnique: vi.fn() },
+  movieVariant: { findFirst: vi.fn().mockResolvedValue(null) },
   movie: {
     findUnique: vi.fn(),
     update: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock("@/lib/s3", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/s3")>()),
   deleteProdFile: vi.fn(),
   deleteTmpFile: vi.fn(),
-  tmpFileExists: vi.fn().mockResolvedValue(true),
+  getTmpFileSize: vi.fn().mockResolvedValue(1024),
 }));
 vi.mock("@/lib/redis", () => ({
   addEncodeJob: vi.fn(),

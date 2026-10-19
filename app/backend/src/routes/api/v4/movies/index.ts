@@ -4,11 +4,12 @@ import { z } from "zod";
 import type { Env } from "@/@types/hono";
 import type { FormattedMovie, PaginatedResponse } from "@/@types/models";
 import { ZVisibility } from "@/@types/models";
+import { MAX_UPLOAD_BYTES } from "@/env";
 import { filterMovie } from "@/lib/filter";
 import { formatMovie } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import { addEncodeJob, setEncodeProgress } from "@/lib/redis";
-import { tmpFileExists, uploadKeyPrefix } from "@/lib/s3";
+import { deleteTmpFile, getTmpFileSize, uploadKeyPrefix } from "@/lib/s3";
 import { movieRoute } from "@/routes/api/v4/movies/[movie]";
 import {
   buildMovieAccessWhere,
@@ -134,10 +135,22 @@ export const moviesRoute = app
     // nobody can encode another user's tmp object as their own movie.
     if (
       !data.s3Key.startsWith(uploadKeyPrefix(authorId)) ||
-      data.s3Key.includes("..") ||
-      !(await tmpFileExists(data.s3Key))
+      data.s3Key.includes("..")
     ) {
       badRequest("Invalid s3Key");
+    }
+    const size = await getTmpFileSize(data.s3Key);
+    if (size === null) {
+      badRequest("Invalid s3Key");
+    }
+    if (size > MAX_UPLOAD_BYTES) {
+      await deleteTmpFile(data.s3Key).catch(() => {});
+      badRequest("Uploaded file is too large");
+    }
+    // A tmp object is consumed (and deleted) by a single encode job, so it
+    // may back only one variant.
+    if (await prisma.movieVariant.findFirst({ where: { s3Key: data.s3Key } })) {
+      badRequest("s3Key is already in use");
     }
 
     if (data.seriesId) {

@@ -18,11 +18,13 @@ import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const FilenameSchema = z.string().min(1).max(255);
+const UploadSizeSchema = z.number().int().positive().max(MAX_UPLOAD_BYTES);
 const VideoContentTypeSchema = z.string().regex(/^video\/[\w.+-]+$/);
 
 const InitUploadSchema = z.object({
   filename: FilenameSchema,
   contentType: VideoContentTypeSchema,
+  size: UploadSizeSchema,
   title: z.string().max(255).optional(),
   asUserId: z.string().optional(), // Admin only
 });
@@ -30,6 +32,7 @@ const InitUploadSchema = z.object({
 const RetryUploadSchema = z.object({
   filename: FilenameSchema,
   contentType: VideoContentTypeSchema,
+  size: UploadSizeSchema,
 });
 
 const titleFromFilename = (filename: string): string => {
@@ -52,7 +55,8 @@ export const uploadRoute = app
       unauthorized("Unauthorized");
     }
 
-    const { filename, contentType, title, asUserId } = c.req.valid("json");
+    const { filename, contentType, size, title, asUserId } =
+      c.req.valid("json");
     const authorId = await resolveAuthorId(user, asUserId);
     const key = generateUploadKey(authorId, filename);
 
@@ -76,7 +80,7 @@ export const uploadRoute = app
       },
     });
 
-    const uploadUrl = await getPresignedUploadUrl(key, contentType);
+    const uploadUrl = await getPresignedUploadUrl(key, contentType, size);
 
     return ok(c, {
       movie: formatMovie(filterMovie(movie)),
@@ -110,7 +114,7 @@ export const uploadRoute = app
       badRequest("Movie is not awaiting upload");
     }
 
-    const { filename, contentType } = c.req.valid("json");
+    const { filename, contentType, size } = c.req.valid("json");
     const key = generateUploadKey(movie.authorId, filename);
 
     // Claim atomically: if /complete flipped the variant to PROCESSING between
@@ -130,7 +134,7 @@ export const uploadRoute = app
       await deleteTmpFile(variant.s3Key).catch(() => {});
     }
 
-    const uploadUrl = await getPresignedUploadUrl(key, contentType);
+    const uploadUrl = await getPresignedUploadUrl(key, contentType, size);
 
     return ok(c, {
       uploadUrl,
