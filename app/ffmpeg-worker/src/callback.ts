@@ -6,7 +6,7 @@ export interface CallbackPayload {
   movieId: string;
   variantId?: string;
   status: "success" | "failed";
-  s3Key?: string;
+  s3Key: string;
   contentUrl?: string;
   duration?: number;
   thumbnailUrl?: string;

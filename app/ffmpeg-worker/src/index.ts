@@ -275,6 +275,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
           movieId: job.movieId,
           variantId: "original",
           status: "failed",
+          s3Key: job.s3Key,
         });
       }
     } else {
@@ -285,6 +286,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         movieId: job.movieId,
         variantId: "original",
         status: "failed",
+        s3Key: job.s3Key,
       });
     }
     return "failed";
@@ -380,6 +382,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         movieId: job.movieId,
         variantId: "original",
         status: "failed",
+        s3Key: job.s3Key,
       });
       return "failed";
     }
@@ -517,6 +520,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
             movieId: job.movieId,
             variantId: "original",
             status: "failed",
+            s3Key: job.s3Key,
           });
         } catch (finalError) {
           console.error(
@@ -532,6 +536,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         movieId: job.movieId,
         variantId: "original",
         status: "failed",
+        s3Key: job.s3Key,
       });
     }
     return "failed";
@@ -660,6 +665,7 @@ const pollForJobs = async (): Promise<void> => {
               movieId: job.movieId,
               variantId: "original",
               status: "failed",
+              s3Key: job.s3Key,
             });
           } catch (notifyError) {
             console.error(
