@@ -74,7 +74,9 @@ test("production proxy preserves cookies, Origin, bodies, redirects and SSE", as
   for (let attempt = 0; attempt < 150; attempt += 1) {
     if (server.exitCode !== null) throw new Error(logs);
     try {
-      const health = await fetch(`${origin}/api/healthz`);
+      const health = await fetch(`${origin}/api/healthz`, {
+        signal: AbortSignal.timeout(2_000),
+      });
       assert.deepEqual(await health.json(), { message: "OK" });
       ready = true;
       break;
@@ -177,6 +179,7 @@ test("Vite proxy anchors forged IP headers to the actual transport peer", async 
     if (server.exitCode !== null) throw new Error(logs);
     try {
       const result = await fetch(`http://127.0.0.1:${port}/api/auth/probe`, {
+        signal: AbortSignal.timeout(2_000),
         headers: {
           "x-forwarded-for": "198.51.100.99",
           "x-real-ip": "198.51.100.88",

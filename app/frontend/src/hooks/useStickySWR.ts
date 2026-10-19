@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import useSWR, { type SWRConfiguration } from "swr";
 
 const useStickyResult = <T>(
@@ -6,12 +6,16 @@ const useStickyResult = <T>(
   isEnabled: boolean,
 ): T | undefined => {
   const val = useRef<T | undefined>(undefined);
-  if (!isEnabled) {
-    val.current = undefined;
-  } else if (value !== null && value !== undefined) {
-    val.current = value;
-  }
-  return val.current;
+  useEffect(() => {
+    if (!isEnabled) {
+      val.current = undefined;
+    } else if (value !== null && value !== undefined) {
+      val.current = value;
+    }
+  }, [isEnabled, value]);
+
+  if (!isEnabled) return undefined;
+  return value !== null && value !== undefined ? value : val.current;
 };
 
 export const useStickySWR = <T, U, V extends SWRConfiguration>(
