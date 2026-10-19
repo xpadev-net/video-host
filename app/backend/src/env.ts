@@ -127,9 +127,6 @@ export const BackendEnvSchema = z.object({
   REDIS_SENTINEL_NAME: z.string().optional(),
   REDIS_SENTINEL_PASSWORD: z.string().optional(),
 
-  // Video Processing
-  VOD_BASE_URL: z.string().default(""),
-
   // OpenTelemetry metrics export (disabled when the endpoint is unset)
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
   OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: z.string().optional(),
@@ -279,7 +276,6 @@ export const {
   REDIS_SENTINEL_HOSTS,
   REDIS_SENTINEL_NAME,
   REDIS_SENTINEL_PASSWORD,
-  VOD_BASE_URL,
   CALLBACK_SECRET,
   VOD_INTERNAL_SECRET,
   OTEL_EXPORTER_OTLP_ENDPOINT,

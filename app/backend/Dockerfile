@@ -48,4 +48,6 @@ RUN pnpm exec prisma generate
 
 RUN chmod +x ./start.sh
 
+USER node
+
 CMD ["./start.sh"]

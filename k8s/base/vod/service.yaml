@@ -11,6 +11,6 @@ spec:
     app.kubernetes.io/name: vod
   ports:
     - port: 80
-      targetPort: 80
+      targetPort: 8080
       protocol: TCP
       name: http

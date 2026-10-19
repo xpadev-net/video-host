@@ -12,6 +12,10 @@ resources:
   - ffmpeg-worker/deployment.yaml
   - vod/deployment.yaml
   - vod/service.yaml
+  - networking.yaml
+  - availability.yaml
 
-commonLabels:
-  app.kubernetes.io/part-of: video-host
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: video-host
+    includeSelectors: true

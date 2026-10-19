@@ -11,4 +11,5 @@ data:
   site-name: "Video Host"
   # OpenTelemetry (メトリクス送信先。空の場合は無効)
   otel-endpoint: ""  # 例: "http://otel-collector.otel-collector.svc.cluster.local:4318"
+  otel-metrics-endpoint: ""
   otel-service-name: "video-host-frontend"
