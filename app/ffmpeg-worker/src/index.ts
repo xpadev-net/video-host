@@ -84,7 +84,7 @@ let jobRelinquished = false;
 // (90 s): drain/settle below, ffmpeg's own 5 s SIGKILL escalation, then the
 // claim handoff and telemetry flush. Worst case here is about 20 + 5 + 5 s.
 
-// A job that already deleted its input can only be finalized (callback), so
+// A job whose output is already committed can only be finalized (callback), so
 // it is given this long to finish instead of being aborted.
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 20_000;
 
@@ -443,16 +443,14 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       abortController.signal,
     );
 
-    // Delete from tmp-bucket
-    console.log(`Deleting from tmp-bucket: ${job.s3Key}`);
-    await deleteFromTmp(job.s3Key);
-
     // Generate content URL for VOD streaming
     const contentUrl = getVodContentUrl(job.s3Key);
 
-    // The input is gone: if this worker dies now the job can no longer be
-    // re-encoded, so mark the claim with its outcome for the reaper. A
-    // failure here must not send the job down the retry path.
+    // The output is in prod: record the outcome on the claim BEFORE touching
+    // the tmp input. If this worker dies or is cut off from here on (even in
+    // the middle of the delete), the reaper replays the success callback
+    // instead of re-encoding an input that may already be gone. A failure
+    // here must not send the job down the retry path.
     committedOutcome = { contentUrl, duration: result.duration };
     activeJobCommitted = true;
     if (activeJobClaim) {
@@ -467,6 +465,18 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
           claimError,
         );
       }
+    }
+
+    // Delete from tmp-bucket. The outcome is already recorded, so a failure
+    // only leaves an orphaned input behind.
+    console.log(`Deleting from tmp-bucket: ${job.s3Key}`);
+    try {
+      await deleteFromTmp(job.s3Key);
+    } catch (deleteError) {
+      console.error(
+        `Failed to delete tmp input (left orphaned): movieId=${job.movieId}`,
+        deleteError,
+      );
     }
 
     if (jobRelinquished) {
@@ -786,7 +796,7 @@ const shutdown = async (): Promise<void> => {
   isShuttingDown = true;
   // Anything still encoding (or about to start) is stopped right away and put
   // back on the queue: waiting for it would just burn the grace period. A job
-  // that already deleted its input can only be finalized, so it is allowed to
+  // that already committed its output can only be finalized, so it is allowed to
   // finish.
   const finalizing = activeJob !== null && activeJobCommitted;
   if (!finalizing) {

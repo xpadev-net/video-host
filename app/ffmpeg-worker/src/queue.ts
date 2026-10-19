@@ -129,15 +129,21 @@ export const getEncodeProgress = async (
 };
 
 const REQUEUE_INTERRUPTED_JOB_SCRIPT = `
-  -- A completion record means the input is already gone: never requeue.
-  if redis.call('EXISTS', KEYS[4]) == 1 then
-    return 0
+  if ARGV[1] ~= '' then
+    -- This worker was running the job. A completion record means its output
+    -- is already committed, so it must not go back as a fresh encode.
+    if redis.call('EXISTS', KEYS[4]) == 1 then
+      return 0
+    end
+    -- Only the worker that still holds the claim may hand the job off; if a
+    -- reaper already took it the job is theirs.
+    if redis.call('ZREM', KEYS[1], ARGV[1]) == 0 then
+      return 0
+    end
   end
-  -- With a claim, only the worker that still holds it may hand the job off;
-  -- if a reaper already took the claim the job is theirs.
-  if ARGV[1] ~= '' and redis.call('ZREM', KEYS[1], ARGV[1]) == 0 then
-    return 0
-  end
+  -- Without a claim the job was only popped, never started: always restore
+  -- it, even when a completion record exists, because this queue entry is
+  -- what lets the next worker replay that completion.
   redis.call('RPUSH', KEYS[2], ARGV[2])
   redis.call('SET', KEYS[3], '{"status":"queued"}', 'EX', 3600)
   return 1
