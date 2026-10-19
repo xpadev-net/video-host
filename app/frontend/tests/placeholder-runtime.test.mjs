@@ -39,7 +39,6 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
       name: "unresolved",
       endpoint: "",
       site: "Video Host",
-      flag: false,
       replace: true,
       siteEnv: false,
     },
@@ -47,7 +46,6 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
       name: "same-origin",
       endpoint: "",
       site: "Runtime same-origin",
-      flag: true,
       replace: true,
       siteEnv: true,
     },
@@ -55,7 +53,6 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
       name: "explicit-origin",
       endpoint: "https://api.example.test",
       site: `Runtime O'Neil "quote" <tag> $HOME & | \\path \` ${String.fromCharCode(36)}{window.name}`,
-      flag: false,
       replace: true,
       siteEnv: true,
     },
@@ -77,7 +74,6 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
                 ...process.env,
                 VITE_API_ENDPOINT: scenario.endpoint,
                 VITE_SITE_NAME: scenario.siteEnv ? scenario.site : "",
-                VITE_ENABLE_COMMENTS: String(scenario.flag),
               },
               encoding: "utf8",
             },
@@ -91,7 +87,7 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
         );
         assert.deepEqual(
           Object.values(config).sort(),
-          [scenario.endpoint, scenario.site, scenario.flag].sort(),
+          [scenario.endpoint, scenario.site].sort(),
         );
 
         const reserve = http.createServer().listen(0, "127.0.0.1");

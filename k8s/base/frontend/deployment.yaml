@@ -49,11 +49,6 @@ spec:
                 configMapKeyRef:
                   name: frontend-config
                   key: api-endpoint
-            - name: VITE_ENABLE_COMMENTS
-              valueFrom:
-                configMapKeyRef:
-                  name: frontend-config
-                  key: enable-comments
             - name: VITE_SITE_NAME
               valueFrom:
                 configMapKeyRef:

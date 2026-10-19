@@ -113,7 +113,6 @@ configMapGenerator:
     literals:
       - api-endpoint=
       - api-upstream-url=http://backend:3000
-      - enable-comments=true
       - site-name=Video Host
       - otel-endpoint=
       - otel-metrics-endpoint=

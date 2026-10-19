@@ -3,19 +3,12 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useRef } from "react";
 
 import { LoadingIcon } from "@/assets/LoadingIcon";
-import {
-  PlayerConfigAtom,
-  PlayerStateAtom,
-  VideoRefAtom,
-  WrapperRefAtom,
-} from "@/atoms/Player";
+import { PlayerStateAtom, VideoRefAtom, WrapperRefAtom } from "@/atoms/Player";
 import { ImageWithFallback } from "@/components/ImageWithFallback";
-import { CommentCanvas } from "@/components/Player/Shared/CommentCanvas";
 import { KeyboardHandler } from "@/components/Player/Shared/KeyboardHandler";
 import { MediaSessionHandler } from "@/components/Player/Shared/MediaSessionHandler";
 import { PlayerStatusDisplay } from "@/components/Player/Shared/PlayerStatusDisplay";
 import { Video } from "@/components/Player/Shared/Video";
-import { EnableComments } from "@/contexts/env";
 import { usePlayerAfk } from "@/hooks/usePlayerAfk";
 import { cn } from "@/lib/utils";
 
@@ -39,12 +32,9 @@ export function PlayerSurface({
 }: PlayerSurfaceProps) {
   const setVideoAtom = useSetAtom(VideoRefAtom);
   const setWrapperAtom = useSetAtom(WrapperRefAtom);
-  const { isNiconicommentsEnable, isPipEnable } =
-    useAtomValue(PlayerConfigAtom);
   const state = useAtomValue(PlayerStateAtom);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const { isAfk, showControls, toggleControls } = usePlayerAfk();
   const isInactive = isAfk && !state.paused && !state.isSetting;
   const isMobile = variant === "mobile";
@@ -60,17 +50,6 @@ export function PlayerSurface({
     } else {
       videoRef.current?.pause();
     }
-  };
-
-  const handlePipPause = () => {
-    void (async () => {
-      if (videoRef.current?.paused) {
-        await videoRef.current.play();
-      } else {
-        videoRef.current?.pause();
-      }
-      await pipVideoRef.current?.play();
-    })();
   };
 
   return (
@@ -135,18 +114,6 @@ export function PlayerSurface({
                 : "max-h-screen max-w-[100vw]"),
           )}
         >
-          {isNiconicommentsEnable && EnableComments && !isPipMode && (
-            <CommentCanvas
-              key={data.id}
-              url={data.id}
-              className={cn(
-                "absolute left-0 top-0 z-[2] h-full w-full object-contain pointer-events-none",
-                state.isFullscreen && isMobile && "max-h-dvh max-w-screen",
-              )}
-              videoRef={videoRef.current}
-              pipVideoRef={pipVideoRef.current}
-            />
-          )}
           <Video
             className={cn(
               "absolute left-0 top-0 z-[1] h-full w-full",
@@ -154,16 +121,6 @@ export function PlayerSurface({
             )}
             videoRef={videoRef}
             movie={data}
-          />
-          <video
-            className={cn(
-              "absolute h-full w-full",
-              isPipEnable && EnableComments ? "z-3" : "-z-1",
-            )}
-            ref={pipVideoRef}
-            autoPlay
-            muted
-            onPause={handlePipPause}
           />
           <PlayerStatusDisplay />
         </div>

@@ -2,7 +2,7 @@
 
 ## Project overview
 
-This is the Japanese home media server frontend. It uses TanStack Start with React 19 for routing and production builds, and consumes the workspace Hono backend through a typed client. It includes video and series browsing, authentication, dashboards, HLS playback, and Niconico-style overlay comments.
+This is the Japanese home media server frontend. It uses TanStack Start with React 19 for routing and production builds, and consumes the workspace Hono backend through a typed client. It includes video and series browsing, authentication, dashboards, and HLS playback.
 
 ## Runtime requirements
 
@@ -40,7 +40,6 @@ pnpm -F @video-host/frontend test:all
 - SWR for remote data
 - Hono's typed client for the backend contract
 - HLS.js for playback
-- `@xpadev-net/niconicomments` for overlay comments
 - Biome for linting and formatting
 
 ## Source layout
@@ -72,7 +71,6 @@ Public browser configuration uses Vite variables:
 ```bash
 VITE_API_ENDPOINT
 VITE_SITE_NAME
-VITE_ENABLE_COMMENTS
 ```
 
 `VITE_API_ENDPOINT` is optional; leave it empty to use the same-origin API proxy. Set server-only `API_UPSTREAM_URL` to the backend origin (`http://127.0.0.1:3001` locally, `http://backend:3000` in the container). Never expose that upstream or auth secrets as VITE_ values. The Vite/Nitro proxy forwards only `/api/auth/*` and `/api/v4/*`, preserves cookies/Origin/streaming responses, and does not follow redirects. Container builds embed placeholder values from `docker/.env.placeholder`; `docker/env-replacer.sh` replaces those placeholders in `.output/public` and `.output/server` at startup so client assets and server-rendered HTML use the deployment's runtime values.

@@ -4,8 +4,6 @@ export type PlayerConfig = {
   windowFullscreen: boolean;
   autoPlay: boolean;
   isTheatre: boolean;
-  isPipEnable: boolean;
-  isNiconicommentsEnable: boolean;
 };
 
 export type VideoMetadata = {
@@ -20,7 +18,7 @@ export type PlayerState = {
   isFullscreen: boolean;
 };
 
-export type SettingKey = "main" | "playbackRate" | "comments" | "audioTrack";
+export type SettingKey = "main" | "playbackRate" | "audioTrack";
 
 export type PlayerAudioTrack = {
   id: number;
