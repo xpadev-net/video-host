@@ -59,7 +59,7 @@ describe("GET /progress/:movieId", () => {
 
   it("refuses non-owners", async () => {
     const res = await appFor(person("bob")).request("/progress/m1");
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
     expect(redis.getEncodeProgress).not.toHaveBeenCalled();
   });
 

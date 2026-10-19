@@ -12,8 +12,13 @@ import {
   canViewMovie,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
-import { assertCanManageSeries, canManageMovie } from "@/utils/movieAuth";
-import { badRequest, notFound, unauthorized } from "@/utils/response";
+import { assertCanManageSeries, canManageOwned } from "@/utils/movieAuth";
+import {
+  badRequest,
+  forbidden,
+  notFound,
+  unauthorized,
+} from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const MoviePatchSchema = z.object({
@@ -123,8 +128,8 @@ export const movieRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    if (!(await canManageMovie(user, existingMovie.authorId))) {
-      unauthorized("Not authorized to edit this movie");
+    if (!(await canManageOwned(user, existingMovie.authorId))) {
+      forbidden("Not authorized to edit this movie");
     }
 
     const { title, description, seriesId, visibility, viewerIds, order } =
@@ -215,8 +220,8 @@ export const movieRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    if (!(await canManageMovie(user, movie.authorId))) {
-      unauthorized("Not authorized to delete this movie");
+    if (!(await canManageOwned(user, movie.authorId))) {
+      forbidden("Not authorized to delete this movie");
     }
 
     // Try to delete S3 files (don't fail if this errors)

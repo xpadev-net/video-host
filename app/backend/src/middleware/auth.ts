@@ -65,9 +65,31 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
       c.header("Cache-Control", "private, no-store");
     }
   }
-  if (!c.get("user") && !isPublicEndpoint(path)) unauthorized("Unauthorized");
+  if (
+    !c.get("user") &&
+    !isPublicEndpoint(path) &&
+    hasRouteHandler(c.req.matchedRoutes, path)
+  ) {
+    unauthorized("Unauthorized");
+  }
   await next();
 });
+
+// Paths no route handles must answer 404 even to anonymous clients; only
+// real endpoints are worth hiding behind a 401. Catch-all middleware does not
+// count, and trailing-slash / empty-segment variants stay protected because Hono's 404-based
+// redirect (trimTrailingSlash) would otherwise confirm a route exists.
+function hasRouteHandler(
+  routes: readonly { method: string; path: string }[],
+  path: string,
+): boolean {
+  if (path.length > 1 && (path.endsWith("/") || path.includes("//"))) {
+    return true;
+  }
+  return routes.some(
+    (route) => !(route.method === "ALL" && ["*", "/*"].includes(route.path)),
+  );
+}
 
 function isPublicEndpoint(path: string): boolean {
   // Authentication runs before trailing-slash redirects. Allow only this

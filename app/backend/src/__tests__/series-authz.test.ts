@@ -165,7 +165,7 @@ describe("seriesId on movie update", () => {
       "/movies/m1",
       json("PATCH", { seriesId: "s2" }),
     );
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
     expect(database.movie.update).not.toHaveBeenCalled();
   });
 });

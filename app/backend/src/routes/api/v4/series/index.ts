@@ -15,7 +15,8 @@ import {
   buildMovieAccessWhere,
   buildVisibilityFilter,
 } from "@/utils/buildVisibilityFilter";
-import { badRequest, unauthorized } from "@/utils/response";
+import { resolveAuthorId } from "@/utils/movieAuth";
+import { unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const DEFAULT_PAGE_SIZE = 100;
@@ -120,24 +121,7 @@ export const seriesRoute = app
     }
     const { title, description, visibility, asUserId } = c.req.valid("json");
 
-    let authorId = user.id;
-    if (asUserId) {
-      if (user.role !== "ADMIN") {
-        unauthorized("Only admins can create series for other users");
-      }
-      // Verify asUserId is a system account (or just allow admins to act as anyone? context implies system accounts)
-      // Reusing logic from other files or just checking existence/system nature
-      const targetUser = await prisma.user.findUnique({
-        where: { id: asUserId },
-      });
-      if (!targetUser) {
-        badRequest("Target user not found");
-      }
-      if (targetUser.kind !== "SYSTEM") {
-        badRequest("Can only create series for system accounts");
-      }
-      authorId = asUserId;
-    }
+    const authorId = await resolveAuthorId(user, asUserId);
 
     const series = await prisma.series.create({
       data: {

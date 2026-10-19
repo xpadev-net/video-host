@@ -57,7 +57,7 @@ function appUnderTest(withAuthConfigRoute = false) {
     app.use(trimTrailingSlash());
     app.route("/api/v4/auth", authRoute);
   } else {
-    app.all("*", (c) => c.json({ user: c.get("user") ?? null }));
+    app.all("/api/*", (c) => c.json({ user: c.get("user") ?? null }));
   }
   return app;
 }
@@ -185,6 +185,11 @@ describe("cookie-backed domain authentication", () => {
       expect(mocks.provisionProfile).not.toHaveBeenCalled();
     },
   );
+  it("answers anonymous requests to unknown paths with 404, not 401", async () => {
+    const app = appUnderTest();
+    expect((await app.request("/no/such/path")).status).toBe(404);
+    expect((await app.request("/api/v4/users")).status).toBe(401);
+  });
   it("keeps trailing-slash lookalikes and private paths protected", async () => {
     const app = appUnderTest(true);
     for (const path of [
