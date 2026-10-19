@@ -66,7 +66,7 @@ Explicit linking requires an existing authenticated session and verifies the ini
 
 ## Security boundaries
 
-Application POST/PUT/PATCH/DELETE routes require an exact trusted Origin in addition to a valid cookie session. Non-browser clients must send the configured trusted Origin and a cookie; legacy JWT bearer access has been removed. Better Auth validates its own routes. FFmpeg callbacks and VOD mappings bypass browser auth only because their routes still require independent secrets.
+Application POST/PUT/PATCH/DELETE routes require an exact trusted Origin in addition to a valid cookie session. Non-browser clients must send the configured trusted Origin and a cookie; legacy JWT bearer access has been removed. Better Auth validates its own routes. FFmpeg callbacks and VOD mappings bypass browser auth only because their routes still require independent secrets. VOD playback URLs returned by the API carry a short-lived HMAC token (`/vod/<token>/<s3Key>/master.m3u8`, bound to that key and signed with `VOD_INTERNAL_SECRET`, valid for 6–7 hours); the mapping endpoint rejects requests without a valid token, so knowing an `s3Key` is not enough to stream a PRIVATE or LIMITED movie. Existing stored `contentUrl` values need no migration: the token is added when the API serves them. Tokens are issued only in responses that already passed the visibility checks.
 
 Auth sessions are stored in MySQL, cookie caching is disabled, and logout revokes the database session. Browser JavaScript cannot read the session cookie. Rate-limit data is shared in the database across replicas. See the migration guide for proxy/IP trust and deployment verification requirements. Never expose database/storage credentials through VITE_ variables.
 
