@@ -18,10 +18,13 @@ const s3 = vi.hoisted(() => ({
   deleteTmpFile: vi.fn().mockResolvedValue(undefined),
   getPresignedUploadUrl: vi.fn().mockResolvedValue("https://s3.test/put"),
 }));
-vi.mock("@/lib/prisma", () => ({ prisma: database }));
-vi.mock("@/lib/redis", () => ({
+const queue = vi.hoisted(() => ({
   addEncodeJob: vi.fn(),
   setEncodeProgress: vi.fn(),
+}));
+vi.mock("@/lib/prisma", () => ({ prisma: database }));
+vi.mock("@/lib/redis", () => ({
+  ...queue,
 }));
 vi.mock("@/lib/s3", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/s3")>()),
@@ -159,5 +162,81 @@ describe("upload validation", () => {
     expect(res.status).toBe(400);
     expect(s3.deleteTmpFile).toHaveBeenCalledWith("uploads/alice/x.mp4");
     expect(database.movieVariant.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("completes init → URL → complete once and makes duplicate complete idempotent", async () => {
+    database.movieVariant.updateMany.mockResolvedValue({ count: 1 });
+    const author = alice;
+    database.movie.create.mockImplementation(
+      async ({
+        data,
+      }: {
+        data: { variants: { create: { s3Key: string } } };
+      }) => ({
+        id: "m1",
+        title: "a",
+        description: null,
+        duration: 0,
+        thumbnailUrl: null,
+        visibility: "PRIVATE",
+        createdAt: new Date(),
+        author,
+        variants: [
+          {
+            id: "v1",
+            variantId: "original",
+            contentUrl: "",
+            s3Key: data.variants.create.s3Key,
+            status: "UPLOADING",
+          },
+        ],
+      }),
+    );
+
+    const initialized = await post("/upload/init", {
+      filename: "a.mp4",
+      contentType: "video/mp4",
+      size: 1024,
+    });
+    expect(initialized.status).toBe(200);
+    const {
+      data: { key: initialKey },
+    } = (await initialized.json()) as { data: { key: string } };
+
+    database.movie.findUnique.mockResolvedValueOnce({
+      id: "m1",
+      authorId: alice.id,
+      variants: [{ id: "v1", status: "UPLOADING", s3Key: initialKey }],
+    });
+    const refreshed = await post("/upload/m1/url", {
+      filename: "a.mp4",
+      contentType: "video/mp4",
+      size: 1024,
+    });
+    expect(refreshed.status).toBe(200);
+    const {
+      data: { key },
+    } = (await refreshed.json()) as { data: { key: string } };
+
+    database.movie.findUnique.mockResolvedValueOnce({
+      id: "m1",
+      authorId: alice.id,
+      variants: [{ id: "v1", status: "UPLOADING", s3Key: key }],
+    });
+    const completed = await post("/upload/m1/complete", {});
+    expect(completed.status).toBe(200);
+    expect(database.movieVariant.updateMany).toHaveBeenCalledWith({
+      where: { id: "v1", status: "UPLOADING", s3Key: key },
+      data: { status: "PROCESSING" },
+    });
+
+    database.movie.findUnique.mockResolvedValueOnce({
+      id: "m1",
+      authorId: alice.id,
+      variants: [{ id: "v1", status: "PROCESSING", s3Key: key }],
+    });
+    const duplicate = await post("/upload/m1/complete", {});
+    expect(duplicate.status).toBe(200);
+    expect(queue.addEncodeJob).toHaveBeenCalledTimes(1);
   });
 });

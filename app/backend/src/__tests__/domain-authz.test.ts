@@ -11,6 +11,7 @@ const database = vi.hoisted(() => ({
     delete: vi.fn(),
   },
   movie: { findUnique: vi.fn() },
+  movieVariant: { findFirst: vi.fn(), updateMany: vi.fn() },
   $transaction: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: database }));
@@ -176,6 +177,52 @@ describe("machine authentication remains separate", () => {
     });
     expect(response.status).toBe(400);
     expect(database.movie.findUnique).toHaveBeenCalled();
+  });
+  it("rejects invalid callback secrets before reading movie state", async () => {
+    const response = await appFor().request("/api/v4/callback", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer wrong-secret",
+      },
+      body: JSON.stringify({
+        movieId: "m1",
+        variantId: "original",
+        s3Key: "uploads/alice/video.mp4",
+        status: "failed",
+      }),
+    });
+    expect(response.status).toBe(401);
+    expect(database.movie.findUnique).not.toHaveBeenCalled();
+  });
+  it("does not transition a READY variant to FAILED", async () => {
+    database.movie.findUnique.mockResolvedValue({ id: "m1" });
+    database.movieVariant.findFirst.mockResolvedValue({ id: "v1" });
+    database.movieVariant.updateMany.mockResolvedValue({ count: 0 });
+    database.$transaction.mockImplementation((operation) =>
+      operation(database),
+    );
+
+    const response = await appFor().request("/api/v4/callback", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer test-callback-secret",
+      },
+      body: JSON.stringify({
+        movieId: "m1",
+        variantId: "original",
+        s3Key: "uploads/alice/video.mp4",
+        status: "failed",
+      }),
+    });
+    expect(response.status).toBe(409);
+    expect(database.movieVariant.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: "PROCESSING" }),
+        data: { status: "FAILED" },
+      }),
+    );
   });
   it("rejects cookie/admin context for VOD mapping without internal secret", async () => {
     expect(
