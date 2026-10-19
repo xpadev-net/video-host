@@ -11,7 +11,6 @@ export const Route = createFileRoute("/_app/")({
   head: () => ({
     meta: [
       { title: SiteName },
-      { name: "description", content: "Japanese home media server frontend" },
     ],
   }),
   component: IndexRoute,
