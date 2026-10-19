@@ -1,20 +1,20 @@
 import {
-  S3Client,
+  DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
-  DeleteObjectCommand,
+  S3Client,
 } from "@aws-sdk/client-s3";
-import { createWriteStream, createReadStream } from "fs";
-import { pipeline } from "stream/promises";
+import { createReadStream, createWriteStream } from "fs";
 import type { Readable } from "stream";
+import { pipeline } from "stream/promises";
 import {
   S3_ACCESS_KEY_ID,
-  S3_SECRET_ACCESS_KEY,
-  S3_REGION,
   S3_ENDPOINT,
   S3_FORCE_PATH_STYLE,
-  S3_TMP_BUCKET,
   S3_PROD_BUCKET,
+  S3_REGION,
+  S3_SECRET_ACCESS_KEY,
+  S3_TMP_BUCKET,
 } from "./env";
 
 const s3Config: {
@@ -126,9 +126,7 @@ export const uploadToProd = async (
         console.log(
           `Upload attempt ${attempt} failed, retrying in ${attempt * 2}s...`,
         );
-        await new Promise((resolve) =>
-          setTimeout(resolve, attempt * 2000),
-        );
+        await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
       } else {
         throw error;
       }
@@ -146,4 +144,4 @@ export const deleteFromTmp = async (s3Key: string): Promise<void> => {
   await s3Client.send(command);
 };
 
-export { S3_TMP_BUCKET, S3_PROD_BUCKET };
+export { S3_PROD_BUCKET, S3_TMP_BUCKET };

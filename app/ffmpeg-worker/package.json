@@ -1,9 +1,15 @@
 {
   "name": "@video-host/ffmpeg-worker",
   "version": "0.0.11",
+  "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "lint": "biome check .",
+    "lint:fix": "biome check . --write",
+    "format": "biome format . --write",
+    "format:check": "biome format .",
     "typecheck": "tsc --noEmit --skipLibCheck --pretty --noErrorTruncation --skipDefaultLibCheck --project tsconfig.json"
   },
   "dependencies": {
@@ -19,7 +25,7 @@
     "redis": "^5.12.1"
   },
   "devDependencies": {
-    "@types/node": "^24.19.2",
+    "@types/node": "^22.12.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }

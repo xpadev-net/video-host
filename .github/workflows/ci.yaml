@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        task: [lint, format, typecheck, test]
+        task: [lint, format:check, typecheck, test]
     
     steps:
       - name: Checkout repository
@@ -34,6 +34,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm -F @video-host/backend prisma:generate
 
       - name: Run ${{ matrix.task }} (backend)
         run: pnpm -F @video-host/backend ${{ matrix.task }}
@@ -81,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        task: [typecheck]
+        task: [lint, format:check, typecheck]
     
     steps:
       - name: Checkout repository

@@ -1,10 +1,15 @@
-import { createClient, createSentinel, RedisSentinelType, type RedisClientType } from "redis";
 import { randomUUID } from "crypto";
 import {
-  REDIS_URL,
+  createClient,
+  createSentinel,
+  type RedisClientType,
+  type RedisSentinelType,
+} from "redis";
+import {
   REDIS_SENTINEL_HOSTS,
   REDIS_SENTINEL_NAME,
   REDIS_SENTINEL_PASSWORD,
+  REDIS_URL,
 } from "./env";
 
 let redisClient: RedisClientType | RedisSentinelType | null = null;
@@ -17,10 +22,12 @@ interface SentinelNode {
 const createRedisClient = (): RedisClientType | RedisSentinelType => {
   // If Sentinel is configured, use Sentinel mode
   if (REDIS_SENTINEL_HOSTS && REDIS_SENTINEL_NAME) {
-    const sentinels: SentinelNode[] = REDIS_SENTINEL_HOSTS.split(",").map((host) => {
-      const [hostname, port] = host.trim().split(":");
-      return { host: hostname, port: parseInt(port || "26379", 10) };
-    });
+    const sentinels: SentinelNode[] = REDIS_SENTINEL_HOSTS.split(",").map(
+      (host) => {
+        const [hostname, port] = host.trim().split(":");
+        return { host: hostname, port: parseInt(port || "26379", 10) };
+      },
+    );
 
     return createSentinel({
       name: REDIS_SENTINEL_NAME,
@@ -35,7 +42,9 @@ const createRedisClient = (): RedisClientType | RedisSentinelType => {
   return createClient({ url: REDIS_URL });
 };
 
-export const getRedisClient = async (): Promise<RedisClientType | RedisSentinelType> => {
+export const getRedisClient = async (): Promise<
+  RedisClientType | RedisSentinelType
+> => {
   if (!redisClient) {
     redisClient = createRedisClient();
     redisClient.on("error", (err: Error) =>
@@ -131,7 +140,7 @@ export const addJobToRetryQueue = async (job: EncodeJob): Promise<void> => {
   }
 
   // Calculate exponential backoff: 10 * 2^retryCount seconds
-  const delaySeconds = INITIAL_RETRY_DELAY_SECONDS * Math.pow(2, retryCount - 1);
+  const delaySeconds = INITIAL_RETRY_DELAY_SECONDS * 2 ** (retryCount - 1);
   const retryAfter = Math.floor(Date.now() / 1000) + delaySeconds;
 
   const jobWithRetry: EncodeJob = {
@@ -227,10 +236,10 @@ const processRetryQueueWithClient = async (
     }
 
     // Execute the Lua script atomically
-    const movedJobs = await client.evalSha(processRetryQueueScriptSha, {
+    const movedJobs = (await client.evalSha(processRetryQueueScriptSha, {
       keys: [RETRY_QUEUE_KEY, ENCODE_QUEUE_KEY],
       arguments: [now.toString(), limit.toString()],
-    }) as string[];
+    })) as string[];
 
     if (!movedJobs || movedJobs.length === 0) {
       return 0;
@@ -251,14 +260,15 @@ const processRetryQueueWithClient = async (
     return movedJobs.length;
   } catch (error) {
     // If script is not found (e.g., Redis was restarted), reload it
-    if (
-      error instanceof Error &&
-      error.message.includes("NOSCRIPT")
-    ) {
+    if (error instanceof Error && error.message.includes("NOSCRIPT")) {
       // Prevent infinite recursion by limiting reload to one attempt
       if (scriptReloadAttempted) {
-        console.error("Failed to reload Lua script after NOSCRIPT error, giving up");
-        throw new Error("Failed to reload retry queue script after Redis restart");
+        console.error(
+          "Failed to reload Lua script after NOSCRIPT error, giving up",
+        );
+        throw new Error(
+          "Failed to reload retry queue script after Redis restart",
+        );
       }
       console.log("Lua script not found (NOSCRIPT), reloading...");
       processRetryQueueScriptSha = null;
@@ -310,9 +320,7 @@ export const getJobCompletion = async (
   }
 };
 
-export const claimProcessingJob = async (
-  job: EncodeJob,
-): Promise<string> => {
+export const claimProcessingJob = async (job: EncodeJob): Promise<string> => {
   const client = await getRedisClient();
   const member = JSON.stringify({
     claimId: randomUUID(),
@@ -441,7 +449,10 @@ export const getQueueDepths = async (): Promise<{
 
 export const closeRedis = async (): Promise<void> => {
   if (redisClient) {
-    await ((redisClient as RedisClientType).quit || (redisClient as RedisSentinelType).close)?.();
+    await (
+      (redisClient as RedisClientType).quit ||
+      (redisClient as RedisSentinelType).close
+    )?.();
     redisClient = null;
   }
 };
