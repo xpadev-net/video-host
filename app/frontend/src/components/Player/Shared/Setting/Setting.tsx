@@ -132,6 +132,15 @@ const Setting = ({ className }: Props) => {
     previousOpen.current = state.isSetting;
   }, [state.isSetting]);
 
+  useEffect(() => {
+    if (!state.isSetting || !playerSetting.length) return;
+    requestAnimationFrame(() => {
+      scrollContainerRef.current
+        ?.querySelector<HTMLElement>('[aria-hidden="false"] button')
+        ?.focus();
+    });
+  }, [playerSetting, state.isSetting]);
+
   return (
     <div
       ref={scrollContainerRef}

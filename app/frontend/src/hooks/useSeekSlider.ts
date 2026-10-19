@@ -108,7 +108,13 @@ export function useSeekSlider() {
     const updateProgress = () => {
       if (isDragging || !Number.isFinite(video.duration) || video.duration <= 0)
         return;
-      setProgress((video.currentTime / video.duration) * 100);
+      if (!Number.isFinite(video.currentTime)) {
+        setProgress(0);
+        return;
+      }
+      setProgress(
+        Math.max(0, Math.min(100, (video.currentTime / video.duration) * 100)),
+      );
     };
 
     video.addEventListener("progress", updateBuffered);
