@@ -390,6 +390,7 @@ export const encodeVideo = async (
     let lastProgressPercent = -1;
     let progressCallbackInFlight = false;
     let progressRemainder = "";
+    let progressValues: Record<string, string> = {};
     ffmpeg.stderr.on("data", (data) => {
       const line = data.toString();
       stderrTail = (stderrTail + line).slice(-MAX_FFMPEG_STDERR_BYTES);
@@ -398,47 +399,51 @@ export const encodeVideo = async (
       if (onProgress && inputDuration > 0) {
         const progressLines = `${progressRemainder}${line}`.split(/\r?\n/);
         progressRemainder = progressLines.pop() ?? "";
-        const progressLine = progressLines
-          .reverse()
-          .find((candidate) => candidate.startsWith("out_time_us="));
-        const speedLine = progressLines.find((candidate) =>
-          candidate.startsWith("speed="),
-        );
-        const speed = speedLine
-          ? Number.parseFloat(speedLine.slice("speed=".length))
-          : Number.NaN;
-        const outTimeUs = progressLine
-          ? Number.parseInt(progressLine.slice("out_time_us=".length), 10)
-          : Number.NaN;
-        if (Number.isFinite(outTimeUs) && outTimeUs >= 0) {
-          const currentTime = outTimeUs / 1_000_000;
-          const percent = Math.min(
-            100,
-            Math.round((currentTime / inputDuration) * 100),
+        for (const progressLine of progressLines) {
+          const separator = progressLine.indexOf("=");
+          if (separator < 0) continue;
+          const key = progressLine.slice(0, separator);
+          const value = progressLine.slice(separator + 1);
+          if (key !== "progress") {
+            progressValues[key] = value;
+            continue;
+          }
+          const outTimeUs = Number.parseInt(
+            progressValues.out_time_us ?? "",
+            10,
           );
-          const now = Date.now();
-          if (
-            !progressCallbackInFlight &&
-            (percent > lastProgressPercent || now - lastProgressAt >= 1000)
-          ) {
-            lastProgressAt = now;
-            lastProgressPercent = percent;
-            progressCallbackInFlight = true;
-            void Promise.resolve()
-              .then(() =>
-                onProgress({
-                  currentTime: Math.round(currentTime),
-                  duration: Math.round(inputDuration),
-                  percent,
-                  ...(Number.isFinite(speed) ? { speed } : {}),
-                }),
-              )
-              .catch((error) => {
-                log.warn("Failed to report encoding progress:", error);
-              })
-              .finally(() => {
-                progressCallbackInFlight = false;
-              });
+          const speed = Number.parseFloat(progressValues.speed ?? "");
+          progressValues = {};
+          if (Number.isFinite(outTimeUs) && outTimeUs >= 0) {
+            const currentTime = outTimeUs / 1_000_000;
+            const percent = Math.min(
+              100,
+              Math.round((currentTime / inputDuration) * 100),
+            );
+            const now = Date.now();
+            if (
+              !progressCallbackInFlight &&
+              (percent > lastProgressPercent || now - lastProgressAt >= 1000)
+            ) {
+              lastProgressAt = now;
+              lastProgressPercent = percent;
+              progressCallbackInFlight = true;
+              void Promise.resolve()
+                .then(() =>
+                  onProgress({
+                    currentTime: Math.round(currentTime),
+                    duration: Math.round(inputDuration),
+                    percent,
+                    ...(Number.isFinite(speed) ? { speed } : {}),
+                  }),
+                )
+                .catch((error) => {
+                  log.warn("Failed to report encoding progress:", error);
+                })
+                .finally(() => {
+                  progressCallbackInFlight = false;
+                });
+            }
           }
         }
       }

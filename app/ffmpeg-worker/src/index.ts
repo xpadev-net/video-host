@@ -51,6 +51,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const HEARTBEAT_FILE = join(TEMP_DIR, "healthy");
+const READINESS_FILE = join(TEMP_DIR, "ready");
 const writeHeartbeat = () =>
   writeFile(HEARTBEAT_FILE, `${Date.now()}\n`).catch((error) =>
     log.error("Failed to update worker heartbeat", error),
@@ -58,6 +59,10 @@ const writeHeartbeat = () =>
 void writeHeartbeat();
 const heartbeatTimer = setInterval(() => void writeHeartbeat(), 15_000);
 heartbeatTimer.unref();
+const writeReadiness = () =>
+  writeFile(READINESS_FILE, `${Date.now()}\n`).catch((error) =>
+    log.warn("Failed to update worker readiness", error),
+  );
 
 log.info("FFmpeg Worker starting...");
 log.info(`Commit Hash: ${process.env.COMMIT_HASH || "unknown"}`);
@@ -251,6 +256,7 @@ const startLeaseHeartbeat = (
       async () => {
         try {
           const refreshed = await refreshProcessingJob(member);
+          if (refreshed) await writeReadiness();
           if (!refreshed && activeJobClaim === member) {
             log.error("Processing claim was lost");
             jobRelinquished = true;
@@ -290,63 +296,75 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
       await releaseProcessingJob(member).catch(() => {});
       continue;
     }
-    const { job } = claim;
-    // The completion record (24h) is authoritative: it outlives the claim
-    // lease, so a committed outcome is never re-queued as an encode job.
-    const completion =
-      (await getJobCompletion(job.movieId, job.s3Key).catch(() => null)) ??
-      claim.completion;
-    if (!completion) {
-      const progress = await getEncodeProgress(job.movieId).catch(() => null);
-      if (progress?.status === "failed") {
-        await releaseProcessingJob(member).catch(() => {});
-        continue;
-      }
-      if (progress?.status === "completed") {
-        try {
-          await finalizeCommittedClaim(member, job, {
-            contentUrl: getVodContentUrl(job.s3Key),
-            duration: progress.duration,
-          });
-          reaperEvents.add(1, { action: "finalize" });
-          log.info(
-            `Finalized completed job from stale claim: movieId=${job.movieId}`,
+    await withLogContext(
+      log.child({
+        movieId: claim.job.movieId,
+        claimId: claim.claimId,
+        retryCount: claim.job.retryCount ?? 0,
+        s3Key: claim.job.s3Key,
+      }),
+      async () => {
+        const { job } = claim;
+        // The completion record (24h) is authoritative: it outlives the claim
+        // lease, so a committed outcome is never re-queued as an encode job.
+        const completion =
+          (await getJobCompletion(job.movieId, job.s3Key).catch(() => null)) ??
+          claim.completion;
+        if (!completion) {
+          const progress = await getEncodeProgress(job.movieId).catch(
+            () => null,
           );
+          if (progress?.status === "failed") {
+            await releaseProcessingJob(member).catch(() => {});
+            return;
+          }
+          if (progress?.status === "completed") {
+            try {
+              await finalizeCommittedClaim(member, job, {
+                contentUrl: getVodContentUrl(job.s3Key),
+                duration: progress.duration,
+              });
+              reaperEvents.add(1, { action: "finalize" });
+              log.info(
+                `Finalized completed job from stale claim: movieId=${job.movieId}`,
+              );
+            } catch (err) {
+              log.error(
+                `Failed to finalize completed stale claim: movieId=${job.movieId}`,
+                err,
+              );
+            }
+            return;
+          }
+        }
+        if (completion) {
+          try {
+            await finalizeCommittedClaim(member, job, completion);
+            reaperEvents.add(1, { action: "finalize" });
+            log.info(`Finalized job from stale claim: movieId=${job.movieId}`);
+          } catch (err) {
+            // Leave the claim in place so a later reap retries it.
+            log.error(
+              `Failed to finalize stale processing claim: movieId=${job.movieId}`,
+              err,
+            );
+          }
+          return;
+        }
+        try {
+          const requeued = await requeueStaleProcessingJob(member);
+          if (requeued) {
+            reaperEvents.add(1, { action: "requeue" });
+            log.info(`Requeued job from stale claim: movieId=${job.movieId}`);
+          }
         } catch (err) {
           log.error(
-            `Failed to finalize completed stale claim: movieId=${job.movieId}`,
+            `Failed to requeue stale processing claim: movieId=${job.movieId}`,
             err,
           );
         }
-        continue;
-      }
-    }
-    if (completion) {
-      try {
-        await finalizeCommittedClaim(member, job, completion);
-        reaperEvents.add(1, { action: "finalize" });
-        log.info(`Finalized job from stale claim: movieId=${job.movieId}`);
-      } catch (err) {
-        // Leave the claim in place so a later reap retries it.
-        log.error(
-          `Failed to finalize stale processing claim: movieId=${job.movieId}`,
-          err,
-        );
-      }
-      continue;
-    }
-    try {
-      const requeued = await requeueStaleProcessingJob(member);
-      if (requeued) {
-        reaperEvents.add(1, { action: "requeue" });
-        log.info(`Requeued job from stale claim: movieId=${job.movieId}`);
-      }
-    } catch (err) {
-      log.error(
-        `Failed to requeue stale processing claim: movieId=${job.movieId}`,
-        err,
-      );
-    }
+      },
+    );
   }
 };
 
@@ -401,10 +419,12 @@ const measureStage = async <T>(
   stage: "downloading" | "encoding" | "uploading" | "deleting",
   callback: () => Promise<T>,
 ): Promise<T> => {
+  const previousProgress = await getEncodeProgress(job.movieId);
   await setEncodeProgress(job.movieId, {
+    ...(previousProgress ?? {}),
     status: "processing",
     stage,
-    progress: stage === "downloading" ? 0 : undefined,
+    progress: previousProgress?.progress ?? 0,
   });
   const startedAt = performance.now();
   try {
@@ -842,6 +862,7 @@ const pollForJobs = async (): Promise<void> => {
         continue;
       }
       const claim = await claimNextEncodeJob();
+      await writeReadiness();
       if (!claim) {
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
         continue;

@@ -143,6 +143,12 @@ spec:
                   name: ffmpeg-worker-config
                   key: ffmpeg-threads
                   optional: true
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: log-level
+                  optional: true
             - name: TEMP_DIR
               value: /tmp/ffmpeg-worker
             # OpenTelemetry (metrics export is disabled when otel-endpoint is unset)
@@ -199,7 +205,7 @@ spec:
               command:
                 - node
                 - -e
-                - "try { process.exit(Date.now() - require('node:fs').statSync('/tmp/ffmpeg-worker/healthy').mtimeMs < 90000 ? 0 : 1) } catch { process.exit(1) }"
+                - "try { process.exit(Date.now() - require('node:fs').statSync('/tmp/ffmpeg-worker/ready').mtimeMs < 90000 ? 0 : 1) } catch { process.exit(1) }"
             periodSeconds: 15
             timeoutSeconds: 2
             failureThreshold: 3
