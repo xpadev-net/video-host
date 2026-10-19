@@ -11,6 +11,7 @@ import { Slider } from "@/components/Player/Shared/Controller/Slider";
 import { TimeDisplay } from "@/components/Player/Shared/Controller/TimeDisplay";
 import { Setting } from "@/components/Player/Shared/Setting/Setting";
 import { cn } from "@/lib/utils";
+import { toggleMute } from "@/utils/volume";
 import { TheatreButton } from "./TheatreButton";
 import { VolumeIcon } from "./VolumeIcon";
 import { VolumeSlider } from "./VolumeSlider";
@@ -24,7 +25,6 @@ const DefaultController = ({ data, isHovering }: props) => {
   const videoRef = useAtomValue(VideoRefAtom);
   const setMetadata = useSetAtom(VideoMetadataAtom);
   const [isVolumeExtend, setIsVolumeExtend] = useState(false);
-  const [mutedVolume, setMutedVolume] = useState<number | undefined>(undefined);
   if (!data) return null;
   const onMouseLeave = () => {
     setIsVolumeExtend(false);
@@ -48,18 +48,7 @@ const DefaultController = ({ data, isHovering }: props) => {
 
   const onVolumeClick = () => {
     if (!videoRef) return;
-    if (mutedVolume && videoRef.volume === 0) {
-      setMutedVolume(undefined);
-      videoRef.volume = mutedVolume;
-      videoRef.muted = false;
-    } else if (mutedVolume === 0 && videoRef.volume === 0) {
-      setMutedVolume(undefined);
-      videoRef.volume = 1;
-      videoRef.muted = false;
-    } else {
-      setMutedVolume(videoRef.volume);
-      videoRef.volume = 0;
-    }
+    toggleMute(videoRef);
   };
 
   return (
