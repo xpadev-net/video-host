@@ -2,8 +2,14 @@ import { z } from "zod";
 
 export const DEFAULT_PAGE_SIZE = 100;
 export const MAX_PAGE_SIZE = 200;
+export const MAX_PAGE_NUMBER = Math.floor(2_147_483_647 / MAX_PAGE_SIZE);
 
-export const PageNumberSchema = z.coerce.number().int().min(1).default(1);
+export const PageNumberSchema = z.coerce
+  .number()
+  .int()
+  .min(1)
+  .max(MAX_PAGE_NUMBER)
+  .default(1);
 
 export const pageSizeSchema = (
   defaultSize = DEFAULT_PAGE_SIZE,

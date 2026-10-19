@@ -36,7 +36,12 @@ export const moviesRoute = app
     // Others' movies additionally require a READY variant — in-flight
     // uploads stay private regardless of their stored visibility.
     const conditions: Prisma.MovieWhereInput[] = [
-      buildVisibilityFilter(user, query, author, true),
+      buildVisibilityFilter(
+        user,
+        query,
+        mine && user?.role !== "ADMIN" ? undefined : author,
+        true,
+      ),
       readyOrOwnMovieFilter(user),
     ];
     if (mine) {
