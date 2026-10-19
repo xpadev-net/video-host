@@ -68,6 +68,8 @@ pnpm build
 
 Kubernetes manifests are under `k8s/`. The production overlay expects externally managed MySQL, Redis, S3-compatible storage, and an Ingress. Review and fill the sample ConfigMaps and Secrets; never apply sample credentials to a live deployment. Render the overlay with `kubectl kustomize k8s/overlays/prod` before deployment. Authentication cutover, database backup requirements, OIDC configuration, and proxy trust are documented in [the Better Auth migration and deployment guide](docs/better-auth-migration.md). Release images are built by the GitHub Actions release workflow; see [CONTRIBUTING.md](CONTRIBUTING.md) before changing release configuration.
 
+To publish a release, use **Actions → Release → Run workflow**. Choose the version bump (`patch`, `minor`, or `major`) and select which of the backend, frontend, and worker to release. Review the resulting workflow runs and image tags before deploying them.
+
 ## Security
 
 Please report suspected vulnerabilities privately. See [SECURITY.md](SECURITY.md) for the reporting process.
