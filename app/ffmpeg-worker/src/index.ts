@@ -250,6 +250,22 @@ const checkDiskSpace = async (): Promise<boolean> => {
 // "error" marks unexpected processJob rejections (no confirmed terminal
 // outcome), distinct from handled "failed" paths. "relinquished" marks a
 // job whose ownership was transferred to the queue during shutdown.
+// A shutdown interrupted this job. Hand it back to the queue untouched; if the
+// claim is already gone (a reaper took it) the job belongs to someone else.
+const requeueForShutdown = async (job: EncodeJob): Promise<JobResult> => {
+  console.warn(
+    `Requeueing job interrupted by shutdown: movieId=${job.movieId}`,
+  );
+  const requeued = await requeueInterruptedJob(job, activeJobClaim);
+  if (!requeued) {
+    jobRelinquished = true;
+    return "relinquished";
+  }
+  // The claim was released inside the handoff.
+  activeJobClaim = null;
+  return "requeued";
+};
+
 type JobResult =
   | "completed"
   | "failed"
@@ -267,6 +283,10 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     return "relinquished";
   }
   if (!hasEnoughSpace) {
+    // A shutdown that overlapped the check is not the job's fault either.
+    if (jobShutdownAbort.signal.aborted) {
+      return await requeueForShutdown(job);
+    }
     console.error(
       `Insufficient disk space for job: movieId=${job.movieId}, scheduling retry`,
     );
@@ -344,21 +364,10 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 
   // Interrupted by our own shutdown: not a failure of the job, so it goes back
   // to the queue with its retry budget intact.
-  const requeueIfShutdown = async (): Promise<boolean> => {
-    if (
-      !abortController.signal.aborted ||
-      abortController.signal.reason !== ABORT_SHUTDOWN ||
-      committedOutcome
-    ) {
-      return false;
-    }
-    console.warn(
-      `Requeueing job interrupted by shutdown: movieId=${job.movieId}`,
-    );
-    await requeueInterruptedJob(job);
-    await setEncodeProgress(job.movieId, { status: "queued" });
-    return true;
-  };
+  const interruptedByShutdown = (): boolean =>
+    abortController.signal.aborted &&
+    abortController.signal.reason === ABORT_SHUTDOWN &&
+    !committedOutcome;
 
   try {
     // Download from tmp-bucket
@@ -390,8 +399,8 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     }
 
     if (!result.success) {
-      if (await requeueIfShutdown()) {
-        return "requeued";
+      if (interruptedByShutdown()) {
+        return await requeueForShutdown(job);
       }
       console.error(`Encoding failed: ${result.error}`);
       // Try to retry the job
@@ -534,8 +543,8 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       }
     }
     try {
-      if (await requeueIfShutdown()) {
-        return "requeued";
+      if (interruptedByShutdown()) {
+        return await requeueForShutdown(job);
       }
     } catch (requeueError) {
       console.error(
@@ -639,6 +648,12 @@ const pollForJobs = async (): Promise<void> => {
     try {
       // Use blocking pop with 5 second timeout
       const job = await getEncodeJobBlocking(5);
+      if (job && isShuttingDown) {
+        // Popped while SIGTERM was being handled: not started, so hand it
+        // straight back instead of encoding through the shutdown window.
+        await requeueInterruptedJob(job, null);
+        break;
+      }
       if (job) {
         const jobStartedAt = performance.now();
         activeJob = job;
@@ -769,14 +784,17 @@ const shutdown = async (): Promise<void> => {
   }
   console.log("Shutting down...");
   isShuttingDown = true;
-  // A job still encoding is stopped right away and put back on the queue:
-  // waiting for it would just burn the grace period. One that already deleted
-  // its input can only be finalized, so it is allowed to finish.
-  const stopsEncoding = activeJob !== null && !activeJobCommitted;
-  if (stopsEncoding) {
-    console.warn(
-      `Aborting in-flight job on shutdown: movieId=${activeJob?.movieId}`,
-    );
+  // Anything still encoding (or about to start) is stopped right away and put
+  // back on the queue: waiting for it would just burn the grace period. A job
+  // that already deleted its input can only be finalized, so it is allowed to
+  // finish.
+  const finalizing = activeJob !== null && activeJobCommitted;
+  if (!finalizing) {
+    if (activeJob) {
+      console.warn(
+        `Aborting in-flight job on shutdown: movieId=${activeJob.movieId}`,
+      );
+    }
     jobShutdownAbort.abort(ABORT_SHUTDOWN);
   }
   // Wait for the job (if any) so its result metrics, progress updates and
@@ -786,13 +804,13 @@ const shutdown = async (): Promise<void> => {
     new Promise((resolve) =>
       setTimeout(
         resolve,
-        stopsEncoding ? SHUTDOWN_SETTLE_TIMEOUT_MS : SHUTDOWN_DRAIN_TIMEOUT_MS,
+        finalizing ? SHUTDOWN_DRAIN_TIMEOUT_MS : SHUTDOWN_SETTLE_TIMEOUT_MS,
       ),
     ),
   ]);
   // If a finalizing job is still stuck, abort it too and give its own
   // handling one more short window before relinquishing.
-  if (activeJob && !stopsEncoding) {
+  if (activeJob && finalizing) {
     jobShutdownAbort.abort(ABORT_SHUTDOWN);
     await Promise.race([
       pollPromise,

@@ -128,12 +128,45 @@ export const getEncodeProgress = async (
   }
 };
 
+const REQUEUE_INTERRUPTED_JOB_SCRIPT = `
+  -- A completion record means the input is already gone: never requeue.
+  if redis.call('EXISTS', KEYS[4]) == 1 then
+    return 0
+  end
+  -- With a claim, only the worker that still holds it may hand the job off;
+  -- if a reaper already took the claim the job is theirs.
+  if ARGV[1] ~= '' and redis.call('ZREM', KEYS[1], ARGV[1]) == 0 then
+    return 0
+  end
+  redis.call('RPUSH', KEYS[2], ARGV[2])
+  redis.call('SET', KEYS[3], '{"status":"queued"}', 'EX', 3600)
+  return 1
+`;
+
 // Put a job interrupted by a worker shutdown back at the front of the main
-// queue (consumers pop from the right) without touching its retry budget:
-// the job did nothing wrong, the worker was just replaced.
-export const requeueInterruptedJob = async (job: EncodeJob): Promise<void> => {
+// queue (consumers pop from the right) without touching its retry budget: the
+// job did nothing wrong, the worker was just replaced. Releasing the claim,
+// queueing and publishing "queued" happen in one atomic step, so another
+// worker can neither run alongside a stale claim nor have its newer progress
+// overwritten. Returns false when the job is no longer ours to requeue.
+export const requeueInterruptedJob = async (
+  job: EncodeJob,
+  claimMember: string | null,
+): Promise<boolean> => {
   const client = await getRedisClient();
-  await client.rPush(ENCODE_QUEUE_KEY, JSON.stringify(job));
+  const result = await (client as RedisClientType).eval(
+    REQUEUE_INTERRUPTED_JOB_SCRIPT,
+    {
+      keys: [
+        PROCESSING_QUEUE_KEY,
+        ENCODE_QUEUE_KEY,
+        `${ENCODE_PROGRESS_PREFIX}${job.movieId}`,
+        `${JOB_COMPLETION_PREFIX}${job.movieId}`,
+      ],
+      arguments: [claimMember ?? "", JSON.stringify(job)],
+    },
+  );
+  return result === 1;
 };
 
 export const addJobToRetryQueue = async (job: EncodeJob): Promise<void> => {
