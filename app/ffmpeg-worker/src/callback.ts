@@ -61,6 +61,7 @@ export interface CallbackPayload {
   contentUrl?: string;
   duration?: number;
   thumbnailUrl?: string;
+  thumbnailKey?: string;
 }
 
 export type CallbackResult = "accepted" | "stale" | "deleted" | "rejected";
@@ -77,6 +78,7 @@ export const sendCallback = async (
       contentUrl: payload.contentUrl,
       duration: payload.duration,
       thumbnailUrl: payload.thumbnailUrl,
+      thumbnailKey: payload.thumbnailKey,
     }),
     payload.movieId,
   );

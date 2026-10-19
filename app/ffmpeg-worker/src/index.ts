@@ -1,7 +1,12 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { sendCallback } from "./callback";
-import { cleanup, encodeVideo, getLocalPath } from "./encoder";
+import {
+  cleanup,
+  encodeVideo,
+  generateThumbnail,
+  getLocalPath,
+} from "./encoder";
 import {
   getVodContentUrl,
   JOB_TIMEOUT_SECONDS,
@@ -108,7 +113,11 @@ let reaperInFlight = false;
 const finalizeCommittedClaim = async (
   member: string,
   job: EncodeJob,
-  completion: { contentUrl: string; duration?: number },
+  completion: {
+    contentUrl: string;
+    duration?: number;
+    thumbnailKey?: string;
+  },
 ): Promise<void> => {
   await setEncodeProgress(job.movieId, {
     status: "completed",
@@ -122,6 +131,7 @@ const finalizeCommittedClaim = async (
     s3Key: job.s3Key,
     contentUrl: completion.contentUrl,
     duration: completion.duration,
+    thumbnailKey: completion.thumbnailKey,
   });
   if (result === "rejected") {
     await deleteFromProd(job.s3Key).catch((error) =>
@@ -372,12 +382,17 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 
   const inputPath = getLocalPath(job.s3Key, "_input");
   const outputPath = getLocalPath(job.s3Key, "_output.mp4");
-  const filesToCleanup = [inputPath, outputPath];
+  const thumbnailPath = getLocalPath(job.s3Key, "_thumbnail.jpg");
+  const filesToCleanup = [inputPath, outputPath, thumbnailPath];
 
   // Set once the tmp input is deleted: past that point the job can only be
   // finalized as success — re-encoding is impossible, so errors in the
   // finalize steps must never fall into the retry/failed path.
-  let committedOutcome: { contentUrl: string; duration?: number } | null = null;
+  let committedOutcome: {
+    contentUrl: string;
+    duration?: number;
+    thumbnailKey?: string;
+  } | null = null;
 
   // Create abort controller for timeout management
   const abortController = new AbortController();
@@ -478,6 +493,31 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       abortController.signal,
     );
 
+    const thumbnailKey = `${job.s3Key}.jpg`;
+    let uploadedThumbnailKey: string | undefined;
+    try {
+      await generateThumbnail(
+        outputPath,
+        thumbnailPath,
+        result.duration ?? 0,
+        abortController.signal,
+      );
+      await uploadToProd(
+        thumbnailKey,
+        thumbnailPath,
+        "image/jpeg",
+        abortController.signal,
+      );
+      uploadedThumbnailKey = thumbnailKey;
+    } catch (thumbnailError) {
+      if (abortController.signal.aborted) throw thumbnailError;
+      await deleteFromProd(thumbnailKey).catch(() => {});
+      console.warn(
+        `Thumbnail generation failed: movieId=${job.movieId}`,
+        thumbnailError,
+      );
+    }
+
     // Delete from tmp-bucket
     console.log(`Deleting from tmp-bucket: ${job.s3Key}`);
     await deleteFromTmp(job.s3Key);
@@ -488,13 +528,18 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     // The input is gone: if this worker dies now the job can no longer be
     // re-encoded, so mark the claim with its outcome for the reaper. A
     // failure here must not send the job down the retry path.
-    committedOutcome = { contentUrl, duration: result.duration };
+    committedOutcome = {
+      contentUrl,
+      duration: result.duration,
+      thumbnailKey: uploadedThumbnailKey,
+    };
     activeJobCommitted = true;
     if (activeJobClaim) {
       try {
         activeJobClaim = await commitProcessingJob(activeJobClaim, job, {
           contentUrl,
           duration: result.duration,
+          thumbnailKey: uploadedThumbnailKey,
         });
       } catch (claimError) {
         console.error(
@@ -523,6 +568,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       s3Key: job.s3Key,
       contentUrl,
       duration: result.duration,
+      thumbnailKey: uploadedThumbnailKey,
     });
 
     if (callbackResult === "rejected") {
@@ -582,6 +628,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
           s3Key: job.s3Key,
           contentUrl: committedOutcome.contentUrl,
           duration: committedOutcome.duration,
+          thumbnailKey: committedOutcome.thumbnailKey,
         });
         if (callbackResult === "rejected") {
           await deleteFromProd(job.s3Key).catch(() => {});

@@ -7,6 +7,7 @@ const PROBE_TIMEOUT_MS = 30_000;
 const PROCESS_KILL_GRACE_MS = 5_000;
 const MAX_PROBE_OUTPUT_BYTES = 1024 * 1024;
 const MAX_FFMPEG_STDERR_BYTES = 8 * 1024;
+const THUMBNAIL_TIMEOUT_MS = 60_000;
 const MAX_VIDEO_WIDTH = 3840;
 const MAX_VIDEO_HEIGHT = 2160;
 const MAX_VIDEO_PIXELS = MAX_VIDEO_WIDTH * MAX_VIDEO_HEIGHT;
@@ -480,6 +481,101 @@ const getDuration = async (
   );
   const duration = Number.parseFloat(stdout.trim());
   return Number.isFinite(duration) ? Math.round(duration) : 0;
+};
+
+export const generateThumbnail = async (
+  inputPath: string,
+  outputPath: string,
+  duration: number,
+  signal?: AbortSignal,
+): Promise<void> => {
+  if (signal?.aborted) throw new Error("Thumbnail generation aborted");
+  const seekSeconds = Math.max(0, Math.min(duration * 0.1, duration - 0.1));
+  const ffmpeg = spawn(
+    "ffmpeg",
+    [
+      "-nostdin",
+      "-protocol_whitelist",
+      "file,crypto",
+      "-ss",
+      seekSeconds.toFixed(3),
+      "-i",
+      inputPath,
+      "-frames:v",
+      "1",
+      "-an",
+      "-vf",
+      "scale=640:640:force_original_aspect_ratio=decrease:force_divisible_by=2",
+      "-c:v",
+      "mjpeg",
+      "-q:v",
+      "2",
+      "-f",
+      "image2",
+      "-y",
+      outputPath,
+    ],
+    { stdio: ["ignore", "ignore", "pipe"] },
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    let stderrTail = "";
+    let aborted = false;
+    let timedOut = false;
+    let finished = false;
+    let killTimer: NodeJS.Timeout | undefined;
+    const timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      terminate();
+    }, THUMBNAIL_TIMEOUT_MS);
+    const finish = (error?: Error) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeoutTimer);
+      if (killTimer) clearTimeout(killTimer);
+      signal?.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else resolve();
+    };
+    const terminate = () => {
+      if (ffmpeg.exitCode !== null || ffmpeg.signalCode !== null) return;
+      ffmpeg.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
+          ffmpeg.kill("SIGKILL");
+        }
+      }, PROCESS_KILL_GRACE_MS);
+      killTimer.unref();
+    };
+    const onAbort = () => {
+      aborted = true;
+      terminate();
+    };
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+    ffmpeg.stderr.on("data", (data) => {
+      stderrTail = (stderrTail + data.toString()).slice(
+        -MAX_FFMPEG_STDERR_BYTES,
+      );
+    });
+    ffmpeg.on("error", (error) => finish(error));
+    ffmpeg.on("close", (code, childSignal) => {
+      if (aborted || signal?.aborted) {
+        finish(new Error("Thumbnail generation aborted"));
+      } else if (timedOut) {
+        finish(new Error(`Thumbnail generation timed out: ${stderrTail}`));
+      } else if (code !== 0 || !existsSync(outputPath)) {
+        finish(
+          new Error(
+            `Thumbnail FFmpeg exited with code ${code ?? "null"}${childSignal ? ` (${childSignal})` : ""}: ${stderrTail}`,
+          ),
+        );
+      } else {
+        finish();
+      }
+    });
+  });
 };
 
 const sanitizeFilename = (name: string): string => {

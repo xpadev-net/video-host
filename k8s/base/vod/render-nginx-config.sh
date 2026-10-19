@@ -4,6 +4,7 @@ set -eu
 
 : "${VOD_INTERNAL_SECRET:?VOD_INTERNAL_SECRET is required}"
 : "${BACKEND_MAPPING_UPSTREAM:?BACKEND_MAPPING_UPSTREAM is required}"
+: "${BACKEND_THUMBNAIL_UPSTREAM:?BACKEND_THUMBNAIL_UPSTREAM is required}"
 : "${LISTEN_PORT:?LISTEN_PORT is required}"
 : "${S3_PROD_BUCKET:?S3_PROD_BUCKET is required}"
 case "$VOD_INTERNAL_SECRET" in
@@ -63,6 +64,6 @@ S3_CA_BUNDLE="${S3_CA_BUNDLE:-/etc/nginx/ssl/ca-certificates.crt}"
 
 mkdir -p /etc/nginx/rendered /etc/nginx/ssl
 cp /etc/ssl/cert.pem /etc/nginx/ssl/ca-certificates.crt
-envsubst '${VOD_INTERNAL_SECRET} ${BACKEND_MAPPING_UPSTREAM} ${LISTEN_PORT} ${DNS_RESOLVER} ${S3_PROXY_SCHEME} ${S3_PROXY_HOST} ${S3_SIGNED_HOST} ${S3_CA_BUNDLE}' \
+envsubst '${VOD_INTERNAL_SECRET} ${BACKEND_MAPPING_UPSTREAM} ${BACKEND_THUMBNAIL_UPSTREAM} ${LISTEN_PORT} ${DNS_RESOLVER} ${S3_PROXY_SCHEME} ${S3_PROXY_HOST} ${S3_SIGNED_HOST} ${S3_CA_BUNDLE}' \
   < /etc/nginx/template/nginx.conf \
   > /etc/nginx/rendered/nginx.conf

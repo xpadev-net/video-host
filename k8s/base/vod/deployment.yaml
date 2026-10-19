@@ -47,6 +47,8 @@ spec:
                   key: vod-internal-secret
             - name: BACKEND_MAPPING_UPSTREAM
               value: http://backend:3000/api/v4/vod/mapping/
+            - name: BACKEND_THUMBNAIL_UPSTREAM
+              value: http://backend:3000/api/v4/vod/thumbnail/
             - name: LISTEN_PORT
               value: "8080"
             - name: S3_CA_BUNDLE
