@@ -115,6 +115,7 @@ data:
 
                 # %3F が無ければそのまま、あれば ?qs を付ける
                 # REPLACE_S3_HOST: S3/MinIOホストを設定 (例: minio:9000)
+                # $backend_uri preserves bucket/key for path-style URLs; virtual-hosted URLs put the bucket in $s3_host.
                 set $s3_scheme "${S3_PROXY_SCHEME}";
                 set $s3_host "${S3_PROXY_HOST}";
                 
