@@ -136,6 +136,7 @@ configMapGenerator:
       - min-disk-space-gb=1
       - job-timeout-seconds=7200
       - ffmpeg-threads=2
+      - log-level=info
       - otel-endpoint=
       - otel-metrics-endpoint=
       - otel-service-name=video-host-ffmpeg-worker

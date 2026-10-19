@@ -27,6 +27,7 @@
     "@video-host/contracts": "workspace:*",
     "dotenv": "^17.4.2",
     "hono": "^4.13.13",
+    "pino": "^10.4.0",
     "redis": "^5.12.1"
   },
   "devDependencies": {

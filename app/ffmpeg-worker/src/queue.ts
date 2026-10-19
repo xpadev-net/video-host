@@ -17,6 +17,7 @@ import {
   REDIS_SENTINEL_PASSWORD,
   REDIS_URL,
 } from "./env";
+import { log } from "./logger";
 
 export type { EncodeJob, EncodeProgress } from "@video-host/contracts";
 
@@ -56,7 +57,7 @@ export const getRedisClient = async (): Promise<
   if (!redisClient) {
     redisClient = createRedisClient();
     redisClient.on("error", (err: Error) =>
-      console.error("Redis Client Error", err),
+      log.error("Redis Client Error", err),
     );
     await redisClient.connect();
   }
@@ -179,7 +180,7 @@ export const addJobToRetryQueue = async (
     });
   }
 
-  console.log(
+  log.info(
     `Added job to retry queue: movieId=${job.movieId}, retryCount=${retryCount}, retryAfter=${new Date(retryAfter * 1000).toISOString()}`,
   );
 };
@@ -313,11 +314,11 @@ const processRetryQueueWithClient = async (
     for (const jobJson of movedJobs) {
       try {
         const job = EncodeJobSchema.parse(JSON.parse(jobJson));
-        console.log(
+        log.info(
           `Moved job from retry queue to main queue: movieId=${job.movieId}, retryCount=${job.retryCount}`,
         );
       } catch (error) {
-        console.error("Error parsing moved job:", error);
+        log.error("Error parsing moved job:", error);
       }
     }
 
@@ -327,19 +328,19 @@ const processRetryQueueWithClient = async (
     if (error instanceof Error && error.message.includes("NOSCRIPT")) {
       // Prevent infinite recursion by limiting reload to one attempt
       if (scriptReloadAttempted) {
-        console.error(
+        log.error(
           "Failed to reload Lua script after NOSCRIPT error, giving up",
         );
         throw new Error(
           "Failed to reload retry queue script after Redis restart",
         );
       }
-      console.log("Lua script not found (NOSCRIPT), reloading...");
+      log.info("Lua script not found (NOSCRIPT), reloading...");
       processRetryQueueScriptSha = null;
       // Retry once after reloading script
       return processRetryQueueWithClient(client, now, limit, true);
     }
-    console.error("Error processing retry queue:", error);
+    log.error("Error processing retry queue:", error);
     return 0;
   }
 };
@@ -608,13 +609,15 @@ export const requeueStaleProcessingJob = async (
 export const getQueueDepths = async (): Promise<{
   main: number;
   retry: number;
+  processing: number;
 }> => {
   const client = await getRedisClient();
-  const [main, retry] = await Promise.all([
+  const [main, retry, processing] = await Promise.all([
     client.lLen(ENCODE_QUEUE_KEY),
     client.zCard(RETRY_QUEUE_KEY),
+    client.zCard(PROCESSING_QUEUE_KEY),
   ]);
-  return { main, retry };
+  return { main, retry, processing };
 };
 
 export const closeRedis = async (): Promise<void> => {

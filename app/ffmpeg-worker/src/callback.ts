@@ -1,4 +1,5 @@
 import { BACKEND_BASE_URL, CALLBACK_SECRET } from "./env";
+import { log } from "./logger";
 import { deleteFromProd } from "./s3";
 
 const callbackBaseUrl = `${BACKEND_BASE_URL.replace(/\/+$/, "")}/`;
@@ -35,7 +36,7 @@ const requestCallback = async (
     }
 
     if (attempt === MAX_CALLBACK_ATTEMPTS) {
-      console.error(
+      log.error(
         `Callback failed after ${attempt} attempts: movieId=${movieId}`,
         lastError,
       );
@@ -43,7 +44,7 @@ const requestCallback = async (
     }
 
     const delayMs = CALLBACK_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
-    console.warn(
+    log.warn(
       `Callback attempt ${attempt}/${MAX_CALLBACK_ATTEMPTS} failed; retrying in ${delayMs}ms: movieId=${movieId}`,
       lastError,
     );
@@ -86,7 +87,7 @@ export const sendCallback = async (
   if (res.status === 409) {
     // The backend has already moved this variant on or the upload key has
     // changed; retrying this callback cannot make the old job current again.
-    console.warn(`Stale encode callback ignored for ID ${payload.movieId}`);
+    log.warn(`Stale encode callback ignored for ID ${payload.movieId}`);
     return "stale";
   }
   if (res.status === 410) {
@@ -116,11 +117,9 @@ export const sendCallback = async (
   if (res.status >= 400 && res.status < 500) {
     // A client error will not become valid on the next reap. Treat it as a
     // terminal callback outcome instead of retaining the claim forever.
-    console.error(
-      `Permanent callback rejection: ${res.status} ${res.statusText}`,
-    );
+    log.error(`Permanent callback rejection: ${res.status} ${res.statusText}`);
     return "rejected";
   }
-  console.log(`Callback sent for ID ${payload.movieId}: ${payload.status}`);
+  log.info(`Callback sent for ID ${payload.movieId}: ${payload.status}`);
   return "accepted";
 };

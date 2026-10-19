@@ -14,7 +14,11 @@ export type { SeriesListResponse } from "@/@types/api";
 
 const fetcher = async (key: FetcherKey): Promise<SeriesListResponse> => {
   const res = await client.api.v4.series.$get(key);
-  return res.json();
+  const response = await res.json();
+  if (!res.ok || response.status !== "ok") {
+    throw new Error("Failed to fetch series");
+  }
+  return response;
 };
 
 type Props = {
@@ -30,8 +34,8 @@ export const useSeriesListInfinite = (params?: Props) => {
     // データが空配列ならこれ以上取得しない
     if (
       previousPageData &&
-      previousPageData.status === "ok" &&
-      !previousPageData.data.pagination.hasNext
+      (previousPageData.status !== "ok" ||
+        !previousPageData.data.pagination.hasNext)
     )
       return null;
     return {
@@ -43,24 +47,26 @@ export const useSeriesListInfinite = (params?: Props) => {
     };
   };
 
-  const { data, error, size, setSize, isValidating } = useSWRInfinite<
+  const { data, error, size, setSize, isValidating, mutate } = useSWRInfinite<
     SeriesListResponse,
     unknown
   >(getKey, fetcher);
 
   // 全ページのデータをフラット化
-  const series =
-    (
-      data?.flatMap((page) => (page.status === "ok" ? page.data.items : [])) ??
-      []
-    ).filter((item) => item.movies && item.movies.length > 0) || [];
+  const series = (data ?? [])
+    .flatMap((page) => (page.status === "ok" ? page.data.items : []))
+    .filter((item) => item.movies && item.movies.length > 0);
   const lastPage = data?.[size - 1];
-  const hasNext = lastPage?.status !== "ok" || lastPage.data.pagination.hasNext;
+  const hasNext =
+    !error &&
+    (!lastPage ||
+      (lastPage.status === "ok" && lastPage.data.pagination.hasNext));
   return {
     series,
     error,
     size,
     setSize,
+    mutate,
     hasNext,
     isValidating,
   };

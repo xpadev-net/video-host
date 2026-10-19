@@ -17,6 +17,7 @@ export type EncodeProgress = {
   queuePosition?: number;
   currentTime?: number;
   duration?: number;
+  stage?: "downloading" | "encoding" | "uploading" | "deleting";
 };
 
 export declare const EncodeProgressSchema: z.ZodType<EncodeProgress>;
