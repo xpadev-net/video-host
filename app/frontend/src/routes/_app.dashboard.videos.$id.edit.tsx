@@ -128,7 +128,10 @@ function EditVideoPage() {
         signal: controller.signal,
       });
 
-      eventSource.listen({
+      // EventSourcePlus overrides options.signal with its own controller, so
+      // cancelling (and stopping its automatic reconnects) has to go through
+      // the controller returned by listen().
+      const stream = eventSource.listen({
         onMessage: (event) => {
           // The server closes the stream with "end" when there is nothing
           // to report; abort so the client does not reconnect forever.
@@ -169,6 +172,13 @@ function EditVideoPage() {
           controller?.abort();
         },
       });
+      if (controller.signal.aborted) {
+        stream.abort();
+      } else {
+        controller.signal.addEventListener("abort", () => stream.abort(), {
+          once: true,
+        });
+      }
     };
 
     void setupSSE().catch(() => {
