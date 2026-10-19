@@ -252,6 +252,9 @@ const processRetryQueueWithClient = async (
         console.log(
           `Moved job from retry queue to main queue: movieId=${job.movieId}, retryCount=${job.retryCount}`,
         );
+        // Surface that the job is waiting in the main queue again, so
+        // subscribers get a queue position instead of a stale "retrying".
+        await setEncodeProgress(job.movieId, { status: "queued" });
       } catch (error) {
         console.error("Error parsing moved job:", error);
       }
