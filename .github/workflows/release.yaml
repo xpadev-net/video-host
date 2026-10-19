@@ -487,9 +487,13 @@ jobs:
     needs: [prepare-release, reserve-release-tags, build-backend, build-frontend, build-ffmpeg-worker]
     if: >-
       always() && needs.prepare-release.result == 'success' &&
-      (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') &&
-      (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') &&
-      (needs.build-ffmpeg-worker.result == 'success' || needs.build-ffmpeg-worker.result == 'skipped') &&
+      needs.reserve-release-tags.result == 'success' &&
+      (needs.build-backend.result == 'success' ||
+      (needs.prepare-release.outputs.backend != 'true' && needs.build-backend.result == 'skipped')) &&
+      (needs.build-frontend.result == 'success' ||
+      (needs.prepare-release.outputs.frontend != 'true' && needs.build-frontend.result == 'skipped')) &&
+      (needs.build-ffmpeg-worker.result == 'success' ||
+      (needs.prepare-release.outputs.worker != 'true' && needs.build-ffmpeg-worker.result == 'skipped')) &&
       (needs.prepare-release.outputs.backend == 'true' || needs.prepare-release.outputs.frontend == 'true' || needs.prepare-release.outputs.worker == 'true')
     runs-on: ubuntu-latest
     permissions:
