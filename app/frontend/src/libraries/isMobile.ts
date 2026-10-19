@@ -1,13 +1,18 @@
 import { useSyncExternalStore } from "react";
 
+let initialCoarsePointer: boolean | undefined;
+
+const subscribeToPointerChanges = () => () => {};
+
+const getInitialCoarsePointer = () => {
+  initialCoarsePointer ??= window.matchMedia("(pointer: coarse)").matches;
+  return initialCoarsePointer;
+};
+
 const useIsMobile = () => {
   return useSyncExternalStore(
-    (onChange) => {
-      const media = window.matchMedia("(pointer: coarse)");
-      media.addEventListener("change", onChange);
-      return () => media.removeEventListener("change", onChange);
-    },
-    () => window.matchMedia("(pointer: coarse)").matches,
+    subscribeToPointerChanges,
+    getInitialCoarsePointer,
     () => false,
   );
 };

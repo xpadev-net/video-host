@@ -12,7 +12,7 @@ const VolumeIcon = () => {
     return <Volume1 aria-hidden="true" />;
   }
   if (volume > 0) {
-    return <VolumeX aria-hidden="true" />;
+    return <Volume1 aria-hidden="true" />;
   }
   return <VolumeX aria-hidden="true" />;
 };

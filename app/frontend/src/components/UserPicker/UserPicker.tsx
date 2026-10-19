@@ -11,6 +11,7 @@ type Props = {
 export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FilteredUser[]>([]);
+  const [resultsForQuery, setResultsForQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -19,16 +20,22 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
   const pickerId = useId();
   const listboxId = `${pickerId}-users`;
   const showOptions = isFocused && query.trim().length > 0;
+  const currentResults = resultsForQuery === query.trim() ? results : [];
+  const isCurrentQueryPending =
+    showOptions && (isSearching || resultsForQuery !== query.trim());
 
   useEffect(() => {
     const trimmed = query.trim();
     const requestId = ++latestRequestId.current;
     if (!trimmed) {
       setResults([]);
+      setResultsForQuery("");
       setIsSearching(false);
       return;
     }
 
+    setResults([]);
+    setResultsForQuery("");
     setIsSearching(true);
     const timer = setTimeout(async () => {
       try {
@@ -44,10 +51,15 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
               (item) => !selected.some((user) => user.id === item.id),
             ),
           );
+          setResultsForQuery(trimmed);
+        } else if (requestId === latestRequestId.current) {
+          setResults([]);
+          setResultsForQuery(trimmed);
         }
       } catch {
         if (requestId === latestRequestId.current) {
           setResults([]);
+          setResultsForQuery(trimmed);
         }
       } finally {
         if (requestId === latestRequestId.current) {
@@ -76,19 +88,25 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
     onChange([...selected, user]);
     setQuery("");
     setResults([]);
+    setResultsForQuery("");
     setActiveIndex(0);
   };
 
   const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "ArrowDown" && results.length > 0) {
+    if (event.key === "ArrowDown" && currentResults.length > 0) {
       event.preventDefault();
-      setActiveIndex((index) => Math.min(index + 1, results.length - 1));
-    } else if (event.key === "ArrowUp" && results.length > 0) {
+      setActiveIndex((index) => Math.min(index + 1, currentResults.length - 1));
+    } else if (event.key === "ArrowUp" && currentResults.length > 0) {
       event.preventDefault();
       setActiveIndex((index) => Math.max(index - 1, 0));
-    } else if (event.key === "Enter" && results[activeIndex]) {
+    } else if (
+      event.key === "Enter" &&
+      showOptions &&
+      !isCurrentQueryPending &&
+      currentResults[activeIndex]
+    ) {
       event.preventDefault();
-      handleSelect(results[activeIndex]);
+      handleSelect(currentResults[activeIndex]);
     } else if (event.key === "Escape") {
       setIsFocused(false);
       setActiveIndex(0);
@@ -139,7 +157,7 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
         aria-expanded={showOptions}
         aria-controls={listboxId}
         aria-activedescendant={
-          showOptions && results[activeIndex]
+          showOptions && currentResults[activeIndex]
             ? `${listboxId}-option-${activeIndex}`
             : undefined
         }
@@ -157,12 +175,12 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
           aria-label="ユーザー検索結果"
           className="bg-background border-border absolute top-full right-0 left-0 z-10 mt-1 max-h-60 overflow-y-auto rounded-lg border"
         >
-          {isSearching ? (
+          {isCurrentQueryPending ? (
             <div className="text-sub-text px-3 py-2.5 text-sm" role="status">
               検索中...
             </div>
-          ) : results.length > 0 ? (
-            results.map((user, index) => (
+          ) : currentResults.length > 0 ? (
+            currentResults.map((user, index) => (
               <button
                 id={`${listboxId}-option-${index}`}
                 key={user.id}

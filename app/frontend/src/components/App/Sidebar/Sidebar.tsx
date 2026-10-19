@@ -40,7 +40,7 @@ const Sidebar = () => {
     "text-[var(--color-text)]",
   ].join(" ");
 
-  const iconClassName = "w-6 h-6 fill-[var(--color-text)]";
+  const iconClassName = "w-6 h-6 stroke-[var(--color-text)]";
   const textClassName = "text-[10px]";
 
   const spacerClassName = [

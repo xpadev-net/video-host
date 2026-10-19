@@ -1,5 +1,5 @@
 import { ArrowLeft, SearchIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AuthButton } from "src/components/App/Header/Auth";
 import { Search } from "@/components/App/Header/Search";
 import { ToggleTheme } from "@/components/App/Header/Theme";
@@ -16,10 +16,13 @@ const MobileHeader = ({ className }: props) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const onSearchButtonClick = () => {
     setIsInputActive(true);
-    inputRef.current?.focus();
   };
 
   const closeSearch = () => setIsInputActive(false);
+
+  useEffect(() => {
+    if (isInputActive) inputRef.current?.focus();
+  }, [isInputActive]);
 
   return (
     <header

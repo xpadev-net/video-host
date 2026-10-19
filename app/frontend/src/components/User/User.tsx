@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { FilteredUser } from "@video-host/backend";
-import type { FC } from "react";
+import { type FC, useState } from "react";
 
 type Props = {
   user: FilteredUser;
@@ -8,6 +8,11 @@ type Props = {
 };
 
 export const User: FC<Props> = ({ user, size }) => {
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
+  const showAvatar = Boolean(
+    user.avatarUrl && failedAvatarUrl !== user.avatarUrl,
+  );
+
   return (
     <Link
       to="/users/$user"
@@ -19,14 +24,15 @@ export const User: FC<Props> = ({ user, size }) => {
           className="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-thirdly-background text-sm"
           style={{ width: avatarSize(size), height: avatarSize(size) }}
         >
-          <span>{user.name.slice(0, 2)}</span>
-          {user.avatarUrl && (
+          {!showAvatar && <span>{user.name.slice(0, 2)}</span>}
+          {showAvatar && user.avatarUrl && (
             <img
               src={user.avatarUrl}
               alt=""
               className="absolute inset-0 h-full w-full object-cover"
               loading="lazy"
               decoding="async"
+              onError={() => setFailedAvatarUrl(user.avatarUrl ?? null)}
             />
           )}
         </span>

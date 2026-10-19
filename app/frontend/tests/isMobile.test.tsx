@@ -1,14 +1,12 @@
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useIsMobile } from "../src/libraries/isMobile";
 
 describe("useIsMobile", () => {
   let matches = true;
-  let listener: (() => void) | undefined;
 
   beforeEach(() => {
     matches = true;
-    listener = undefined;
     vi.stubGlobal(
       "matchMedia",
       vi.fn(
@@ -17,9 +15,7 @@ describe("useIsMobile", () => {
             matches: media === "(pointer: coarse)" && matches,
             media,
             onchange: null,
-            addEventListener: (_event: string, callback: () => void) => {
-              listener = callback;
-            },
+            addEventListener: vi.fn(),
             removeEventListener: vi.fn(),
             addListener: vi.fn(),
             removeListener: vi.fn(),
@@ -34,12 +30,12 @@ describe("useIsMobile", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses and tracks the coarse-pointer media query", () => {
-    const { result } = renderHook(() => useIsMobile());
+  it("uses a stable coarse-pointer snapshot for the player lifetime", () => {
+    const { result, rerender } = renderHook(() => useIsMobile());
     expect(result.current).toBe(true);
 
     matches = false;
-    act(() => listener?.());
-    expect(result.current).toBe(false);
+    rerender();
+    expect(result.current).toBe(true);
   });
 });
