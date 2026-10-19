@@ -19,7 +19,10 @@ import {
   PlayerVolumeAtom,
   VideoMetadataAtom,
 } from "@/atoms/Player";
-import { watchedHistoryAtom } from "@/atoms/WatchedHistory";
+import {
+  MAX_WATCHED_HISTORY_ENTRIES,
+  watchedHistoryAtom,
+} from "@/atoms/WatchedHistory";
 import { findNext } from "@/components/Player/utils/findPrevNext";
 import { isApiUrl } from "@/lib/api-origin";
 
@@ -42,9 +45,65 @@ const Video = ({ className, videoRef, movie }: props) => {
   const [url, setUrl] = useState<string>("");
 
   const hlsRef = useRef<Hls | null>(null);
+  const lastHistorySaveRef = useRef({ at: 0, movieId: "", watched: -1 });
   const selectedAudioTrackRef = useRef(-1);
 
   const navigate = useNavigate();
+
+  const saveWatchedProgress = useCallback(
+    (force = false) => {
+      const video = videoRef.current;
+      if (
+        !movie ||
+        !video ||
+        !Number.isFinite(video.duration) ||
+        video.duration <= 0 ||
+        !Number.isFinite(video.currentTime)
+      ) {
+        return;
+      }
+
+      const now = Date.now();
+      if (!force && now - lastHistorySaveRef.current.at < 5000) return;
+      const watched = Math.max(
+        0,
+        Math.min(1, video.currentTime / video.duration),
+      );
+      const lastSaved = lastHistorySaveRef.current;
+      if (lastSaved.movieId === movie.id && lastSaved.watched === watched)
+        return;
+
+      lastHistorySaveRef.current = { at: now, movieId: movie.id, watched };
+      const entry = {
+        movieId: movie.id,
+        title: movie.title,
+        thumbnailUrl: movie.thumbnailUrl ?? null,
+        duration: video.duration,
+        watched,
+        updatedAt: now,
+      };
+
+      setWatchedHistory((previous) => {
+        const next = { ...previous, [movie.id]: entry };
+        const recentEntries = Object.values(next)
+          .sort((a, b) => b.updatedAt - a.updatedAt)
+          .slice(0, MAX_WATCHED_HISTORY_ENTRIES);
+        return Object.fromEntries(
+          recentEntries.map((historyEntry) => [
+            historyEntry.movieId,
+            historyEntry,
+          ]),
+        );
+      });
+    },
+    [movie, setWatchedHistory, videoRef],
+  );
+
+  useEffect(() => {
+    const saveOnPageHide = () => saveWatchedProgress(true);
+    window.addEventListener("pagehide", saveOnPageHide);
+    return () => window.removeEventListener("pagehide", saveOnPageHide);
+  }, [saveWatchedProgress]);
 
   const onVideoPlay = () => {
     setState((pv) => ({ ...pv, paused: false }));
@@ -52,6 +111,7 @@ const Video = ({ className, videoRef, movie }: props) => {
 
   const onVideoPause = () => {
     setState((pv) => ({ ...pv, paused: true }));
+    saveWatchedProgress(true);
   };
 
   const onVideoVolumeChange = () => {
@@ -67,6 +127,7 @@ const Video = ({ className, videoRef, movie }: props) => {
     if (videoRef.current) {
       videoRef.current.playbackRate = playbackRate;
     }
+    saveWatchedProgress(true);
     void videoRef.current?.play().catch(console.warn);
   };
 
@@ -81,19 +142,11 @@ const Video = ({ className, videoRef, movie }: props) => {
       ...pv,
       currentTime: videoRef.current?.currentTime || 0,
     }));
-    const ref = videoRef.current;
-    if (ref && Math.floor(ref.currentTime) % 10 === 0 && movie) {
-      setWatchedHistory((pv) => ({
-        ...pv,
-        [movie.id]: {
-          movie: movie,
-          watched: ref.currentTime / ref.duration,
-        },
-      }));
-    }
+    saveWatchedProgress();
   };
 
   const onVideoEnded = () => {
+    saveWatchedProgress(true);
     if (!playerConfig.autoPlay || !movie) return;
     const next = findNext(movie);
     if (!next) return;
@@ -193,13 +246,6 @@ const Video = ({ className, videoRef, movie }: props) => {
       videoRef.current.currentTime = currentTime;
     } else {
       selectedAudioTrackRef.current = -1;
-      setWatchedHistory((pv) => ({
-        ...pv,
-        [movie.id]: {
-          movie: movie,
-          watched: 0,
-        },
-      }));
       void loadVideo(videoRef.current, variant.contentUrl);
     }
     setUrl(variant.contentUrl);
@@ -213,7 +259,6 @@ const Video = ({ className, videoRef, movie }: props) => {
   }, [
     videoRef.current,
     movie,
-    setWatchedHistory,
     url,
     loadVideo,
     setHls,
