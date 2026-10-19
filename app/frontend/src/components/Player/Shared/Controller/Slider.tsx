@@ -71,7 +71,7 @@ export function Slider({
         className={cn(
           "absolute h-[3px] w-[3px] -translate-x-1/2 rounded-full bg-accent transition-[width,height] duration-50 ease-in-out group-hover:h-[11px] group-hover:w-[11px]",
           centered
-            ? "top-1/2 -translate-y-1/2"
+            ? "top-1/2 h-3 w-3 -translate-y-1/2"
             : "bottom-[1.5px] translate-y-1/2",
           isDragging && "h-[11px] w-[11px]",
         )}

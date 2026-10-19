@@ -31,15 +31,15 @@ const ImageWithFallback = ({
   const imgSrc = imageState.usingFallback ? fallbackSrc : src;
 
   const handleError = () => {
-    setImageState((current) =>
-      current.src !== src
-        ? current
-        : {
-            src,
-            status: fallbackSrc && !current.usingFallback ? "loading" : "error",
-            usingFallback: Boolean(fallbackSrc && !current.usingFallback),
-          },
-    );
+    setImageState((current) => {
+      if (current.src !== src || current.status === "error") return current;
+      const shouldUseFallback = Boolean(fallbackSrc && !current.usingFallback);
+      return {
+        src,
+        status: shouldUseFallback ? "loading" : "error",
+        usingFallback: current.usingFallback || shouldUseFallback,
+      };
+    });
   };
 
   if (hasError && showErrorIcon) {

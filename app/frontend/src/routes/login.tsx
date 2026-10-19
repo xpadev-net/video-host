@@ -48,6 +48,7 @@ function LoginRoute() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
+  const [sessionError, setSessionError] = useState(false);
   const { authConfig, isLoading: isAuthConfigLoading } = useAuthConfig();
   const passwordAuthEnabled = authConfig?.passwordAuthEnabled ?? false;
   const ssoEnabled = Boolean(
@@ -67,10 +68,12 @@ function LoginRoute() {
           return;
         }
       } catch {
-        if (!cancelled)
+        if (!cancelled) {
+          setSessionError(true);
           setError(
             "ネットワークエラーが発生しました。ページを再読み込みしてください",
           );
+        }
       } finally {
         if (!cancelled) setInitialLoading(false);
       }
@@ -126,6 +129,16 @@ function LoginRoute() {
         <div className="flex justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
+      </AuthLayout>
+    );
+  }
+  if (sessionError) {
+    return (
+      <AuthLayout
+        title="ログイン"
+        description="ログイン状態を確認できませんでした"
+      >
+        <p role="alert">ページを再読み込みしてください。</p>
       </AuthLayout>
     );
   }
