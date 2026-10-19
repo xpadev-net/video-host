@@ -63,15 +63,13 @@ try {
   if (sslMode === "disable" && (sslCert || sslIdentity || sslAccept)) {
     throw new Error("MySQL sslmode=disable conflicts with SSL certificate options");
   }
-  const verifyCertificate =
-    sslAccept === "strict" ||
-    (!sslAccept && ["verify-ca", "verify-full"].includes(sslMode));
+  const verifyCertificate = sslAccept !== "accept_invalid_certs";
   const ssl =
     sslCert || sslIdentity || sslAccept || (sslMode && sslMode !== "disable")
       ? {
-            ...(sslCert
-              ? { ca: readFileSync(path.resolve("prisma", sslCert)) }
-              : {}),
+          ...(sslCert
+            ? { ca: readFileSync(path.resolve("prisma", sslCert)) }
+            : {}),
           ...(sslIdentity
             ? { pfx: readFileSync(path.resolve("prisma", sslIdentity)) }
             : {}),
