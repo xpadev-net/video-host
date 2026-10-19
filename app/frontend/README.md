@@ -20,7 +20,13 @@ pnpm -F @video-host/frontend dev
 pnpm -F @video-host/frontend lint
 pnpm -F @video-host/frontend typecheck
 pnpm -F @video-host/frontend build
+pnpm -F @video-host/frontend test:all
 ```
+
+`test:all` runs the Node.js unit tests, Vitest hook/component tests, proxy
+smokes, and runtime environment replacement checks. The proxy and runtime
+checks require a production build. To match CI, copy
+`app/frontend/docker/.env.placeholder` to `app/frontend/.env` before building.
 
 本番ビルドは Nitro のスタンドアロン成果物として `.output` に出力されます。サーバーエントリは `.output/server/index.mjs`、クライアントアセットは `.output/public` です。Node.js 22.12 以上を使用してください。
 
@@ -33,5 +39,7 @@ pnpm -F @video-host/frontend build
 - `VITE_SITE_NAME`: サイト名
 - `VITE_ENABLE_COMMENTS`: コメント表示の有効化
 - `VITE_REQUIRE_SIGNUP_CODE`: 登録コード要求の有効化
+- `HOST` / `PORT`: Nitro サーバーの bind address と port (既定値 `0.0.0.0` / `3000`)
+- `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` / `OTEL_SERVICE_NAME`: 任意の OpenTelemetry metrics export 設定
 
-コンテナではビルド時のプレースホルダーを起動時に `.output/public` 内で置換します。
+コンテナではビルド時のプレースホルダーを起動時に `.output/public` と `.output/server` 内で置換します。
