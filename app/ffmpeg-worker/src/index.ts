@@ -25,6 +25,7 @@ import {
   type ProcessingClaim,
   processRetryQueue,
   releaseProcessingJob,
+  requeueInterruptedJob,
   requeueStaleProcessingJob,
   setEncodeProgress,
 } from "./queue";
@@ -79,12 +80,22 @@ let activeJobClaim: string | null = null;
 let activeJobCommitted = false;
 let jobRelinquished = false;
 
-// Bound the graceful drain so a stalled job/callback cannot hang SIGTERM.
-const SHUTDOWN_DRAIN_TIMEOUT_MS = 30_000;
+// The whole shutdown has to fit inside the pod's terminationGracePeriodSeconds
+// (90 s): drain/settle below, ffmpeg's own 5 s SIGKILL escalation, then the
+// claim handoff and telemetry flush. Worst case here is about 20 + 5 + 5 s.
 
-// After aborting the in-flight job, give its own failure handling a bounded
-// window to retry/requeue it through the normal path.
-const SHUTDOWN_SETTLE_TIMEOUT_MS = 10_000;
+// A job that already deleted its input can only be finalized (callback), so
+// it is given this long to finish instead of being aborted.
+const SHUTDOWN_DRAIN_TIMEOUT_MS = 20_000;
+
+// After aborting the in-flight job, give its own handling a bounded window to
+// put it back on the queue.
+const SHUTDOWN_SETTLE_TIMEOUT_MS = 15_000;
+
+// Why a job was aborted. A shutdown requeues the job without consuming a
+// retry; a timeout goes down the normal retry path.
+const ABORT_SHUTDOWN = "shutdown";
+const ABORT_TIMEOUT = "timeout";
 
 // Aborted on shutdown so the in-flight job stops via the normal failure
 // path instead of running alongside a requeued copy on another worker.
@@ -239,7 +250,13 @@ const checkDiskSpace = async (): Promise<boolean> => {
 // "error" marks unexpected processJob rejections (no confirmed terminal
 // outcome), distinct from handled "failed" paths. "relinquished" marks a
 // job whose ownership was transferred to the queue during shutdown.
-type JobResult = "completed" | "failed" | "retrying" | "error" | "relinquished";
+type JobResult =
+  | "completed"
+  | "failed"
+  | "retrying"
+  | "requeued"
+  | "error"
+  | "relinquished";
 
 const processJob = async (job: EncodeJob): Promise<JobResult> => {
   console.log(`Processing job: movieId=${job.movieId}, s3Key=${job.s3Key}`);
@@ -310,9 +327,9 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 
   // Create abort controller for timeout management
   const abortController = new AbortController();
-  const onShutdownAbort = () => abortController.abort();
+  const onShutdownAbort = () => abortController.abort(ABORT_SHUTDOWN);
   if (jobShutdownAbort.signal.aborted) {
-    abortController.abort();
+    abortController.abort(ABORT_SHUTDOWN);
   } else {
     jobShutdownAbort.signal.addEventListener("abort", onShutdownAbort, {
       once: true,
@@ -322,8 +339,26 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     console.error(
       `Job timeout after ${JOB_TIMEOUT_SECONDS} seconds: movieId=${job.movieId}`,
     );
-    abortController.abort();
+    abortController.abort(ABORT_TIMEOUT);
   }, JOB_TIMEOUT_SECONDS * 1000);
+
+  // Interrupted by our own shutdown: not a failure of the job, so it goes back
+  // to the queue with its retry budget intact.
+  const requeueIfShutdown = async (): Promise<boolean> => {
+    if (
+      !abortController.signal.aborted ||
+      abortController.signal.reason !== ABORT_SHUTDOWN ||
+      committedOutcome
+    ) {
+      return false;
+    }
+    console.warn(
+      `Requeueing job interrupted by shutdown: movieId=${job.movieId}`,
+    );
+    await requeueInterruptedJob(job);
+    await setEncodeProgress(job.movieId, { status: "queued" });
+    return true;
+  };
 
   try {
     // Download from tmp-bucket
@@ -355,6 +390,9 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     }
 
     if (!result.success) {
+      if (await requeueIfShutdown()) {
+        return "requeued";
+      }
       console.error(`Encoding failed: ${result.error}`);
       // Try to retry the job
       const retryCount = job.retryCount || 0;
@@ -494,6 +532,16 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         }
         return "error";
       }
+    }
+    try {
+      if (await requeueIfShutdown()) {
+        return "requeued";
+      }
+    } catch (requeueError) {
+      console.error(
+        `Failed to requeue interrupted job: movieId=${job.movieId}`,
+        requeueError,
+      );
     }
     console.error(`Job failed: movieId=${job.movieId}`, error);
     // Try to retry the job
@@ -721,23 +769,34 @@ const shutdown = async (): Promise<void> => {
   }
   console.log("Shutting down...");
   isShuttingDown = true;
-  // Wait for the in-flight job (if any) so its result metrics, progress
-  // updates and callbacks are sent before the provider is shut down.
+  // A job still encoding is stopped right away and put back on the queue:
+  // waiting for it would just burn the grace period. One that already deleted
+  // its input can only be finalized, so it is allowed to finish.
+  const stopsEncoding = activeJob !== null && !activeJobCommitted;
+  if (stopsEncoding) {
+    console.warn(
+      `Aborting in-flight job on shutdown: movieId=${activeJob?.movieId}`,
+    );
+    jobShutdownAbort.abort(ABORT_SHUTDOWN);
+  }
+  // Wait for the job (if any) so its result metrics, progress updates and
+  // callbacks are sent before the provider is shut down.
   await Promise.race([
     pollPromise,
-    new Promise((resolve) => setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS)),
+    new Promise((resolve) =>
+      setTimeout(
+        resolve,
+        stopsEncoding ? SHUTDOWN_SETTLE_TIMEOUT_MS : SHUTDOWN_DRAIN_TIMEOUT_MS,
+      ),
+    ),
   ]);
-  // If the drain timed out mid-job, abort it so its own failure handling
-  // puts it back on the retry queue. Requeueing while it still runs would
-  // let a second worker process the same job concurrently.
-  if (activeJob) {
-    console.warn(
-      `Aborting in-flight job on shutdown: movieId=${activeJob.movieId}`,
-    );
-    jobShutdownAbort.abort();
+  // If a finalizing job is still stuck, abort it too and give its own
+  // handling one more short window before relinquishing.
+  if (activeJob && !stopsEncoding) {
+    jobShutdownAbort.abort(ABORT_SHUTDOWN);
     await Promise.race([
       pollPromise,
-      new Promise((resolve) => setTimeout(resolve, SHUTDOWN_SETTLE_TIMEOUT_MS)),
+      new Promise((resolve) => setTimeout(resolve, 5_000)),
     ]);
   }
   // Last resort: the job did not settle even after abort (e.g. stuck in a

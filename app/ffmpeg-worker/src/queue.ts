@@ -128,6 +128,14 @@ export const getEncodeProgress = async (
   }
 };
 
+// Put a job interrupted by a worker shutdown back at the front of the main
+// queue (consumers pop from the right) without touching its retry budget:
+// the job did nothing wrong, the worker was just replaced.
+export const requeueInterruptedJob = async (job: EncodeJob): Promise<void> => {
+  const client = await getRedisClient();
+  await client.rPush(ENCODE_QUEUE_KEY, JSON.stringify(job));
+};
+
 export const addJobToRetryQueue = async (job: EncodeJob): Promise<void> => {
   const client = await getRedisClient();
   const retryCount = (job.retryCount || 0) + 1;
