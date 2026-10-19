@@ -39,6 +39,7 @@ Suggested durable review categories:
 | Routes, navigation, layout, or media UI changed | Desktop and mobile browser flow with screenshots, console errors, and failed-request notes | Task E2E spec |
 | Frontend build/runtime changed | Production start and `/api/healthz` evidence plus output-entrypoint review | Docker/package scripts |
 | Frontend test or validation config changed | Run frontend typecheck and `test:all` after a placeholder-backed production build; verify the Vitest suite is included by the standard `test` command | `.github/workflows/ci.yaml`, `app/frontend/package.json` |
+| FFmpeg worker tests or validation config changed | Run worker lint, format check, typecheck, and `test`; confirm CI runs the same commands | `.github/workflows/ci.yaml`, `app/ffmpeg-worker/package.json` |
 
 ## Review Heuristics
 

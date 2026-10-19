@@ -11,16 +11,31 @@ import {
   type RedisClientType,
   type RedisSentinelType,
 } from "redis";
+import { z } from "zod";
+import {
+  DEAD_LETTER_MAX_ENTRIES,
+  ENCODE_PROGRESS_TTL_SECONDS,
+  INITIAL_RETRY_DELAY_SECONDS,
+  JOB_COMPLETION_TTL_SECONDS,
+  MAX_RETRY_COUNT,
+  MAX_RETRY_DELAY_SECONDS,
+  RETRY_QUEUE_BATCH_SIZE,
+} from "./config";
 import {
   REDIS_SENTINEL_HOSTS,
   REDIS_SENTINEL_NAME,
   REDIS_SENTINEL_PASSWORD,
   REDIS_URL,
 } from "./env";
+import { log } from "./logger";
 
 export type { EncodeJob, EncodeProgress } from "@video-host/contracts";
 
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === "string");
+
 let redisClient: RedisClientType | RedisSentinelType | null = null;
+let redisConnection: Promise<RedisClientType | RedisSentinelType> | null = null;
 
 interface SentinelNode {
   host: string;
@@ -31,7 +46,7 @@ const createRedisClient = (): RedisClientType | RedisSentinelType => {
   // If Sentinel is configured, use Sentinel mode
   if (REDIS_SENTINEL_HOSTS && REDIS_SENTINEL_NAME) {
     const sentinels: SentinelNode[] = REDIS_SENTINEL_HOSTS.split(",").map(
-      (host) => {
+      (host: string) => {
         const [hostname, port] = host.trim().split(":");
         return { host: hostname, port: parseInt(port || "26379", 10) };
       },
@@ -53,22 +68,37 @@ const createRedisClient = (): RedisClientType | RedisSentinelType => {
 export const getRedisClient = async (): Promise<
   RedisClientType | RedisSentinelType
 > => {
-  if (!redisClient) {
-    redisClient = createRedisClient();
-    redisClient.on("error", (err: Error) =>
-      console.error("Redis Client Error", err),
-    );
-    await redisClient.connect();
+  if (redisClient?.isOpen) return redisClient;
+  if (!redisConnection) {
+    const client = createRedisClient();
+    client.on("error", (err: Error) => log.error("Redis Client Error", err));
+    redisConnection = client
+      .connect()
+      .then(() => {
+        redisClient = client;
+        return client;
+      })
+      .catch(async (error: unknown) => {
+        if (client.isOpen) {
+          await client.close().catch(() => {});
+        }
+        throw error;
+      })
+      .finally(() => {
+        redisConnection = null;
+      });
   }
-  return redisClient;
+  return redisConnection;
 };
 
 export const ENCODE_QUEUE_KEY = "video:encode:queue";
 export const RETRY_QUEUE_KEY = "video:encode:retry:queue"; // Sorted set (ZSET)
 export const DEAD_LETTER_QUEUE_KEY = "video:encode:dead"; // Sorted set (ZSET)
-export const MAX_RETRY_COUNT = 3;
-export const INITIAL_RETRY_DELAY_SECONDS = 60;
-export const MAX_RETRY_DELAY_SECONDS = 15 * 60;
+export {
+  INITIAL_RETRY_DELAY_SECONDS,
+  MAX_RETRY_COUNT,
+  MAX_RETRY_DELAY_SECONDS,
+} from "./config";
 
 export const addJobToDeadLetterQueue = async (
   job: Partial<EncodeJob> | null,
@@ -82,10 +112,10 @@ export const addJobToDeadLetterQueue = async (
     stderrTail,
     failedAt: new Date().toISOString(),
   });
-  await (client as RedisClientType).eval(
+  await client.eval(
     `redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
      local count = redis.call('ZCARD', KEYS[1])
-     if count > 10000 then redis.call('ZREMRANGEBYRANK', KEYS[1], 0, count - 10001) end
+     if count > ${DEAD_LETTER_MAX_ENTRIES} then redis.call('ZREMRANGEBYRANK', KEYS[1], 0, count - ${DEAD_LETTER_MAX_ENTRIES + 1}) end
      return count`,
     {
       keys: [DEAD_LETTER_QUEUE_KEY],
@@ -104,14 +134,9 @@ export const setEncodeProgress = async (
   const client = await getRedisClient();
   await client.setEx(
     `${ENCODE_PROGRESS_PREFIX}${movieId}`,
-    3600, // 1 hour TTL
+    ENCODE_PROGRESS_TTL_SECONDS,
     JSON.stringify(EncodeProgressSchema.parse(progress)),
   );
-};
-
-export const clearEncodeProgress = async (movieId: string): Promise<void> => {
-  const client = await getRedisClient();
-  await client.del(`${ENCODE_PROGRESS_PREFIX}${movieId}`);
 };
 
 export const getEncodeProgress = async (
@@ -160,7 +185,7 @@ export const addJobToRetryQueue = async (
 
   const retryJobJson = JSON.stringify(jobWithRetry);
   if (processingMember) {
-    const moved = await (client as RedisClientType).eval(
+    const moved = await client.eval(
       `if not redis.call('ZSCORE', KEYS[2], ARGV[3]) then return 0 end
        redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
        redis.call('ZREM', KEYS[2], ARGV[3])
@@ -179,7 +204,7 @@ export const addJobToRetryQueue = async (
     });
   }
 
-  console.log(
+  log.info(
     `Added job to retry queue: movieId=${job.movieId}, retryCount=${retryCount}, retryAfter=${new Date(retryAfter * 1000).toISOString()}`,
   );
 };
@@ -193,7 +218,7 @@ export const deferJobForInfrastructure = async (
   const client = await getRedisClient();
   const deferredJob = { ...job, retryAfter: undefined };
   const retryAfter = Math.floor(Date.now() / 1000) + delaySeconds;
-  const moved = await (client as RedisClientType).eval(
+  const moved = await client.eval(
     `if not redis.call('ZSCORE', KEYS[2], ARGV[3]) then return 0 end
      redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
      redis.call('ZREM', KEYS[2], ARGV[3])
@@ -251,7 +276,7 @@ const PROCESS_RETRY_QUEUE_SCRIPT = `
         local entry = cjson.encode({raw = jobJson, reason = 'Malformed retry job', failedAt = ARGV[4]})
         redis.call('ZADD', deadLetterQueueKey, now, entry)
         local deadCount = redis.call('ZCARD', deadLetterQueueKey)
-        if deadCount > 10000 then redis.call('ZREMRANGEBYRANK', deadLetterQueueKey, 0, deadCount - 10001) end
+        if deadCount > ${DEAD_LETTER_MAX_ENTRIES} then redis.call('ZREMRANGEBYRANK', deadLetterQueueKey, 0, deadCount - ${DEAD_LETTER_MAX_ENTRIES + 1}) end
       else
       -- Only add to main queue if we successfully removed it
       -- Backend jobs use LPUSH and workers take from the right. Keep ready
@@ -261,7 +286,7 @@ const PROCESS_RETRY_QUEUE_SCRIPT = `
       -- Publish "queued" in the same atomic step that exposes the job to
       -- consumers, so it can never overwrite a newer state written by a
       -- worker that already claimed the job.
-      redis.call('SET', progressPrefix .. job.movieId, '{"status":"queued"}', 'EX', 3600)
+      redis.call('SET', progressPrefix .. job.movieId, '{"status":"queued"}', 'EX', ${ENCODE_PROGRESS_TTL_SECONDS})
       end
     end
   end
@@ -275,13 +300,13 @@ let processRetryQueueScriptSha: string | null = null;
 export const processRetryQueue = async (): Promise<number> => {
   const client = await getRedisClient();
   const now = Math.floor(Date.now() / 1000);
-  const limit = 100; // Drain larger retry backlogs per interval.
+  const limit = RETRY_QUEUE_BATCH_SIZE;
 
-  return processRetryQueueWithClient(client as RedisClientType, now, limit);
+  return processRetryQueueWithClient(client, now, limit);
 };
 
 const processRetryQueueWithClient = async (
-  client: RedisClientType,
+  client: RedisClientType | RedisSentinelType,
   now: number,
   limit: number,
   scriptReloadAttempted = false,
@@ -295,7 +320,7 @@ const processRetryQueueWithClient = async (
     }
 
     // Execute the Lua script atomically
-    const movedJobs = (await client.evalSha(processRetryQueueScriptSha, {
+    const result: unknown = await client.evalSha(processRetryQueueScriptSha, {
       keys: [RETRY_QUEUE_KEY, ENCODE_QUEUE_KEY, DEAD_LETTER_QUEUE_KEY],
       arguments: [
         now.toString(),
@@ -303,7 +328,12 @@ const processRetryQueueWithClient = async (
         ENCODE_PROGRESS_PREFIX,
         new Date().toISOString(),
       ],
-    })) as string[];
+    });
+
+    if (!isStringArray(result)) {
+      throw new Error("Retry queue script returned an invalid result");
+    }
+    const movedJobs = result;
 
     if (!movedJobs || movedJobs.length === 0) {
       return 0;
@@ -313,11 +343,11 @@ const processRetryQueueWithClient = async (
     for (const jobJson of movedJobs) {
       try {
         const job = EncodeJobSchema.parse(JSON.parse(jobJson));
-        console.log(
+        log.info(
           `Moved job from retry queue to main queue: movieId=${job.movieId}, retryCount=${job.retryCount}`,
         );
       } catch (error) {
-        console.error("Error parsing moved job:", error);
+        log.error("Error parsing moved job:", error);
       }
     }
 
@@ -327,19 +357,19 @@ const processRetryQueueWithClient = async (
     if (error instanceof Error && error.message.includes("NOSCRIPT")) {
       // Prevent infinite recursion by limiting reload to one attempt
       if (scriptReloadAttempted) {
-        console.error(
+        log.error(
           "Failed to reload Lua script after NOSCRIPT error, giving up",
         );
         throw new Error(
           "Failed to reload retry queue script after Redis restart",
         );
       }
-      console.log("Lua script not found (NOSCRIPT), reloading...");
+      log.info("Lua script not found (NOSCRIPT), reloading...");
       processRetryQueueScriptSha = null;
       // Retry once after reloading script
       return processRetryQueueWithClient(client, now, limit, true);
     }
-    console.error("Error processing retry queue:", error);
+    log.error("Error processing retry queue:", error);
     return 0;
   }
 };
@@ -349,20 +379,25 @@ const processRetryQueueWithClient = async (
 // worker instead of being lost.
 export const PROCESSING_QUEUE_KEY = "video:encode:processing";
 
-export interface ProcessingClaimCompletion {
-  s3Key?: string;
-  thumbnailKey?: string;
-  contentUrl: string;
-  duration?: number;
-}
+export const ProcessingClaimCompletionSchema = z.object({
+  s3Key: z.string().optional(),
+  thumbnailKey: z.string().optional(),
+  contentUrl: z.string().url(),
+  duration: z.number().finite().nonnegative().optional(),
+});
 
-export interface ProcessingClaim {
+export const ProcessingClaimSchema = z.object({
   // Unique per claim attempt so a re-queued job's new claim is a distinct
   // member: a stale owner's ZREM/DEL can never disturb the new claim.
-  claimId: string;
-  job: EncodeJob;
-  completion?: ProcessingClaimCompletion;
-}
+  claimId: z.string().min(1),
+  job: EncodeJobSchema,
+  completion: ProcessingClaimCompletionSchema.optional(),
+});
+
+export type ProcessingClaimCompletion = z.infer<
+  typeof ProcessingClaimCompletionSchema
+>;
+export type ProcessingClaim = z.infer<typeof ProcessingClaimSchema>;
 
 const CLAIM_NEXT_JOB_SCRIPT = `
   local jobJson = redis.call('RPOP', KEYS[1])
@@ -379,7 +414,7 @@ const CLAIM_NEXT_JOB_SCRIPT = `
     local entry = cjson.encode({raw = jobJson, reason = 'Malformed encode job', failedAt = ARGV[3]})
     redis.call('ZADD', KEYS[3], ARGV[2], entry)
     local deadCount = redis.call('ZCARD', KEYS[3])
-    if deadCount > 10000 then redis.call('ZREMRANGEBYRANK', KEYS[3], 0, deadCount - 10001) end
+    if deadCount > ${DEAD_LETTER_MAX_ENTRIES} then redis.call('ZREMRANGEBYRANK', KEYS[3], 0, deadCount - ${DEAD_LETTER_MAX_ENTRIES + 1}) end
     return false
   end
   local claim = cjson.encode({ claimId = ARGV[1], job = job })
@@ -393,22 +428,15 @@ export const claimNextEncodeJob = async (): Promise<
   (ProcessingClaim & { member: string }) | null
 > => {
   const client = await getRedisClient();
-  const member = (await (client as RedisClientType).eval(
-    CLAIM_NEXT_JOB_SCRIPT,
-    {
-      keys: [ENCODE_QUEUE_KEY, PROCESSING_QUEUE_KEY, DEAD_LETTER_QUEUE_KEY],
-      arguments: [
-        randomUUID(),
-        Date.now().toString(),
-        new Date().toISOString(),
-      ],
-    },
-  )) as string | null;
-  if (!member) return null;
+  const result: unknown = await client.eval(CLAIM_NEXT_JOB_SCRIPT, {
+    keys: [ENCODE_QUEUE_KEY, PROCESSING_QUEUE_KEY, DEAD_LETTER_QUEUE_KEY],
+    arguments: [randomUUID(), Date.now().toString(), new Date().toISOString()],
+  });
+  if (typeof result !== "string") return null;
+  const member = result;
   let claim: ProcessingClaim;
   try {
-    claim = JSON.parse(member) as ProcessingClaim;
-    claim.job = EncodeJobSchema.parse(claim.job);
+    claim = ProcessingClaimSchema.parse(JSON.parse(member));
   } catch (error) {
     await addJobToDeadLetterQueue(
       null,
@@ -426,8 +454,6 @@ export const claimNextEncodeJob = async (): Promise<
 // survives a failed claim rewrite — reapers and workers popping the job
 // check it before deciding to encode.
 export const JOB_COMPLETION_PREFIX = "video:encode:completion:";
-const JOB_COMPLETION_TTL_SECONDS = 24 * 3600;
-
 export const getJobCompletion = async (
   movieId: string,
   s3Key: string,
@@ -438,7 +464,7 @@ export const getJobCompletion = async (
     return null;
   }
   try {
-    const completion = JSON.parse(raw) as ProcessingClaimCompletion;
+    const completion = ProcessingClaimCompletionSchema.parse(JSON.parse(raw));
     return completion.s3Key === s3Key ? completion : null;
   } catch {
     return null;
@@ -454,7 +480,7 @@ export const commitProcessingJob = async (
   completion: ProcessingClaimCompletion,
 ): Promise<string> => {
   const client = await getRedisClient();
-  const result = await (client as RedisClientType).eval(
+  const result = await client.eval(
     `if redis.call('ZSCORE', KEYS[1], ARGV[1]) then
        redis.call('ZADD', KEYS[1], ARGV[2], ARGV[1])
        redis.call('SET', KEYS[2], ARGV[3], 'EX', ARGV[4])
@@ -495,7 +521,7 @@ export const finishProcessingJob = async (
   job: EncodeJob,
 ): Promise<void> => {
   const client = await getRedisClient();
-  await (client as RedisClientType).eval(FINISH_PROCESSING_JOB_SCRIPT, {
+  await client.eval(FINISH_PROCESSING_JOB_SCRIPT, {
     keys: [
       PROCESSING_QUEUE_KEY,
       `${JOB_COMPLETION_PREFIX}${job.movieId}:${job.s3Key}`,
@@ -520,7 +546,7 @@ export const refreshProcessingJob = async (
   member: string,
 ): Promise<boolean> => {
   const client = await getRedisClient();
-  const result = await (client as RedisClientType).eval(
+  const result = await client.eval(
     `if redis.call('ZSCORE', KEYS[1], ARGV[1]) then
        redis.call('ZADD', KEYS[1], ARGV[2], ARGV[1])
        return 1
@@ -551,7 +577,7 @@ export const requeueProcessingJob = async (
   job: EncodeJob,
 ): Promise<boolean> => {
   const client = await getRedisClient();
-  const result = await (client as RedisClientType).eval(REQUEUE_CLAIM_SCRIPT, {
+  const result = await client.eval(REQUEUE_CLAIM_SCRIPT, {
     keys: [
       PROCESSING_QUEUE_KEY,
       ENCODE_QUEUE_KEY,
@@ -590,31 +616,30 @@ export const requeueStaleProcessingJob = async (
   member: string,
 ): Promise<boolean> => {
   const client = await getRedisClient();
-  const claim = JSON.parse(member) as ProcessingClaim;
-  const result = await (client as RedisClientType).eval(
-    REQUEUE_PROCESSING_JOB_SCRIPT,
-    {
-      keys: [
-        PROCESSING_QUEUE_KEY,
-        ENCODE_QUEUE_KEY,
-        `${JOB_COMPLETION_PREFIX}${claim.job.movieId}:${claim.job.s3Key}`,
-      ],
-      arguments: [member, JSON.stringify(claim.job)],
-    },
-  );
+  const claim = ProcessingClaimSchema.parse(JSON.parse(member));
+  const result = await client.eval(REQUEUE_PROCESSING_JOB_SCRIPT, {
+    keys: [
+      PROCESSING_QUEUE_KEY,
+      ENCODE_QUEUE_KEY,
+      `${JOB_COMPLETION_PREFIX}${claim.job.movieId}:${claim.job.s3Key}`,
+    ],
+    arguments: [member, JSON.stringify(claim.job)],
+  });
   return result === 1;
 };
 
 export const getQueueDepths = async (): Promise<{
   main: number;
   retry: number;
+  processing: number;
 }> => {
   const client = await getRedisClient();
-  const [main, retry] = await Promise.all([
+  const [main, retry, processing] = await Promise.all([
     client.lLen(ENCODE_QUEUE_KEY),
     client.zCard(RETRY_QUEUE_KEY),
+    client.zCard(PROCESSING_QUEUE_KEY),
   ]);
-  return { main, retry };
+  return { main, retry, processing };
 };
 
 export const closeRedis = async (): Promise<void> => {

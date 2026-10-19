@@ -24,6 +24,7 @@ data:
   min-disk-space-gb: "1"
   job-timeout-seconds: "7200"
   ffmpeg-threads: "2"  # Limit FFmpeg to the worker's 2-core CPU limit
+  log-level: "info"
   # OpenTelemetry (メトリクス送信先。空の場合は無効)
   otel-endpoint: ""  # 例: "http://otel-collector.otel-collector.svc.cluster.local:4318"
   otel-metrics-endpoint: ""

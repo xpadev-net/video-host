@@ -21,7 +21,7 @@ spec:
         app.kubernetes.io/name: ffmpeg-worker
         app.kubernetes.io/component: worker
     spec:
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 90
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -143,6 +143,12 @@ spec:
                   name: ffmpeg-worker-config
                   key: ffmpeg-threads
                   optional: true
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: log-level
+                  optional: true
             - name: TEMP_DIR
               value: /tmp/ffmpeg-worker
             # OpenTelemetry (metrics export is disabled when otel-endpoint is unset)
@@ -178,14 +184,29 @@ spec:
               ephemeral-storage: "16Gi"
           startupProbe:
             exec:
-              command: ["sh", "-c", "kill -0 1"]
+              command:
+                - node
+                - -e
+                - "try { process.exit(Date.now() - require('node:fs').statSync('/tmp/ffmpeg-worker/healthy').mtimeMs < 90000 ? 0 : 1) } catch { process.exit(1) }"
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 30
           livenessProbe:
             exec:
-              command: ["sh", "-c", "kill -0 1"]
+              command:
+                - node
+                - -e
+                - "try { process.exit(Date.now() - require('node:fs').statSync('/tmp/ffmpeg-worker/healthy').mtimeMs < 90000 ? 0 : 1) } catch { process.exit(1) }"
             periodSeconds: 30
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - "try { process.exit(Date.now() - require('node:fs').statSync('/tmp/ffmpeg-worker/ready').mtimeMs < 90000 ? 0 : 1) } catch { process.exit(1) }"
+            periodSeconds: 15
             timeoutSeconds: 2
             failureThreshold: 3
       volumes:

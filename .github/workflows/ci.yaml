@@ -148,6 +148,16 @@ jobs:
 
   ffmpeg-worker-ci:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -172,6 +182,13 @@ jobs:
 
       - name: Typecheck worker
         run: pnpm -F @video-host/ffmpeg-worker typecheck
+
+      - name: Test worker
+        env:
+          NODE_ENV: test
+          CALLBACK_SECRET: worker-ci-test-secret
+          REDIS_URL: redis://127.0.0.1:6379
+        run: pnpm -F @video-host/ffmpeg-worker test
 
   docker-build:
     runs-on: ubuntu-latest

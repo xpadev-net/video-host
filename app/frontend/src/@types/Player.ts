@@ -16,6 +16,7 @@ export type PlayerState = {
   isLoading: boolean;
   isSetting: boolean;
   isFullscreen: boolean;
+  // Set when the source cannot be played (unsupported browser, fatal error).
   error: string | null;
 };
 

@@ -4,7 +4,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import NProgress from "nprogress";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import { App } from "@/components/App";
 import { PipPlayer } from "@/components/Player/PipPlayer";
@@ -24,7 +24,6 @@ export const Route = createFileRoute("/_app")({
 
 function AppLayout() {
   const isLoading = useRouterState({ select: (state) => state.isLoading });
-  const fallbackVideoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isLoading) {
@@ -43,8 +42,7 @@ function AppLayout() {
       <ProfileChangeWatcher />
       <Outlet />
       <PipPlayer />
-      <PortalPlayer fallback={fallbackVideoRef.current} />
-      <div ref={fallbackVideoRef} className="hidden" />
+      <PortalPlayer />
     </App>
   );
 }
