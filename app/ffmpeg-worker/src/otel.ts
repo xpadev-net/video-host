@@ -5,6 +5,7 @@ import {
   resourceFromAttributes,
 } from "@opentelemetry/resources";
 import {
+  AggregationType,
   MeterProvider,
   PeriodicExportingMetricReader,
 } from "@opentelemetry/sdk-metrics";
@@ -17,11 +18,7 @@ import {
 
 const DEFAULT_SERVICE_NAME = "video-host-ffmpeg-worker";
 const EXPORT_INTERVAL_MS = 30_000;
-
-// getMeterProvider() returns a permanent NoopMeterProvider until
-// initOtelMetrics() registers the real one, so callers must obtain the meter
-// after init (a NoopMeter while export is disabled).
-export const getMeter = () => metrics.getMeter(DEFAULT_SERVICE_NAME);
+let meterProvider: MeterProvider | undefined;
 
 /**
  * Registers a global MeterProvider pushing OTLP metrics to the collector.
@@ -30,24 +27,49 @@ export const getMeter = () => metrics.getMeter(DEFAULT_SERVICE_NAME);
  * their endpoint and headers from the standard OTEL_* env vars.
  */
 export const initOtelMetrics = () => {
-  if (!OTEL_EXPORTER_OTLP_ENDPOINT && !OTEL_EXPORTER_OTLP_METRICS_ENDPOINT) {
-    return;
-  }
-
+  const readers =
+    OTEL_EXPORTER_OTLP_ENDPOINT || OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+      ? [
+          new PeriodicExportingMetricReader({
+            exporter: new OTLPMetricExporter(),
+            exportIntervalMillis: EXPORT_INTERVAL_MS,
+          }),
+        ]
+      : [];
   const provider = new MeterProvider({
     resource: defaultResource().merge(
       resourceFromAttributes({
         [ATTR_SERVICE_NAME]: OTEL_SERVICE_NAME ?? DEFAULT_SERVICE_NAME,
+        "service.version": process.env.COMMIT_HASH || "unknown",
       }),
     ),
-    readers: [
-      new PeriodicExportingMetricReader({
-        exporter: new OTLPMetricExporter(),
-        exportIntervalMillis: EXPORT_INTERVAL_MS,
-      }),
+    readers,
+    views: [
+      {
+        instrumentName: "video_host.encode.job.duration",
+        aggregation: {
+          type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+          options: {
+            boundaries: [10, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200],
+          },
+        },
+      },
+      {
+        instrumentName: "video_host.encode.stage.duration",
+        aggregation: {
+          type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+          options: {
+            boundaries: [1, 5, 10, 30, 60, 120, 300, 600, 1200, 3600],
+          },
+        },
+      },
     ],
   });
+  meterProvider = provider;
   metrics.setGlobalMeterProvider(provider);
+  return provider.getMeter(OTEL_SERVICE_NAME ?? DEFAULT_SERVICE_NAME);
+};
 
-  return provider;
+export const shutdownOtelMetrics = async (): Promise<void> => {
+  await meterProvider?.shutdown();
 };

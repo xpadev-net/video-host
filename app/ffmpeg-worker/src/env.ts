@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { availableParallelism } from "node:os";
+import { log } from "./logger";
 
 /**
  * Requires an environment variable to be set.
@@ -11,7 +12,7 @@ const requireEnv = (name: string, defaultForDev?: string): string => {
   if (value) return value;
 
   if (process.env.NODE_ENV === "development" && defaultForDev !== undefined) {
-    console.warn(`Warning: ${name} not set, using development default`);
+    log.warn(`Warning: ${name} not set, using development default`);
     return defaultForDev;
   }
 

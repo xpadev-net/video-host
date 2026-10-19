@@ -15,6 +15,9 @@ const EncodeProgressSchema = z.object({
   queuePosition: z.number().optional(),
   currentTime: z.number().optional(),
   duration: z.number().optional(),
+  stage: z
+    .enum(["downloading", "encoding", "uploading", "deleting"])
+    .optional(),
 });
 
 module.exports = { EncodeJobSchema, EncodeProgressSchema };
