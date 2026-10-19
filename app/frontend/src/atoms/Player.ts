@@ -31,7 +31,8 @@ const StopPlayerAtom = atom(null, (get, set) => {
   set(HlsRefAtom, null);
   set(VideoRefAtom, null);
   set(CurrentMovieAtom, null);
-  set(DurablePlayerAtom, null);
+  // The route component owns the portal target and clears it on unmount. Keep
+  // it registered while stopping media so a still-mounted Player can reuse it.
   set(PlayerStateAtom, {
     paused: false,
     isLoading: true,
