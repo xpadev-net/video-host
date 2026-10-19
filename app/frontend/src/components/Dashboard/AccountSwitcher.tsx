@@ -70,6 +70,9 @@ export const AccountSwitcher: FC = () => {
       })
       .catch(() => {
         // Keep the stored selection when a refresh fails; it may be valid.
+      })
+      .finally(() => {
+        refreshingUnknownProfilesRef.current.delete(selectedProfileId);
       });
   }, [
     profiles,
