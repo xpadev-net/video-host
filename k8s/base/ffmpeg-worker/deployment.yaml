@@ -21,7 +21,7 @@ spec:
         app.kubernetes.io/name: ffmpeg-worker
         app.kubernetes.io/component: worker
     spec:
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 90
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

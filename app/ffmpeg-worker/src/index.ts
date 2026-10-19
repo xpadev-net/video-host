@@ -167,12 +167,17 @@ let jobRelinquished = false;
 let activeJobAbortController: AbortController | null = null;
 let leaseHeartbeatTimer: NodeJS.Timeout | null = null;
 
-// Bound the graceful drain so a stalled job/callback cannot hang SIGTERM.
-const SHUTDOWN_DRAIN_TIMEOUT_MS = 30_000;
+// The whole shutdown has to fit inside the pod's terminationGracePeriodSeconds
+// (90 s): drain/settle below, ffmpeg's own 5 s SIGKILL escalation, then the
+// claim handoff and telemetry flush. Worst case here is about 20 + 5 + 5 s.
 
-// After aborting the in-flight job, give its own failure handling a bounded
-// window to retry/requeue it through the normal path.
-const SHUTDOWN_SETTLE_TIMEOUT_MS = 10_000;
+// A job whose output is already committed can only be finalized (callback), so
+// it is given this long to finish instead of being aborted.
+const SHUTDOWN_DRAIN_TIMEOUT_MS = 20_000;
+
+// After aborting the in-flight job, give its own handling a bounded window to
+// hand it back to the queue.
+const SHUTDOWN_SETTLE_TIMEOUT_MS = 15_000;
 
 // Aborted on shutdown so the in-flight job stops via the normal failure
 // path instead of running alongside a requeued copy on another worker.
@@ -414,6 +419,47 @@ const retryOrDeadLetter = async (
   return "failed";
 };
 
+// Was this failure produced by the abort itself? A permanent failure (bad
+// input, HTTP 4xx, ...) that merely coincides with SIGTERM must keep its own
+// classification instead of being handed back as if shutdown had caused it.
+const isAbortFailure = (error: unknown, signal: AbortSignal): boolean => {
+  if (!signal.aborted) return false;
+  if (typeof error === "string") return /aborted/i.test(error);
+  if (typeof error !== "object" || error === null) return false;
+  const { name, code, message } = error as {
+    name?: unknown;
+    code?: unknown;
+    message?: unknown;
+  };
+  return (
+    name === "AbortError" ||
+    code === "ABORT_ERR" ||
+    (typeof message === "string" && /aborted/i.test(message))
+  );
+};
+
+// A shutdown interrupted this job before its output was committed. Hand the
+// claim back to the main queue untouched: the job did nothing wrong, so it must
+// not consume a retry (a few deploys would otherwise exhaust a long job).
+const handBackOnShutdown = async (job: EncodeJob): Promise<JobResult> => {
+  jobRelinquished = true;
+  console.warn(
+    `Requeueing job interrupted by shutdown: movieId=${job.movieId}`,
+  );
+  if (!activeJobClaim) {
+    return "relinquished";
+  }
+  const requeued = await requeueProcessingJob(activeJobClaim, job);
+  if (requeued) {
+    await setEncodeProgress(job.movieId, { status: "queued" }).catch(
+      () => undefined,
+    );
+  } else {
+    console.warn(`Shutdown claim already handed off: movieId=${job.movieId}`);
+  }
+  return "relinquished";
+};
+
 const measureStage = async <T>(
   job: EncodeJob,
   stage: "downloading" | "encoding" | "uploading" | "deleting",
@@ -464,9 +510,14 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
   // Create abort controller for timeout management
   const abortController = new AbortController();
   let jobTimedOut = false;
+  let shutdownAbortRequested = false;
   activeJobAbortController = abortController;
-  const onShutdownAbort = () => abortController.abort();
+  const onShutdownAbort = () => {
+    shutdownAbortRequested = true;
+    abortController.abort();
+  };
   if (jobShutdownAbort.signal.aborted) {
+    shutdownAbortRequested = true;
     abortController.abort();
   } else {
     jobShutdownAbort.signal.addEventListener("abort", onShutdownAbort, {
@@ -534,6 +585,9 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         abortController.signal,
       ),
     );
+    // Snapshot the shutdown request when encoding settles. A later SIGTERM
+    // must not replace a permanent encoder result with a shutdown hand-back.
+    const shutdownRequestedWhenEncodingSettled = shutdownAbortRequested;
 
     if (!result.success && jobTimedOut) result.kind = "timeout";
 
@@ -542,6 +596,16 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     }
 
     if (!result.success) {
+      // A timeout that fired before SIGTERM stays a timeout, and a failure the
+      // abort did not cause keeps its own classification.
+      if (
+        shutdownRequestedWhenEncodingSettled &&
+        !committedOutcome &&
+        !jobTimedOut &&
+        isAbortFailure(result.error, abortController.signal)
+      ) {
+        return await handBackOnShutdown(job);
+      }
       log.error(`Encoding failed: ${result.error}`);
       if (/No space left on device|ENOSPC/i.test(result.error ?? "")) {
         if (!activeJobClaim)
@@ -614,37 +678,72 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       }
     });
 
-    log.info(`Deleting from tmp-bucket: ${job.s3Key}`);
-    await measureStage(job, "deleting", () =>
-      deleteFromTmp(job.s3Key, abortController.signal),
-    );
-
-    // Generate content URL for VOD streaming
+    // Persist the completion before deleting the source. If shutdown or a
+    // worker crash happens while object storage is processing the delete, the
+    // reaper can finalize the uploaded output instead of requeueing a job whose
+    // input may already be gone.
     const contentUrl = getVodContentUrl(job.s3Key);
-
-    // The input is gone: if this worker dies now the job can no longer be
-    // re-encoded, so mark the claim with its outcome for the reaper. A
-    // failure here must not send the job down the retry path.
-    committedOutcome = {
+    const completion = {
       contentUrl,
       duration: result.duration,
       thumbnailKey: uploadedThumbnailKey,
     };
-    activeJobCommitted = true;
-    if (activeJobClaim) {
+    if (!activeJobClaim) {
+      throw new Error("Cannot commit an unclaimed encode job");
+    }
+    let committedMember: string | null = null;
+    let commitError: unknown;
+    for (let attempt = 0; attempt < 3 && !committedMember; attempt++) {
       try {
-        activeJobClaim = await commitProcessingJob(activeJobClaim, job, {
-          contentUrl,
-          duration: result.duration,
-          thumbnailKey: uploadedThumbnailKey,
-        });
-      } catch (claimError) {
-        log.error(
-          `Failed to mark processing claim committed: movieId=${job.movieId}`,
-          claimError,
+        committedMember = await commitProcessingJob(
+          activeJobClaim,
+          job,
+          completion,
         );
+      } catch (error) {
+        commitError = error;
+        if (attempt < 2) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 100 * 2 ** attempt),
+          );
+        }
       }
     }
+    if (!committedMember) {
+      // A lost Redis reply may hide a successful write. Reconcile the durable
+      // completion key before deciding whether this claim can be handed off.
+      const persistedCompletion = await getJobCompletion(
+        job.movieId,
+        job.s3Key,
+      ).catch(() => null);
+      if (persistedCompletion) {
+        committedMember = activeJobClaim;
+        completion.contentUrl = persistedCompletion.contentUrl;
+        completion.duration = persistedCompletion.duration;
+        completion.thumbnailKey = persistedCompletion.thumbnailKey;
+      }
+    }
+    if (!committedMember) {
+      // Keep the processing claim for the reaper. It will finalize a write
+      // whose reply was lost, or requeue the untouched source if Redis never
+      // persisted the completion. This is not a media failure or retry.
+      jobRelinquished = true;
+      log.error(
+        `Could not persist encode completion; leaving claim for reaper: movieId=${job.movieId}`,
+        commitError,
+      );
+      return "relinquished";
+    }
+    activeJobClaim = committedMember;
+    committedOutcome = completion;
+    activeJobCommitted = true;
+
+    // The durable completion record now protects a source deletion whose
+    // result may be uncertain during a shutdown or network failure.
+    log.info(`Deleting from tmp-bucket: ${job.s3Key}`);
+    await measureStage(job, "deleting", () =>
+      deleteFromTmp(job.s3Key, abortController.signal),
+    );
 
     if (jobRelinquished) {
       return "relinquished";
@@ -691,17 +790,14 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     if (jobRelinquished) {
       return "relinquished";
     }
+    // Same rule for thrown errors: only an abort-caused one is the shutdown's.
     if (
-      jobShutdownAbort.signal.aborted &&
+      shutdownAbortRequested &&
       !committedOutcome &&
-      activeJobClaim
+      !jobTimedOut &&
+      isAbortFailure(error, abortController.signal)
     ) {
-      jobRelinquished = true;
-      const requeued = await requeueProcessingJob(activeJobClaim, job);
-      if (!requeued) {
-        log.warn(`Shutdown claim already handed off: movieId=${job.movieId}`);
-      }
-      return "relinquished";
+      return await handBackOnShutdown(job);
     }
     if (committedOutcome) {
       // Input is already deleted — an encode retry would fail to download
@@ -780,8 +876,11 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
               ?.httpStatusCode,
           )
         : undefined;
+    // jobTimedOut is latched when the timer fires, so a SIGTERM that arrives
+    // afterwards cannot turn a timeout into a retryable failure.
     const timedOut =
-      abortController.signal.aborted && !jobShutdownAbort.signal.aborted;
+      jobTimedOut ||
+      (abortController.signal.aborted && !jobShutdownAbort.signal.aborted);
     const retryable =
       !timedOut &&
       ![400, 401, 403, 404, 405, 410, 413, 415].includes(httpStatus ?? -1);
@@ -960,24 +1059,38 @@ const shutdown = async (): Promise<void> => {
   }
   log.info("Shutting down...");
   isShuttingDown = true;
+  // Anything still encoding (or about to start) is stopped right away and
+  // handed back to the queue: waiting for it would just burn the grace period.
+  // A job that already committed its output can only be finalized, so it is
+  // allowed to finish.
+  const finalizing = activeJob !== null && activeJobCommitted;
+  if (!finalizing) {
+    if (activeJob) {
+      console.warn(
+        `Aborting in-flight job on shutdown: movieId=${activeJob.movieId}`,
+      );
+    }
+    jobShutdownAbort.abort();
+  }
+  // Wait for the job (if any) so its result metrics, progress updates and
+  // callbacks are sent before the provider is shut down.
   clearInterval(heartbeatTimer);
-  // Wait for the in-flight job (if any) so its result metrics, progress
-  // updates and callbacks are sent before the provider is shut down.
   await Promise.race([
     pollPromise,
-    new Promise((resolve) => setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS)),
+    new Promise((resolve) =>
+      setTimeout(
+        resolve,
+        finalizing ? SHUTDOWN_DRAIN_TIMEOUT_MS : SHUTDOWN_SETTLE_TIMEOUT_MS,
+      ),
+    ),
   ]);
-  // If the drain timed out mid-job, abort it so its own failure handling
-  // puts it back on the retry queue. Requeueing while it still runs would
-  // let a second worker process the same job concurrently.
-  if (activeJob) {
-    log.warn(
-      `Aborting in-flight job on shutdown: movieId=${activeJob.movieId}`,
-    );
+  // A finalizing job that is still stuck is aborted too, with one more short
+  // window before the last-resort handoff below.
+  if (activeJob && finalizing) {
     jobShutdownAbort.abort();
     await Promise.race([
       pollPromise,
-      new Promise((resolve) => setTimeout(resolve, SHUTDOWN_SETTLE_TIMEOUT_MS)),
+      new Promise((resolve) => setTimeout(resolve, 5_000)),
     ]);
   }
   // Last resort: the job did not settle even after abort. Atomically hand an
