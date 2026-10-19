@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
-import { PrismaClient } from "@prisma/client";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import mysql from "mysql2/promise";
 
-const prisma = new PrismaClient();
 const migrationLockName = "video-host-prisma-migrate";
 let activeChild;
+let activeConnection;
 let shutdownSignal;
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
@@ -11,9 +13,11 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     shutdownSignal = signal;
     if (activeChild) {
       activeChild.kill(signal);
+    } else if (activeConnection) {
+      // Destroying this dedicated session cancels GET_LOCK and releases it.
+      activeConnection.destroy();
+      process.exit(0);
     } else {
-      // Exiting closes the Prisma session, which releases any held lock and
-      // cancels a GET_LOCK call that is still waiting for another replica.
       process.exit(0);
     }
   });
@@ -40,39 +44,63 @@ function runChild(command, args) {
 
 try {
   console.info("Waiting for the database migration lock");
-  await prisma.$transaction(
-    async (transaction) => {
-      // Interactive transactions pin every `transaction` query to one MySQL
-      // connection. GET_LOCK is session-scoped, so this connection holds the
-      // gate while the CLI migrates on its own connection.
-      const result = await transaction.$queryRawUnsafe(
-        "SELECT GET_LOCK(?, 1800) AS acquired",
-        migrationLockName,
-      );
-      if (Number(result[0]?.acquired) !== 1) {
-        throw new Error("Timed out waiting for the database migration lock");
-      }
+  const databaseUrl = new URL(process.env.DATABASE_URL);
+  const sslCert = databaseUrl.searchParams.get("sslcert");
+  const sslIdentity = databaseUrl.searchParams.get("sslidentity");
+  const sslAccept = databaseUrl.searchParams.get("sslaccept");
+  const ssl =
+    sslCert || sslIdentity || sslAccept
+      ? {
+          ...(sslCert ? { ca: readFileSync(path.resolve("prisma", sslCert)) } : {}),
+          ...(sslIdentity
+            ? { pfx: readFileSync(path.resolve("prisma", sslIdentity)) }
+            : {}),
+          ...(databaseUrl.searchParams.has("sslpassword")
+            ? { passphrase: databaseUrl.searchParams.get("sslpassword") }
+            : {}),
+          rejectUnauthorized: sslAccept === "strict",
+        }
+      : undefined;
+  const connection = await mysql.createConnection({
+    host: databaseUrl.hostname.replace(/^\[|\]$/g, ""),
+    port: Number(databaseUrl.port || 3306),
+    user: decodeURIComponent(databaseUrl.username),
+    password: decodeURIComponent(databaseUrl.password),
+    database: decodeURIComponent(databaseUrl.pathname.slice(1)),
+    socketPath: databaseUrl.searchParams.get("socket") ?? undefined,
+    connectTimeout:
+      Number(databaseUrl.searchParams.get("connect_timeout") || 5) * 1000,
+    ssl,
+  });
+  activeConnection = connection;
+  let lockAcquired = false;
+  try {
+    const [rows] = await connection.execute(
+      "SELECT GET_LOCK(?, ?) AS acquired",
+      [migrationLockName, 1800],
+    );
+    if (Number(rows[0]?.acquired) !== 1) {
+      throw new Error("Timed out waiting for the database migration lock");
+    }
+    lockAcquired = true;
 
-      try {
-        console.info("Applying database migrations");
-        await runChild("./node_modules/.bin/prisma", ["migrate", "deploy"]);
-      } finally {
-        await transaction.$queryRawUnsafe(
-          "SELECT RELEASE_LOCK(?) AS released",
-          migrationLockName,
-        );
+    console.info("Applying database migrations");
+    await runChild("./node_modules/.bin/prisma", ["migrate", "deploy"]);
+  } finally {
+    try {
+      if (lockAcquired) {
+        await connection.execute("SELECT RELEASE_LOCK(?)", [migrationLockName]);
       }
-    },
-    { maxWait: 1_800_000, timeout: 86_400_000 },
-  );
+    } finally {
+      activeConnection = undefined;
+      await connection.end();
+    }
+  }
 
-  await prisma.$disconnect();
   if (!shutdownSignal) {
     await runChild(process.execPath, ["dist/index.js"]);
   }
 } catch (error) {
   console.error(error);
   process.exitCode = shutdownSignal ? 0 : 1;
-} finally {
-  await prisma.$disconnect();
 }
