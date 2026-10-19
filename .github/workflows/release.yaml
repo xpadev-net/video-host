@@ -198,7 +198,13 @@ jobs:
             PACKAGE="${entry%%:*}"
             FILE="${entry#*:}"
             if printf '%s\n' "$CHANGED" | grep -Fxq "$FILE"; then
-              VERSION="v$(node -p "require('./$FILE').version")"
+              PREVIOUS_VERSION="$(git show "$MERGE_SHA^1:$FILE" | node -e 'let data = ""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => process.stdout.write(JSON.parse(data).version))')"
+              VERSION="$(node -p "require('./$FILE').version")"
+              if [ "$VERSION" = "$PREVIOUS_VERSION" ]; then
+                echo "$PACKAGE=false" >> "$GITHUB_OUTPUT"
+                continue
+              fi
+              VERSION="v$VERSION"
               TAG="$PACKAGE-$VERSION"
               if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
                 echo "Release tag already exists: $TAG" >&2
