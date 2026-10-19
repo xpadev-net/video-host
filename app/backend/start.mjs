@@ -9,7 +9,13 @@ let shutdownSignal;
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
     shutdownSignal = signal;
-    activeChild?.kill(signal);
+    if (activeChild) {
+      activeChild.kill(signal);
+    } else {
+      // Exiting closes the Prisma session, which releases any held lock and
+      // cancels a GET_LOCK call that is still waiting for another replica.
+      process.exit(0);
+    }
   });
 }
 
