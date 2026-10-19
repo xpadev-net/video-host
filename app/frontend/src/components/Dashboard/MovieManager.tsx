@@ -43,6 +43,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const addMutationIdRef = useRef(0);
   const profileIdRef = useRef(selectedProfileId);
   const profileGenerationRef = useRef(0);
+  const previousSelectionRef = useRef({ selectedAccountId, selectedProfileId });
   const moviesRef = useRef(movies);
   const mountedRef = useRef(true);
   if (profileIdRef.current !== selectedProfileId) {
@@ -113,9 +114,18 @@ export const MovieManager: FC<MovieManagerProps> = ({
   );
 
   useEffect(() => {
-    setSelectedMovieId("");
     void fetchAvailableMovies(selectedProfileId);
   }, [fetchAvailableMovies, selectedProfileId]);
+
+  useEffect(() => {
+    if (
+      previousSelectionRef.current.selectedAccountId === selectedAccountId &&
+      previousSelectionRef.current.selectedProfileId === selectedProfileId
+    )
+      return;
+    previousSelectionRef.current = { selectedAccountId, selectedProfileId };
+    setSelectedMovieId("");
+  }, [selectedAccountId, selectedProfileId]);
 
   const handleAddMovie = async () => {
     if (!selectedMovieId || !session) return;

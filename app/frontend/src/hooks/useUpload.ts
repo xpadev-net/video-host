@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from "react";
-import { ApiEndpoint } from "@/contexts/env";
 import { client, getSelectedProfileId } from "@/lib/client";
 
 export type UploadPhase =
@@ -108,11 +107,9 @@ export const useUpload = (): UseUploadResult => {
 
   const completeUpload = useCallback(async (movieId: string): Promise<void> => {
     setState((prev) => ({ ...prev, phase: "completing", progress: 100 }));
-    const res = await fetch(
-      `${ApiEndpoint}/api/v4/upload/${encodeURIComponent(movieId)}/complete`,
+    const res = await client.api.v4.upload[":movieId"].complete.$post(
+      { param: { movieId } },
       {
-        method: "POST",
-        credentials: "include",
         headers: {
           "X-Profile-Id": profileByMovieIdRef.current.get(movieId) ?? "",
         },
