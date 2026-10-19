@@ -21,9 +21,17 @@ The root `.env.example` is a combined reference for environment managers that in
 | `REDIS_SENTINEL_HOSTS`, `REDIS_SENTINEL_NAME`, `REDIS_SENTINEL_PASSWORD` | Optional Redis Sentinel configuration |
 | `S3_TMP_BUCKET`, `S3_PROD_BUCKET`, `S3_REGION` | Source and output bucket names and AWS region |
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, `S3_FORCE_PATH_STYLE` | S3-compatible credentials and endpoint; endpoint/path-style settings support the local SeaweedFS S3 API |
-| `BACKEND_CALLBACK_URL`, `CALLBACK_SECRET` | Backend origin and shared machine secret for completion callbacks |
+| `BACKEND_BASE_URL`, `CALLBACK_SECRET` | Backend base URL (including any deployment path prefix) and shared machine secret for completion callbacks |
 | `VOD_BASE_URL` | Browser-reachable public VOD origin, without a trailing `/vod` path |
 | `POLL_INTERVAL_MS`, `TEMP_DIR`, `MIN_DISK_SPACE_GB`, `JOB_TIMEOUT_SECONDS`, `FFMPEG_THREADS` | Queue polling and local encoding resource limits |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_SERVICE_NAME` | Optional OpenTelemetry metrics export configuration |
 
 See the backend README for callback security and the root README for the local service topology.
+
+The worker accepts MP4/MOV, Matroska/WebM, AVI, MPEG-TS/PS, FLV, and ASF inputs up to 3840×2160 and two hours. HLS playlists and concat inputs are rejected; the transcoder also restricts input protocols to local files and crypto wrappers. Outputs are H.264 High/yuv420p at up to 1080p with 48 kHz stereo AAC, and HDR sources are tone-mapped to BT.709.
+
+## Retry and dead-letter queues
+
+Transient failures are retried up to `MAX_RETRY_COUNT` (currently three retries) with 1, 2, and 4 minute delays. Timeouts, invalid media, oversized inputs, and exhausted retries are written to the `video:encode:dead` sorted set with a reason and, when available, the stderr tail. The set retains the newest 10,000 entries. Disk pressure defers a job for one minute without consuming a retry. Malformed queue entries are dead-lettered with their raw payload.
+
+Inspect dead letters with `redis-cli ZRANGE video:encode:dead 0 -1`. For a valid entry, use its `job` object to create a fresh encode queue message after addressing the recorded cause. A manually requeued message must include `movieId`, `s3Key`, `userId`, and `createdAt`; reset or omit `retryCount` to give it a fresh retry budget. Malformed entries store the original payload under `raw` and need to be repaired before requeueing.

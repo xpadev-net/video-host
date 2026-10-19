@@ -140,7 +140,10 @@ export const deleteTmpFile = async (key: string): Promise<void> => {
 };
 
 export const deleteProdFile = async (key: string): Promise<void> => {
-  await deleteFromS3(S3_PROD_BUCKET, key);
+  await Promise.all([
+    deleteFromS3(S3_PROD_BUCKET, key),
+    deleteFromS3(S3_PROD_BUCKET, `${key}.jpg`),
+  ]);
 };
 
 export { S3_PROD_BUCKET, S3_TMP_BUCKET };

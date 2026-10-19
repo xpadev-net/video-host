@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { availableParallelism } from "node:os";
 
 /**
  * Requires an environment variable to be set.
@@ -36,8 +37,11 @@ export const S3_ENDPOINT = process.env.S3_ENDPOINT;
 export const S3_FORCE_PATH_STYLE = process.env.S3_FORCE_PATH_STYLE === "true";
 
 // Backend callback
-export const BACKEND_CALLBACK_URL =
-  process.env.BACKEND_CALLBACK_URL || "http://localhost:3001";
+export const BACKEND_BASE_URL =
+  process.env.BACKEND_BASE_URL ||
+  // Keep the old setting as a compatibility fallback for existing deployments.
+  process.env.BACKEND_CALLBACK_URL ||
+  "http://localhost:3001";
 export const CALLBACK_SECRET = requireEnv(
   "CALLBACK_SECRET",
   "dev-callback-secret",
@@ -67,7 +71,7 @@ export const JOB_TIMEOUT_SECONDS = parseInt(
 );
 export const FFMPEG_THREADS = process.env.FFMPEG_THREADS
   ? parseInt(process.env.FFMPEG_THREADS, 10)
-  : undefined; // undefined means use default (all available CPUs)
+  : Math.min(2, availableParallelism());
 
 // OpenTelemetry metrics export (disabled when the endpoint is unset)
 export const OTEL_EXPORTER_OTLP_ENDPOINT =

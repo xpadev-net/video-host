@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import { CALLBACK_SECRET } from "@/env";
 import { prisma } from "@/lib/prisma";
+import { createVodThumbnailUrl } from "@/lib/vod-token";
 import { HttpUrlSchema } from "@/utils/inputSchemas";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
@@ -18,6 +19,7 @@ const EncodeCompleteSchema = z.object({
   contentUrl: HttpUrlSchema.optional(), // The final content URL for streaming
   duration: z.number().int().nonnegative().max(2_147_483_647).optional(),
   thumbnailUrl: HttpUrlSchema.optional(),
+  thumbnailKey: z.string().min(1).max(512).optional(),
 });
 
 const app = new Hono<Env>();
@@ -41,7 +43,16 @@ export const callbackRoute = app.post(
       contentUrl,
       duration,
       thumbnailUrl,
+      thumbnailKey,
     } = c.req.valid("json");
+
+    if (thumbnailKey && thumbnailKey !== `${s3Key}.jpg`) {
+      badRequest("Invalid thumbnail key");
+    }
+    const persistedThumbnailUrl =
+      status === "success" && thumbnailKey && contentUrl
+        ? createVodThumbnailUrl(contentUrl, thumbnailKey)
+        : thumbnailUrl;
 
     const movie = await prisma.movie.findUnique({
       where: { id: movieId },
@@ -86,13 +97,15 @@ export const callbackRoute = app.post(
 
       if (
         status === "success" &&
-        (duration !== undefined || thumbnailUrl !== undefined)
+        (duration !== undefined || persistedThumbnailUrl !== undefined)
       ) {
         await tx.movie.update({
           where: { id: movieId },
           data: {
             ...(duration === undefined ? {} : { duration }),
-            ...(thumbnailUrl === undefined ? {} : { thumbnailUrl }),
+            ...(persistedThumbnailUrl === undefined
+              ? {}
+              : { thumbnailUrl: persistedThumbnailUrl }),
           },
         });
       }

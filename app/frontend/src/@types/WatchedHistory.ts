@@ -1,8 +1,10 @@
-import type { FormattedMovie } from "@video-host/backend";
-
-export type WatchedHistory = {
-  [key: string]: {
-    movie: FormattedMovie;
-    watched: number;
-  };
+export type WatchedHistoryEntry = {
+  movieId: string;
+  title: string;
+  thumbnailUrl: string | null;
+  duration: number;
+  watched: number;
+  updatedAt: number;
 };
+
+export type WatchedHistory = Record<string, WatchedHistoryEntry>;

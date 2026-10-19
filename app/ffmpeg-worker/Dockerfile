@@ -7,8 +7,10 @@ ENV PATH=$PNPM_HOME:$PATH
 RUN npm install --global corepack@0.34.5 \
     && corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY app/contracts/package.json ./app/contracts/
 COPY app/ffmpeg-worker/package.json ./app/ffmpeg-worker/
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/ffmpeg-worker
+COPY app/contracts/ ./app/contracts/
 COPY app/ffmpeg-worker/ ./app/ffmpeg-worker/
 RUN pnpm --filter @video-host/ffmpeg-worker build
 RUN pnpm --filter @video-host/ffmpeg-worker --prod deploy --legacy /prod/worker

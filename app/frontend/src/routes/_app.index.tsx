@@ -70,7 +70,7 @@ function IndexRoute() {
         )}
       </div>
       {!hasNext && (
-        <div style={{ textAlign: "center", color: "#888" }}>
+        <div className="text-center text-[var(--color-sub-text)]">
           これ以上データはありません
         </div>
       )}
