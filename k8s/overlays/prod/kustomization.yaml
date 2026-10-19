@@ -63,7 +63,7 @@ configMapGenerator:
       - redis-url=redis://redis:6379
       - redis-sentinel-hosts=
       - redis-sentinel-name=
-      - vod-base-url=https://vod/vod
+      - vod-base-url=https://your-vod-domain.com
 
   # Frontend
   - name: frontend-config
@@ -89,7 +89,7 @@ configMapGenerator:
       # Keep bucket in the URI path to match backend-generated media mappings.
       - s3-force-path-style=true
       - backend-callback-url=http://backend:3000/api/internal/video/callback
-      - vod-base-url=https://vod/vod
+      - vod-base-url=https://your-vod-domain.com
       - poll-interval-ms=5000
 
   # VOD nginx config
