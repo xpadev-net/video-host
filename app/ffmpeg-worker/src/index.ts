@@ -705,8 +705,11 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
               ?.httpStatusCode,
           )
         : undefined;
+    // jobTimedOut is latched when the timer fires, so a SIGTERM that arrives
+    // afterwards cannot turn a timeout into a retryable failure.
     const timedOut =
-      abortController.signal.aborted && !jobShutdownAbort.signal.aborted;
+      jobTimedOut ||
+      (abortController.signal.aborted && !jobShutdownAbort.signal.aborted);
     const retryable =
       !timedOut &&
       ![400, 401, 403, 404, 405, 410, 413, 415].includes(httpStatus ?? -1);
