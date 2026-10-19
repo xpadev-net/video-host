@@ -28,6 +28,7 @@ const PlayerStateAtom = atom<PlayerState>({
   isLoading: true,
   isSetting: false,
   isFullscreen: false,
+  error: null,
 });
 const PlayerConfigAtom = atomWithStorage<PlayerConfig>("playerConfig", {
   windowFullscreen: true,

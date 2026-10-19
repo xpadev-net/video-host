@@ -123,6 +123,14 @@ export function PlayerSurface({
             movie={data}
           />
           <PlayerStatusDisplay />
+          {state.error && (
+            <div
+              role="alert"
+              className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 px-4 text-center text-sm text-white"
+            >
+              {state.error}
+            </div>
+          )}
         </div>
       </button>
       {isMobile ? (
