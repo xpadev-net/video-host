@@ -4,18 +4,22 @@ import useSWR, { type SWRConfiguration } from "swr";
 const useStickyResult = <T>(
   value: T | null | undefined,
   isEnabled: boolean,
+  key: unknown,
 ): T | undefined => {
-  const val = useRef<T | undefined>(undefined);
+  const val = useRef<{ key: unknown; value: T } | undefined>(undefined);
   useEffect(() => {
     if (!isEnabled) {
       val.current = undefined;
     } else if (value !== null && value !== undefined) {
-      val.current = value;
+      val.current = { key, value };
     }
-  }, [isEnabled, value]);
+  }, [isEnabled, key, value]);
 
   if (!isEnabled) return undefined;
-  return value !== null && value !== undefined ? value : val.current;
+  if (value !== null && value !== undefined) return value;
+  const stickyValue = val.current;
+  if (stickyValue && stickyValue.key === key) return stickyValue.value;
+  return undefined;
 };
 
 export const useStickySWR = <T, U, V extends SWRConfiguration>(
@@ -34,6 +38,6 @@ export const useStickySWR = <T, U, V extends SWRConfiguration>(
   const isEnabled = Boolean(key);
   return {
     ...swr,
-    data: useStickyResult(swr.data, isEnabled) as T,
+    data: useStickyResult(swr.data, isEnabled, key) as T,
   };
 };

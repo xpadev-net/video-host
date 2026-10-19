@@ -22,7 +22,7 @@ function IndexRoute() {
 
   return (
     <div className="p-4">
-      <div className="grid gap-0.5 grid-cols-[repeat(auto-fill,_minmax(min(100%,_320px),_1fr))]">
+      <div className="grid gap-0.5 grid-cols-[repeat(auto-fill,_minmax(min(100%,_280px),_1fr))]">
         {movies.map((movie) => (
           <MovieCard
             key={movie.id}
