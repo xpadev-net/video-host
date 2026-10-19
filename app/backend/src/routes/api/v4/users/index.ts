@@ -7,23 +7,11 @@ import { filterUser } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
 import { meRoute } from "@/routes/api/v4/users/me";
 import { profilesRoute } from "@/routes/api/v4/users/profiles";
+import { paginationQuerySchema } from "@/utils/pagination";
 import { ok } from "@/utils/response/ok";
 import { userRoute } from "./[user]";
 
-const DEFAULT_PAGE_SIZE = 100;
-const MAX_PAGE_SIZE = 200;
-
-const QuerySchema = z.object({
-  page: z
-    .string()
-    .optional()
-    .default("1")
-    .transform((v) => parseInt(v, 10)),
-  limit: z
-    .string()
-    .optional()
-    .default(DEFAULT_PAGE_SIZE.toString())
-    .transform((v) => Math.min(parseInt(v, 10), MAX_PAGE_SIZE)),
+const QuerySchema = paginationQuerySchema().extend({
   query: z.string().optional(),
 });
 

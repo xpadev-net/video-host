@@ -5,6 +5,7 @@ import { BackendEnvSchema, DEV_DEFAULTS, EnvSchema } from "../env";
 
 const production = (changes: Record<string, string | undefined> = {}) => ({
   NODE_ENV: "production",
+  DATABASE_URL: "mysql://video_host:test@db.example.com:3306/video_host",
   BETTER_AUTH_SECRET: "synthetic-test-secret-with-at-least-32-characters",
   BETTER_AUTH_URL: "https://video.example.com",
   FRONTEND_URL: "https://video.example.com",
@@ -37,8 +38,6 @@ describe("authentication environment", () => {
     );
     const schemaKeys = new Set(Object.keys(BackendEnvSchema.shape));
 
-    // Prisma reads DATABASE_URL directly; it is not part of the runtime Zod schema.
-    schemaKeys.add("DATABASE_URL");
     expect([...documentedKeys].sort()).toEqual([...schemaKeys].sort());
 
     const workspaceRoot = existsSync(

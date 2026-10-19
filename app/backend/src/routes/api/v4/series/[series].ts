@@ -14,7 +14,13 @@ import {
   buildMovieAccessWhere,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
+import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
 import { canManageMovie } from "@/utils/movieAuth";
+import {
+  PageNumberSchema,
+  pageSizeSchema,
+  paginationQuerySchema,
+} from "@/utils/pagination";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { isSystemAccount } from "@/utils/systemAccountCache";
@@ -24,9 +30,19 @@ const app = new Hono<Env>();
 const DEFAULT_MOVIES_LIMIT = 20;
 const MAX_MOVIES_LIMIT = 100;
 
+const SeriesDetailQuerySchema = z.object({
+  moviesPage: PageNumberSchema,
+  moviesLimit: pageSizeSchema(DEFAULT_MOVIES_LIMIT, MAX_MOVIES_LIMIT),
+  includeMoviesCount: z.string().optional(),
+});
+const SeriesMoviesQuerySchema = paginationQuerySchema(
+  DEFAULT_MOVIES_LIMIT,
+  MAX_MOVIES_LIMIT,
+);
+
 const SeriesPatchSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
+  title: TitleSchema.optional(),
+  description: DescriptionSchema.nullable().optional(),
   visibility: ZBasicVisibility.optional(),
 });
 
@@ -39,23 +55,15 @@ const ReorderMoviesSchema = z.object({
 });
 
 export const seriesDetailRoute = app
-  .get("/:series", async (c) => {
+  .get("/:series", zValidator("query", SeriesDetailQuerySchema), async (c) => {
     const seriesId = c.req.param("series");
     if (!seriesId) {
       notFound("Series not found");
     }
 
     // Check if client requests paginated movies
-    const moviesPage = parseInt(c.req.queries("moviesPage")?.[0] || "1", 10);
-    const moviesLimit = Math.min(
-      parseInt(
-        c.req.queries("moviesLimit")?.[0] || DEFAULT_MOVIES_LIMIT.toString(),
-        10,
-      ),
-      MAX_MOVIES_LIMIT,
-    );
-    const includeMoviesCount =
-      (c.req.queries("includeMoviesCount")?.length ?? 0) > 0;
+    const { moviesPage, moviesLimit, includeMoviesCount } =
+      c.req.valid("query");
 
     const user = c.get("user");
     const movieAccessWhere = buildMovieAccessWhere(user);
@@ -98,7 +106,7 @@ export const seriesDetailRoute = app
     // depend on the current page being non-empty: an out-of-range offset
     // returns zero rows while totalPages/hasNext/hasPrev still describe the
     // filtered result set.
-    if (includeMoviesCount) {
+    if (includeMoviesCount !== undefined) {
       const totalMoviesCount = await prisma.movie.count({
         where: { seriesId: seriesId, ...movieAccessWhere },
       });
@@ -154,7 +162,8 @@ export const seriesDetailRoute = app
       },
       data: {
         title: title ?? existingSeries.title,
-        description: description ?? existingSeries.description,
+        description:
+          description === undefined ? existingSeries.description : description,
         visibility: visibility ?? existingSeries.visibility,
       },
       include: {
@@ -212,83 +221,80 @@ export const seriesDetailRoute = app
 
     return ok(c, { success: true });
   })
-  .get("/:series/movies", async (c) => {
-    const seriesId = c.req.param("series");
-    if (!seriesId) {
-      notFound("Series not found");
-    }
+  .get(
+    "/:series/movies",
+    zValidator("query", SeriesMoviesQuerySchema),
+    async (c) => {
+      const seriesId = c.req.param("series");
+      if (!seriesId) {
+        notFound("Series not found");
+      }
 
-    const page = parseInt(c.req.queries("page")?.[0] || "1", 10);
-    const limit = Math.min(
-      parseInt(
-        c.req.queries("limit")?.[0] || DEFAULT_MOVIES_LIMIT.toString(),
-        10,
-      ),
-      MAX_MOVIES_LIMIT,
-    );
+      const { page, limit } = c.req.valid("query");
 
-    // First check if series exists and user has access
-    const user = c.get("user");
-    const series = await prisma.series.findFirst({
-      where: { id: seriesId },
-    });
+      // First check if series exists and user has access
+      const user = c.get("user");
+      const series = await prisma.series.findFirst({
+        where: { id: seriesId },
+      });
 
-    if (!series) {
-      notFound("Series not found");
-    }
+      if (!series) {
+        notFound("Series not found");
+      }
 
-    if (!canViewOwnedEntity(series, user)) {
-      notFound("Series not found");
-    }
+      if (!canViewOwnedEntity(series, user)) {
+        notFound("Series not found");
+      }
 
-    const moviesWhere = { seriesId, ...buildMovieAccessWhere(user) };
+      const moviesWhere = { seriesId, ...buildMovieAccessWhere(user) };
 
-    // Get total count and movies
-    const totalCount = await prisma.movie.count({
-      where: moviesWhere,
-    });
+      // Get total count and movies
+      const totalCount = await prisma.movie.count({
+        where: moviesWhere,
+      });
 
-    const movies = await prisma.movie.findMany({
-      where: moviesWhere,
-      include: {
-        author: true,
-        series: {
-          include: {
-            author: true,
+      const movies = await prisma.movie.findMany({
+        where: moviesWhere,
+        include: {
+          author: true,
+          series: {
+            include: {
+              author: true,
+            },
           },
+          variants: true,
         },
-        variants: true,
-      },
-      orderBy: [
-        {
-          order: "asc",
+        orderBy: [
+          {
+            order: "asc",
+          },
+          {
+            createdAt: "asc",
+          },
+        ],
+        take: limit,
+        skip: (page - 1) * limit,
+      });
+
+      const totalPages = Math.ceil(totalCount / limit);
+      const hasNext = page < totalPages;
+      const hasPrev = page > 1;
+
+      const response: PaginatedResponse<FormattedMovie> = {
+        items: movies.map((v) => formatMovie(filterMovie(v))),
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages,
+          hasNext,
+          hasPrev,
         },
-        {
-          createdAt: "asc",
-        },
-      ],
-      take: limit,
-      skip: (page - 1) * limit,
-    });
+      };
 
-    const totalPages = Math.ceil(totalCount / limit);
-    const hasNext = page < totalPages;
-    const hasPrev = page > 1;
-
-    const response: PaginatedResponse<FormattedMovie> = {
-      items: movies.map((v) => formatMovie(filterMovie(v))),
-      pagination: {
-        page,
-        limit,
-        totalCount,
-        totalPages,
-        hasNext,
-        hasPrev,
-      },
-    };
-
-    return ok(c, response);
-  })
+      return ok(c, response);
+    },
+  )
   .post("/:series/movies", zValidator("json", AddMovieSchema), async (c) => {
     const user = c.get("user");
     if (!user) {

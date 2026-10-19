@@ -9,6 +9,7 @@ export type SeriesResponse = InferResponseType<SeriesApiType>;
 const fetcher = async (key?: string): Promise<SeriesResponse> => {
   if (!key) throw new Error("no series");
   const res = await client.api.v4.series[":series"].$get({
+    query: {},
     param: { series: key },
   });
   return (await res.json()) as SeriesResponse;

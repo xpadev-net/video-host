@@ -12,16 +12,21 @@ import {
   canViewMovie,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
+import {
+  DescriptionSchema,
+  MAX_VIEWER_IDS,
+  TitleSchema,
+} from "@/utils/inputSchemas";
 import { assertCanManageSeries, canManageMovie } from "@/utils/movieAuth";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const MoviePatchSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
+  title: TitleSchema.optional(),
+  description: DescriptionSchema.nullable().optional(),
   seriesId: z.string().optional().nullable(),
   visibility: ZVisibility.optional(),
-  viewerIds: z.array(z.string()).optional(),
+  viewerIds: z.array(z.string()).max(MAX_VIEWER_IDS).optional(),
   order: z.number().optional(),
 });
 
@@ -151,7 +156,8 @@ export const movieRoute = app
       },
       data: {
         title: title ?? existingMovie.title,
-        description: description ?? existingMovie.description,
+        description:
+          description === undefined ? existingMovie.description : description,
         seriesId:
           seriesId === null ? null : (seriesId ?? existingMovie.seriesId),
         visibility: visibility ?? existingMovie.visibility,

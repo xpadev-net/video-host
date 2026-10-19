@@ -3,12 +3,13 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import { prisma } from "@/lib/prisma";
+import { NameSchema, UsernameSchema } from "@/utils/inputSchemas";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const CreateSystemAccountSchema = z.object({
-  username: z.string().min(1),
-  name: z.string().min(1),
+  username: UsernameSchema,
+  name: NameSchema,
 });
 
 const app = new Hono<Env>();
