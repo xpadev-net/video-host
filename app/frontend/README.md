@@ -38,7 +38,6 @@ checks require a production build. To match CI, copy
 - `API_UPSTREAM_URL`（サーバー専用）: バックエンドの接続先。ローカルは `http://127.0.0.1:3001`、コンテナは `http://backend:3000`。`VITE_` を付けない
 - `DEV_SERVER_HOST`（任意）: Vite 開発サーバーを remote/devcontainer の信頼できるネットワークに公開する場合のみ `0.0.0.0` を設定。既定値は loopback のみ
 - `VITE_SITE_NAME`: サイト名
-- `VITE_ENABLE_COMMENTS`: コメント表示の有効化
 - `HOST` / `PORT`: Nitro サーバーの bind address と port (既定値 `0.0.0.0` / `3000`)
 - `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` / `OTEL_SERVICE_NAME`: 任意の OpenTelemetry metrics export 設定
 

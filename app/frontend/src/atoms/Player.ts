@@ -1,5 +1,4 @@
 import type { FormattedMovie } from "@video-host/backend";
-import type { Options } from "@xpadev-net/niconicomments";
 import type Hls from "hls.js";
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
@@ -34,8 +33,6 @@ const PlayerConfigAtom = atomWithStorage<PlayerConfig>("playerConfig", {
   windowFullscreen: true,
   autoPlay: true,
   isTheatre: false,
-  isPipEnable: false,
-  isNiconicommentsEnable: true,
 });
 
 const PlayerPlaybackRateAtom = atomWithStorage<number>(
@@ -46,11 +43,6 @@ const PlayerPlaybackRateAtom = atomWithStorage<number>(
 const PlayerVolumeAtom = atomWithStorage<number>(
   "playerConfig.playerVolume",
   1,
-);
-
-const NiconicommentsConfigAtom = atomWithStorage<Options>(
-  "niconicommentsConfig",
-  { format: "v1", enableLegacyPiP: true },
 );
 
 const PlayerSettingAtom = atom<SettingKey[]>(["main"]);
@@ -70,7 +62,6 @@ export {
   CurrentMovieAtom,
   DurablePlayerAtom,
   HlsRefAtom,
-  NiconicommentsConfigAtom,
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
   PlayerPlayPauseNotificationAtom,

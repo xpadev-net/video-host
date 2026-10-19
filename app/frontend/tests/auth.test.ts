@@ -96,7 +96,7 @@ test("API endpoint placeholders are safe before runtime substitution", () => {
 
 test("runtime flags remain configurable after placeholder builds", () => {
   assert.equal(resolveRuntimeFlag(undefined), false);
-  assert.equal(resolveRuntimeFlag("_VITE_ENABLE_COMMENTS_"), false);
+  assert.equal(resolveRuntimeFlag("_VITE_RUNTIME_FLAG_"), false);
   assert.equal(resolveRuntimeFlag("true"), true);
   assert.equal(resolveRuntimeFlag("false"), false);
 });

@@ -168,9 +168,6 @@ importers:
       '@tanstack/react-start':
         specifier: ^1.169.3
         version: 1.169.3(esbuild@0.28.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(rolldown@1.2.13)(rollup@4.60.0)(vite@8.3.4(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
-      '@xpadev-net/niconicomments':
-        specifier: ^0.2.78
-        version: 0.2.78
       better-auth:
         specifier: ^1.7.7
         version: 1.7.7(@opentelemetry/api@1.9.1)(@prisma/client@6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3))(@tanstack/react-start@1.169.3(esbuild@0.28.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(rolldown@1.2.13)(vite@8.3.4(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(mysql2@3.24.6(@types/node@22.20.5))(prisma@6.19.3(typescript@5.9.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@4.1.11)
@@ -1753,10 +1750,6 @@ packages:
 
   '@vitest/utils@4.1.11':
     resolution: {integrity: sha512-zTCVGpyFsGWBhllOyKlTw/vnr6D9qxsfSDyfbyZmTyjHw5N/VuvzHpHoQjm2ZJzn4RJgx5w4r7V0er69CmLgPQ==}
-
-  '@xpadev-net/niconicomments@0.2.78':
-    resolution: {integrity: sha512-DB1FOfAdhPXWPvUv/9Rbt4JwI79zQF37xcwfXOQbhHZ0twbS75oof+4XxD5dMTqAYXMaLAavho+Hx8a6Gr6Pyg==}
-    engines: {node: '>=20.0.0'}
 
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
@@ -4720,8 +4713,6 @@ snapshots:
       '@vitest/pretty-format': 4.1.11
       convert-source-map: 2.0.0
       tinyrainbow: 3.2.0
-
-  '@xpadev-net/niconicomments@0.2.78': {}
 
   agent-base@7.1.4: {}
 

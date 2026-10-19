@@ -1,15 +1,5 @@
-import type { Options } from "@xpadev-net/niconicomments";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import {
-  Activity,
-  AppWindow,
-  AudioLines,
-  Gauge,
-  MessageSquareText,
-  PictureInPicture2,
-  Sigma,
-  VectorSquare,
-} from "lucide-react";
+import { AppWindow, AudioLines, Gauge } from "lucide-react";
 import type {
   SelectionItem,
   SettingKey,
@@ -19,7 +9,6 @@ import {
   AudioTrackIdAtom,
   AudioTracksAtom,
   HlsRefAtom,
-  NiconicommentsConfigAtom,
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
   PlayerSettingAtom,
@@ -27,7 +16,6 @@ import {
   VideoRefAtom,
   WrapperRefAtom,
 } from "@/atoms/Player";
-import { EnableComments } from "@/contexts/env";
 
 const suggestedRate = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 4];
 
@@ -55,9 +43,6 @@ export const useSettingDefinitions = (): Record<
 > => {
   const [playerConfig, setPlayerConfig] = useAtom(PlayerConfigAtom);
   const [state, setState] = useAtom(PlayerStateAtom);
-  const [niconicommentsConfig, setNiconicommentsConfig] = useAtom(
-    NiconicommentsConfigAtom,
-  );
   const wrapperRef = useAtomValue(WrapperRefAtom);
   const videoRef = useAtomValue(VideoRefAtom);
   const setPlayerSetting = useSetAtom(PlayerSettingAtom);
@@ -98,27 +83,6 @@ export const useSettingDefinitions = (): Record<
     setPlayerSetting((prev) => prev.filter((page) => page !== "audioTrack"));
   };
 
-  const toggleCommentActive = (isNiconicommentsEnable: boolean) => {
-    setPlayerConfig((prev) => ({
-      ...prev,
-      isNiconicommentsEnable,
-    }));
-  };
-
-  const updateNiconicommentsConfig = (key: keyof Options, enabled: boolean) => {
-    setNiconicommentsConfig((prev) => ({
-      ...prev,
-      [key]: enabled,
-    }));
-  };
-
-  const togglePipEnable = (isPipEnable: boolean) => {
-    setPlayerConfig((prev) => ({
-      ...prev,
-      isPipEnable,
-    }));
-  };
-
   const mainConfig: SettingPageConfig = [
     {
       type: "navigation",
@@ -137,19 +101,6 @@ export const useSettingDefinitions = (): Record<
             icon: AudioLines,
             targetPage: "audioTrack" as SettingKey,
             getValue: () => audioTrackLabel(audioTrackId),
-          },
-        ]
-      : []),
-    ...(EnableComments
-      ? [
-          {
-            type: "navigation" as const,
-            id: "comments",
-            label: "コメント",
-            icon: MessageSquareText,
-            targetPage: "comments" as SettingKey,
-            getValue: () =>
-              playerConfig.isNiconicommentsEnable ? "有効" : "無効",
           },
         ]
       : []),
@@ -196,60 +147,9 @@ export const useSettingDefinitions = (): Record<
     ),
   ];
 
-  const commentsConfig: SettingPageConfig = [
-    {
-      type: "back",
-      label: "コメント",
-      targetPage: "comments",
-    },
-    {
-      type: "toggle",
-      id: "isNiconicommentsEnable",
-      label: "コメント",
-      icon: MessageSquareText,
-      getValue: () => playerConfig.isNiconicommentsEnable,
-      onChange: toggleCommentActive,
-    },
-    {
-      type: "toggle",
-      id: "showFPS",
-      label: "FPS表示",
-      icon: Activity,
-      getValue: () => !!niconicommentsConfig.showFPS,
-      onChange: (enabled) => updateNiconicommentsConfig("showFPS", enabled),
-    },
-    {
-      type: "toggle",
-      id: "showCollision",
-      label: "当たり判定表示",
-      icon: VectorSquare,
-      getValue: () => !!niconicommentsConfig.showCollision,
-      onChange: (enabled) =>
-        updateNiconicommentsConfig("showCollision", enabled),
-    },
-    {
-      type: "toggle",
-      id: "showCommentCount",
-      label: "コメント数表示",
-      icon: Sigma,
-      getValue: () => !!niconicommentsConfig.showCommentCount,
-      onChange: (enabled) =>
-        updateNiconicommentsConfig("showCommentCount", enabled),
-    },
-    {
-      type: "toggle",
-      id: "isPipEnable",
-      label: "PiP",
-      icon: PictureInPicture2,
-      getValue: () => playerConfig.isPipEnable,
-      onChange: togglePipEnable,
-    },
-  ];
-
   return {
     main: mainConfig,
     playbackRate: playbackRateConfig,
-    comments: commentsConfig,
     audioTrack: audioTrackConfig,
   };
 };
