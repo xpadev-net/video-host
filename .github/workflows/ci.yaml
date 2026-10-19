@@ -86,6 +86,9 @@ jobs:
       - name: Create Prisma shadow database
         run: docker exec "${{ job.services.mysql.id }}" mysql -uroot -proot -e "CREATE DATABASE video_host_shadow;"
 
+      - name: Apply Prisma migrations to CI database
+        run: pnpm -F @video-host/backend exec prisma migrate deploy
+
       - name: Check Prisma migration history
         run: pnpm -F @video-host/backend prisma:schema-check
 

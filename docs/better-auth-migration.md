@@ -24,10 +24,11 @@ New logins create a HUMAN domain profile with ordinary USER role. One AuthUser c
 
 ## Apply schema and bootstrap
 
-With a backup and only the new build selected, run from the repository root:
+The backend container entrypoint takes a MySQL advisory lock on a dedicated database connection, runs `prisma migrate deploy`, releases the lock, then starts the API. Replicas therefore wait for one another instead of running migrations concurrently. The Kubernetes startup probe allows up to one hour for migrations and API startup. Take a database backup and review pending migrations before deploying. The lock does not stop old application replicas from using the database during a migration. For a migration that drops or renames data, or otherwise breaks compatibility with the previous backend, use a maintenance window: stop the old backend replicas before starting the new image, then verify migrations and the API before restoring traffic. Ordinary rolling updates are safe only when migrations retain compatibility with both application versions while old and new replicas overlap.
+
+To apply migrations manually when operating a disposable or stopped deployment, run from the repository root:
 
     pnpm -F @video-host/backend exec prisma migrate deploy
-    pnpm -F @video-host/backend prisma:generate
 
 Migration `20261001060000_better_auth` drops the old `Session` table and `User.password` column. It preserves content rows and adds the authentication models/mapping. Do not run `db push --accept-data-loss` as a substitute.
 
