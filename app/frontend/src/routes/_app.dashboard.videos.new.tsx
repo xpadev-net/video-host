@@ -2,7 +2,13 @@ import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
 import type { FilteredUser, Visibility } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { Film } from "lucide-react";
-import { type ChangeEvent, type FormEvent, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { useConfirm } from "@/components/Feedback/FeedbackProvider";
@@ -40,14 +46,20 @@ function NewVideoPage() {
   const [savePending, setSavePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadActiveRef = useRef(false);
+  const uploadOperationRef = useRef(0);
 
   // Latest form values for the auto-save that fires when the upload lands;
   // the .then callback registered at file-select time would otherwise save
   // stale values and clobber whatever the user typed while uploading.
   const metadataRef = useRef({ title, description, visibility, viewers });
-  metadataRef.current = { title, description, visibility, viewers };
+  useEffect(() => {
+    metadataRef.current = { title, description, visibility, viewers };
+  }, [title, description, visibility, viewers]);
   const movieIdRef = useRef<string | null>(null);
-  movieIdRef.current = movieId;
+  useEffect(() => {
+    movieIdRef.current = movieId;
+  }, [movieId]);
 
   const isBusy =
     uploadState.phase === "creating" ||
@@ -75,7 +87,11 @@ function NewVideoPage() {
   const doSaveMetadata = async (): Promise<boolean> => {
     const id = movieIdRef.current;
     const current = metadataRef.current;
-    if (!id || !current.title.trim()) return false;
+    if (!id) return false;
+    if (!current.title.trim()) {
+      setError("タイトルを入力してから保存してください");
+      return false;
+    }
     const res = await client.api.v4.movies[":movie"].$patch({
       param: { movie: id },
       json: {
@@ -86,7 +102,7 @@ function NewVideoPage() {
       },
     });
     if (!res.ok) {
-      throw new Error("Failed to update");
+      throw new Error("メタデータの保存に失敗しました");
     }
     setSaved(true);
     return true;
@@ -106,8 +122,12 @@ function NewVideoPage() {
   };
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
     const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
+    input.value = "";
+    if (!selectedFile || uploadActiveRef.current || savePending) return;
+    uploadActiveRef.current = true;
+    const operation = ++uploadOperationRef.current;
 
     setFile(selectedFile);
     setMovieId(null);
@@ -121,9 +141,11 @@ function NewVideoPage() {
       asUserId: selectedAccountId || undefined,
     });
     if (!result) {
+      uploadActiveRef.current = false;
       return; // uploadState.error is shown below
     }
 
+    movieIdRef.current = result.movieId;
     setMovieId(result.movieId);
     setTitle(result.title);
 
@@ -131,20 +153,26 @@ function NewVideoPage() {
     // has typed so far and queue the encode. savePending keeps the leave
     // guard armed until the save resolves — an in-flight PATCH dies with the
     // page and the movie would stay PRIVATE.
-    void upload(result.movieId, result.uploadUrl, selectedFile).then(
-      (succeeded) => {
+    void upload(result.movieId, result.uploadUrl, selectedFile)
+      .then(async (succeeded) => {
         if (succeeded) {
           setSavePending(true);
-          void saveMetadata()
-            .catch(() => {
-              setError(
-                "メタデータの保存に失敗しました。「保存」で再度お試しください",
-              );
-            })
-            .finally(() => setSavePending(false));
+          try {
+            await saveMetadata();
+          } catch {
+            setError(
+              "メタデータの保存に失敗しました。「保存」で再度お試しください",
+            );
+          } finally {
+            setSavePending(false);
+          }
         }
-      },
-    );
+      })
+      .finally(() => {
+        if (operation === uploadOperationRef.current) {
+          uploadActiveRef.current = false;
+        }
+      });
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -163,28 +191,39 @@ function NewVideoPage() {
   };
 
   const handleRetryUpload = async () => {
-    if (!file) return;
+    if (!file || uploadActiveRef.current || savePending) return;
+    uploadActiveRef.current = true;
+    const operation = ++uploadOperationRef.current;
     setError(null);
-    const succeeded = movieId
-      ? await resume(movieId, file)
-      : await (async () => {
-          const result = await init(file, {
-            asUserId: selectedAccountId || undefined,
-          });
-          if (!result) return false;
-          setMovieId(result.movieId);
-          setTitle(result.title);
-          return upload(result.movieId, result.uploadUrl, file);
-        })();
-    if (succeeded) {
-      setSavePending(true);
-      void saveMetadata()
-        .catch(() => {
+    try {
+      const succeeded = movieId
+        ? await resume(movieId, file)
+        : await (async () => {
+            const result = await init(file, {
+              asUserId: selectedAccountId || undefined,
+            });
+            if (!result) return false;
+            movieIdRef.current = result.movieId;
+            setMovieId(result.movieId);
+            setTitle(result.title);
+            return upload(result.movieId, result.uploadUrl, file);
+          })();
+      if (succeeded) {
+        setSavePending(true);
+        try {
+          await saveMetadata();
+        } catch {
           setError(
             "メタデータの保存に失敗しました。「保存」で再度お試しください",
           );
-        })
-        .finally(() => setSavePending(false));
+        } finally {
+          setSavePending(false);
+        }
+      }
+    } finally {
+      if (operation === uploadOperationRef.current) {
+        uploadActiveRef.current = false;
+      }
     }
   };
 
@@ -193,7 +232,8 @@ function NewVideoPage() {
     // encode; deleting the movie here would race that completion, so cancel
     // is only offered while bytes are still in flight.
     if (uploadState.phase !== "uploading") return;
-    cancel();
+    if (!cancel()) return;
+    uploadOperationRef.current += 1;
     if (movieId) {
       // Discard the record created for this upload; a leftover UPLOADING
       // movie would sit in the dashboard forever otherwise.
@@ -203,9 +243,26 @@ function NewVideoPage() {
     }
     setFile(null);
     setMovieId(null);
+    movieIdRef.current = null;
     setTitle("");
     setDescription("");
     resetUpload();
+    uploadActiveRef.current = false;
+  };
+
+  const handleStartNextUpload = () => {
+    if (savePending || uploadActiveRef.current) return;
+    resetUpload();
+    setFile(null);
+    setMovieId(null);
+    movieIdRef.current = null;
+    setTitle("");
+    setDescription("");
+    setVisibility("PUBLIC");
+    setViewers([]);
+    setSaved(false);
+    setError(null);
+    fileInputRef.current?.click();
   };
 
   if (isUserLoading) {
@@ -244,16 +301,17 @@ function NewVideoPage() {
                   </div>
                 )}
               </button>
-              <input
-                ref={fileInputRef}
-                id="video-file"
-                type="file"
-                accept="video/*"
-                onChange={(e) => void handleFileChange(e)}
-                hidden
-              />
             </div>
           ) : null}
+          <input
+            ref={fileInputRef}
+            id="video-file"
+            type="file"
+            accept="video/*"
+            onChange={(e) => void handleFileChange(e)}
+            disabled={isBusy || savePending}
+            hidden
+          />
 
           {movieId && isBusy && (
             <div className="flex flex-col gap-3">
@@ -303,6 +361,14 @@ function NewVideoPage() {
                 >
                   動画一覧へ
                 </Link>
+                <button
+                  type="button"
+                  className="font-medium text-green-500"
+                  onClick={handleStartNextUpload}
+                  disabled={savePending}
+                >
+                  次の動画をアップロード
+                </button>
               </div>
             </div>
           )}

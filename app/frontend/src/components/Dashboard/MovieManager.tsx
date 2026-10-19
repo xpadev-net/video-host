@@ -1,6 +1,13 @@
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
-import { type FC, useCallback, useEffect, useState } from "react";
+import {
+  type DragEvent,
+  type FC,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { useNotify } from "@/components/Feedback/FeedbackProvider";
 import { authClient } from "@/lib/auth-client";
@@ -31,46 +38,54 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const notify = useNotify();
   const [availableMovies, setAvailableMovies] = useState<Movie[]>([]);
+  const [availablePage, setAvailablePage] = useState(1);
+  const [hasMoreAvailableMovies, setHasMoreAvailableMovies] = useState(false);
   const [selectedMovieId, setSelectedMovieId] = useState<string>("");
   const [isLoadingMovies, setIsLoadingMovies] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [isOrdering, setIsOrdering] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const orderingRef = useRef(false);
+  const dragStartMoviesRef = useRef<MovieItem[]>([]);
 
   // Fetch available movies for selection
-  const fetchAvailableMovies = useCallback(async () => {
-    if (!session) return;
-    setIsLoadingMovies(true);
-    try {
-      const res = await client.api.v4.movies.$get({
-        query: {
-          limit: "100",
-          author: selectedAccountId || undefined,
-          mine: selectedAccountId ? undefined : "true",
-        },
-      });
+  const fetchAvailableMovies = useCallback(
+    async (page = 1, append = false) => {
+      if (!session) return;
+      setIsLoadingMovies(true);
+      try {
+        const res = await client.api.v4.movies.$get({
+          query: {
+            page: String(page),
+            limit: "100",
+            author: selectedAccountId || undefined,
+            mine: selectedAccountId ? undefined : "true",
+          },
+        });
 
-      if (!res.ok) throw new Error("Failed to fetch");
-      const json = await res.json();
-      const allMovies = json.data.items;
-      // Filter out movies already in the list
-      const movieIds = new Set(movies.map((m) => m.movie.id));
-      setAvailableMovies(
-        allMovies
-          .filter((m) => !movieIds.has(m.id))
-          .map((m) => ({
-            ...m,
-            thumbnailUrl: m.thumbnailUrl ?? undefined,
-          })),
-      );
-    } catch (error) {
-      console.error("Failed to fetch movies", error);
-    } finally {
-      setIsLoadingMovies(false);
-    }
-  }, [session, selectedAccountId, movies]);
+        if (!res.ok) throw new Error("Failed to fetch");
+        const json = await res.json();
+        const pageMovies = json.data.items.map((movie) => ({
+          ...movie,
+          thumbnailUrl: movie.thumbnailUrl ?? undefined,
+        }));
+        setAvailableMovies((current) =>
+          append ? [...current, ...pageMovies] : pageMovies,
+        );
+        setAvailablePage(page);
+        setHasMoreAvailableMovies(json.data.pagination.hasNext);
+      } catch (error) {
+        console.error("Failed to fetch movies", error);
+      } finally {
+        setIsLoadingMovies(false);
+      }
+    },
+    [session, selectedAccountId],
+  );
 
   useEffect(() => {
-    fetchAvailableMovies();
+    setAvailableMovies([]);
+    void fetchAvailableMovies(1);
   }, [fetchAvailableMovies]);
 
   const handleAddMovie = async () => {
@@ -129,12 +144,16 @@ export const MovieManager: FC<MovieManagerProps> = ({
     }
   };
 
-  const handleDragStart = (index: number) => {
+  const handleDragStart = (e: DragEvent<HTMLLIElement>, index: number) => {
+    e.dataTransfer.setData("text/plain", movies[index].movie.id);
+    e.dataTransfer.effectAllowed = "move";
+    dragStartMoviesRef.current = movies;
     setDraggedIndex(index);
   };
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
+  const handleDragOver = (e: DragEvent<HTMLLIElement>, index: number) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
     if (draggedIndex === null || draggedIndex === index) return;
 
     // Reorder locally while dragging
@@ -145,8 +164,13 @@ export const MovieManager: FC<MovieManagerProps> = ({
     setDraggedIndex(index);
   };
 
-  const updateServerOrder = async (ids: string[]) => {
-    if (!session) return;
+  const updateServerOrder = async (
+    ids: string[],
+    rollbackMovies: MovieItem[],
+  ) => {
+    if (!session || orderingRef.current) return;
+    orderingRef.current = true;
+    setIsOrdering(true);
     try {
       const res =
         entityType === "series"
@@ -165,19 +189,27 @@ export const MovieManager: FC<MovieManagerProps> = ({
       if (!res.ok) throw new Error("Failed to update order");
     } catch {
       notify("並び替えに失敗しました");
-      // Could revert here if needed
+      onMoviesChange(rollbackMovies);
+    } finally {
+      orderingRef.current = false;
+      setIsOrdering(false);
     }
   };
 
   const handleDragEnd = async () => {
-    if (draggedIndex === null || !session) return;
+    if (draggedIndex === null || !session || orderingRef.current) return;
     const movieIds = movies.map((m) => m.movie.id);
-    await updateServerOrder(movieIds);
+    await updateServerOrder(movieIds, dragStartMoviesRef.current);
     setDraggedIndex(null);
   };
 
+  const handleDrop = (e: DragEvent<HTMLLIElement>) => {
+    e.preventDefault();
+  };
+
   const handleMoveUp = async (index: number) => {
-    if (index === 0 || !session) return;
+    if (index === 0 || !session || orderingRef.current) return;
+    const previousMovies = movies;
     const newMovies = [...movies];
     [newMovies[index - 1], newMovies[index]] = [
       newMovies[index],
@@ -185,11 +217,12 @@ export const MovieManager: FC<MovieManagerProps> = ({
     ];
     onMoviesChange(newMovies);
     const movieIds = newMovies.map((m) => m.movie.id);
-    await updateServerOrder(movieIds);
+    await updateServerOrder(movieIds, previousMovies);
   };
 
   const handleMoveDown = async (index: number) => {
-    if (index === movies.length - 1 || !session) return;
+    if (index === movies.length - 1 || !session || orderingRef.current) return;
+    const previousMovies = movies;
     const newMovies = [...movies];
     [newMovies[index], newMovies[index + 1]] = [
       newMovies[index + 1],
@@ -197,8 +230,10 @@ export const MovieManager: FC<MovieManagerProps> = ({
     ];
     onMoviesChange(newMovies);
     const movieIds = newMovies.map((m) => m.movie.id);
-    await updateServerOrder(movieIds);
+    await updateServerOrder(movieIds, previousMovies);
   };
+
+  const movieIdsInList = new Set(movies.map((item) => item.movie.id));
 
   return (
     <div className="movie-manager">
@@ -214,11 +249,13 @@ export const MovieManager: FC<MovieManagerProps> = ({
           className="movie-select"
         >
           <option value="">動画を選択...</option>
-          {availableMovies.map((movie) => (
-            <option key={movie.id} value={movie.id}>
-              {movie.title}
-            </option>
-          ))}
+          {availableMovies
+            .filter((movie) => !movieIdsInList.has(movie.id))
+            .map((movie) => (
+              <option key={movie.id} value={movie.id}>
+                {movie.title}
+              </option>
+            ))}
         </select>
         <button
           type="button"
@@ -229,6 +266,16 @@ export const MovieManager: FC<MovieManagerProps> = ({
           {isAdding ? "追加中..." : "追加"}
         </button>
       </div>
+      {hasMoreAvailableMovies && (
+        <button
+          type="button"
+          onClick={() => void fetchAvailableMovies(availablePage + 1, true)}
+          disabled={isLoadingMovies}
+          className="add-btn"
+        >
+          {isLoadingMovies ? "読み込み中..." : "さらに読み込む"}
+        </button>
+      )}
 
       {/* Movies List */}
       {movies.length === 0 ? (
@@ -239,9 +286,10 @@ export const MovieManager: FC<MovieManagerProps> = ({
             <li
               key={m.movie.id}
               className={`movie-item ${draggedIndex === index ? "dragging" : ""}`}
-              draggable
-              onDragStart={() => handleDragStart(index)}
+              draggable={!isOrdering}
+              onDragStart={(e) => handleDragStart(e, index)}
               onDragOver={(e) => handleDragOver(e, index)}
+              onDrop={handleDrop}
               onDragEnd={handleDragEnd}
             >
               <span className="movie-order">{index + 1}</span>
@@ -250,7 +298,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => handleMoveUp(index)}
-                  disabled={index === 0}
+                  disabled={index === 0 || isOrdering}
                   className="move-btn"
                   title="上へ"
                   aria-label={`${m.movie.title}を上へ移動`}
@@ -260,7 +308,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => handleMoveDown(index)}
-                  disabled={index === movies.length - 1}
+                  disabled={index === movies.length - 1 || isOrdering}
                   className="move-btn"
                   title="下へ"
                   aria-label={`${m.movie.title}を下へ移動`}
