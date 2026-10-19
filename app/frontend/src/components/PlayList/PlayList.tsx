@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
-import { MdKeyboardArrowDown, MdKeyboardArrowUp } from "react-icons/md";
 import { SeriesList } from "@/components/MovieList/SeriesList";
 import { findNext } from "@/components/Player/utils/findPrevNext";
 import { cn } from "@/lib/utils";
@@ -85,7 +85,11 @@ const PlayList = ({ data, className, maxHeight }: props) => {
             </div>
           )}
         </div>
-        {isOpen ? <MdKeyboardArrowUp /> : <MdKeyboardArrowDown />}
+        {isOpen ? (
+          <ChevronUp aria-hidden="true" />
+        ) : (
+          <ChevronDown aria-hidden="true" />
+        )}
       </button>
       {isOpen && data.series && (
         <SeriesList

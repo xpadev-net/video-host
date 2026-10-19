@@ -99,6 +99,7 @@ const DefaultController = ({ data, isHovering }: props) => {
             onMouseOver={onVolumeMouseOver}
             onFocus={onVolumeMouseOver}
             className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6"
+            aria-label="音量を調整"
           >
             <VolumeIcon />
           </button>

@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { MdHistory, MdHomeFilled } from "react-icons/md";
+import { History, House } from "lucide-react";
 
 import { OverlaySidebar } from "@/components/App/Sidebar/OverlaySidebar";
 import { useIsMobile } from "@/libraries/isMobile";
@@ -40,7 +40,7 @@ const Sidebar = () => {
     "text-[var(--color-text)]",
   ].join(" ");
 
-  const iconClassName = "w-6 h-6 fill-[var(--color-text)]";
+  const iconClassName = "w-6 h-6 stroke-[var(--color-text)]";
   const textClassName = "text-[10px]";
 
   const spacerClassName = [
@@ -52,11 +52,11 @@ const Sidebar = () => {
     <div className={wrapperClassName}>
       <div className={containerClassName}>
         <Link className={buttonWrapperClassName} to={"/"}>
-          <MdHomeFilled className={iconClassName} />
+          <House className={iconClassName} aria-hidden="true" />
           <span className={textClassName}>ホーム</span>
         </Link>
         <Link className={buttonWrapperClassName} to={"/history"}>
-          <MdHistory className={iconClassName} />
+          <History className={iconClassName} aria-hidden="true" />
           <span className={textClassName}>履歴</span>
         </Link>
       </div>

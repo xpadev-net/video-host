@@ -1,6 +1,6 @@
 import * as Switch from "@radix-ui/react-switch";
 import { useAtom } from "jotai";
-import { MdPause, MdPlayArrow } from "react-icons/md";
+import { Pause, Play } from "lucide-react";
 
 import { PlayerConfigAtom } from "@/atoms/Player";
 
@@ -30,9 +30,12 @@ const AutoPlayButton = ({ className }: props) => {
           }`}
         >
           {playerConfig.autoPlay ? (
-            <MdPlayArrow className={"w-[13px] h-[13px] text-black"} />
+            <Play className="w-[13px] h-[13px] text-black" aria-hidden="true" />
           ) : (
-            <MdPause className={"w-[13px] h-[13px] text-white"} />
+            <Pause
+              className="w-[13px] h-[13px] text-white"
+              aria-hidden="true"
+            />
           )}
         </Switch.Thumb>
       </span>

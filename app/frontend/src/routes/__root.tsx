@@ -1,6 +1,5 @@
 import "@/styles/global.css";
 import "@/styles/nprogress.css";
-import "@radix-ui/themes/styles.css";
 
 import {
   createRootRoute,
@@ -35,8 +34,9 @@ function RootComponent() {
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="ja">
+    <html lang="ja" suppressHydrationWarning>
       <head>
+        <script src="/theme-init.js" />
         <HeadContent />
       </head>
       <body>

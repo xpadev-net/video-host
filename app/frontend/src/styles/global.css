@@ -4,8 +4,7 @@
 @custom-variant dark (&:is(.dark *));
 
 html,
-body,
-.radix-themes {
+body {
   height: 100%;
 }
 
@@ -14,10 +13,10 @@ body,
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --color-background: var(--gray-1);
-  --color-secondary-background: var(--gray-2);
-  --color-thirdly-background: var(--gray-3);
-  --color-quaternary-background: var(--gray-4);
+  --color-background: var(--background);
+  --color-secondary-background: var(--secondary);
+  --color-thirdly-background: var(--muted);
+  --color-quaternary-background: var(--border);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -30,7 +29,7 @@ body,
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
-  --color-accent-track: var(--accent-track);
+  --color-accent-track: var(--primary);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
@@ -50,10 +49,10 @@ body,
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-skeleton: var(--skeleton);
-  --color-hover: var(--accent-3);
-  --color-accent: var(--accent-track);
-  --color-text: var(--gray-12);
-  --color-sub-text: var(--gray-10);
+  --color-hover: var(--accent);
+  --color-accent: var(--accent);
+  --color-text: var(--foreground);
+  --color-sub-text: var(--muted-foreground);
 }
 
 :root {
@@ -91,14 +90,15 @@ body,
   --sidebar-ring: oklch(0.708 0 0);
   --skeleton: rgba(0 0 0 / 0.1);
 
-  --color-text: var(--gray-12);
-  --color-sub-text: var(--gray-10);
-  --color-accent: var(--accent-track);
-  --color-background: var(--gray-1);
-  --color-hover: var(--accent-3);
-  --color-secondary-background: var(--gray-2);
-  --color-thirdly-background: var(--gray-3);
-  --color-quaternary-background: var(--gray-4);
+  --color-text: var(--foreground);
+  --color-sub-text: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-track: var(--primary);
+  --color-background: var(--background);
+  --color-hover: var(--accent);
+  --color-secondary-background: var(--secondary);
+  --color-thirdly-background: var(--muted);
+  --color-quaternary-background: var(--border);
 }
 
 .dark {
@@ -135,14 +135,15 @@ body,
   --sidebar-ring: oklch(0.556 0 0);
   --skeleton: rgba(255 255 255 / 0.1);
 
-  --color-text: var(--gray-12);
-  --color-sub-text: var(--gray-10);
-  --color-accent: var(--accent-track);
-  --color-background: var(--gray-1);
-  --color-hover: var(--accent-3);
-  --color-secondary-background: var(--gray-2);
-  --color-thirdly-background: var(--gray-3);
-  --color-quaternary-background: var(--gray-4);
+  --color-text: var(--foreground);
+  --color-sub-text: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-track: var(--primary);
+  --color-background: var(--background);
+  --color-hover: var(--accent);
+  --color-secondary-background: var(--secondary);
+  --color-thirdly-background: var(--muted);
+  --color-quaternary-background: var(--border);
 }
 
 @layer base {
@@ -150,7 +151,8 @@ body,
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--background);
+    color: var(--foreground);
   }
 }
 

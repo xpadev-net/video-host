@@ -1,6 +1,6 @@
 import { useAtom, useAtomValue } from "jotai";
+import { PanelsTopLeft, RectangleHorizontal } from "lucide-react";
 import type { KeyboardEvent } from "react";
-import { MdCrop32, MdCrop169 } from "react-icons/md";
 
 import { PlayerConfigAtom, PlayerStateAtom } from "@/atoms/Player";
 
@@ -33,7 +33,11 @@ const TheatreButton = ({ className }: props) => {
         playerConfig.isTheatre ? "シアターモードを終了" : "シアターモードにする"
       }
     >
-      {playerConfig.isTheatre ? <MdCrop169 /> : <MdCrop32 />}
+      {playerConfig.isTheatre ? (
+        <RectangleHorizontal aria-hidden="true" />
+      ) : (
+        <PanelsTopLeft aria-hidden="true" />
+      )}
     </button>
   );
 };

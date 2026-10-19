@@ -1,5 +1,5 @@
-import { Skeleton } from "@radix-ui/themes";
 import { forwardRef } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { UserSkeleton } from "../User/UserSkeleton";
 
 type Props = {

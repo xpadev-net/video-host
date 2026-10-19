@@ -1,5 +1,5 @@
-import { Skeleton } from "@radix-ui/themes";
 import { UserSkeleton } from "@/components/User/UserSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type Props = {
   className?: string;
