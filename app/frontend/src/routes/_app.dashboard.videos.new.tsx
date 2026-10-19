@@ -190,11 +190,21 @@ function NewVideoPage() {
           setSavePending(true);
           void saveMetadata()
             .catch(() => {
-              setError(
-                "メタデータの保存に失敗しました。「保存」で再度お試しください",
-              );
+              if (
+                currentSessionUserIdRef.current === startingSessionId &&
+                movieSessionUserIdRef.current === startingSessionId
+              )
+                setError(
+                  "メタデータの保存に失敗しました。「保存」で再度お試しください",
+                );
             })
-            .finally(() => setSavePending(false));
+            .finally(() => {
+              if (
+                currentSessionUserIdRef.current === startingSessionId &&
+                movieSessionUserIdRef.current === startingSessionId
+              )
+                setSavePending(false);
+            });
         }
       },
     );
@@ -210,10 +220,18 @@ function NewVideoPage() {
     try {
       await saveMetadata();
     } catch (err) {
-      if (currentSessionUserIdRef.current !== sessionId) return;
+      if (
+        currentSessionUserIdRef.current !== sessionId ||
+        movieSessionUserIdRef.current !== sessionId
+      )
+        return;
       setError(err instanceof Error ? err.message : "保存に失敗しました");
     } finally {
-      if (currentSessionUserIdRef.current === sessionId) setIsSaving(false);
+      if (
+        currentSessionUserIdRef.current === sessionId &&
+        movieSessionUserIdRef.current === sessionId
+      )
+        setIsSaving(false);
     }
   };
 
@@ -248,11 +266,21 @@ function NewVideoPage() {
       setSavePending(true);
       void saveMetadata()
         .catch(() => {
-          setError(
-            "メタデータの保存に失敗しました。「保存」で再度お試しください",
-          );
+          if (
+            currentSessionUserIdRef.current === sessionId &&
+            movieSessionUserIdRef.current === sessionId
+          )
+            setError(
+              "メタデータの保存に失敗しました。「保存」で再度お試しください",
+            );
         })
-        .finally(() => setSavePending(false));
+        .finally(() => {
+          if (
+            currentSessionUserIdRef.current === sessionId &&
+            movieSessionUserIdRef.current === sessionId
+          )
+            setSavePending(false);
+        });
     }
   };
 
@@ -262,9 +290,11 @@ function NewVideoPage() {
     // is only offered while bytes are still in flight.
     if (uploadState.phase !== "uploading") return;
     const sessionId = currentSessionUserIdRef.current;
+    const movieIdAtStart = movieId;
+    const profileIdAtStart = movieProfileIdRef.current;
     cancel();
     if (
-      movieId &&
+      movieIdAtStart &&
       sessionId &&
       movieSessionUserIdRef.current === sessionId &&
       currentSessionUserIdRef.current === sessionId
@@ -273,11 +303,18 @@ function NewVideoPage() {
       // movie would sit in the dashboard forever otherwise.
       await client.api.v4.movies[":movie"]
         .$delete(
-          { param: { movie: movieId } },
-          { headers: { "X-Profile-Id": movieProfileIdRef.current ?? "" } },
+          { param: { movie: movieIdAtStart } },
+          { headers: { "X-Profile-Id": profileIdAtStart ?? "" } },
         )
         .catch(() => {});
     }
+    if (
+      !sessionId ||
+      currentSessionUserIdRef.current !== sessionId ||
+      movieSessionUserIdRef.current !== sessionId ||
+      movieIdRef.current !== movieIdAtStart
+    )
+      return;
     setFile(null);
     setMovieId(null);
     movieProfileIdRef.current = null;

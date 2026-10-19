@@ -133,6 +133,9 @@ export const MovieManager: FC<MovieManagerProps> = ({
     previousSelectionRef.current = { selectedAccountId, selectedProfileId };
     profileIdRef.current = selectedProfileId;
     profileGenerationRef.current += 1;
+    addMutationIdRef.current += 1;
+    setIsAdding(false);
+    setAvailableMovies([]);
     setSelectedMovieId("");
     setDraggedIndex(null);
     dragContextRef.current = null;

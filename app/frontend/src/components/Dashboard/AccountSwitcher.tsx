@@ -1,6 +1,6 @@
 import type { InferResponseType } from "hono";
 import { useAtom } from "jotai";
-import { type FC, useEffect, useRef, useState } from "react";
+import { type FC, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   selectedAccountIdAtom,
   selectedProfileIdAtom,
@@ -29,6 +29,7 @@ export const AccountSwitcher: FC = () => {
   const [selectedProfileId, setSelectedProfileId] = useAtom(
     selectedProfileIdAtom,
   );
+  const selectedAccountIdRef = useRef(selectedAccountId);
   const refreshingUnknownProfilesRef = useRef(new Set<string>());
   const [newName, setNewName] = useState("");
   const [newUsername, setNewUsername] = useState("");
@@ -36,6 +37,10 @@ export const AccountSwitcher: FC = () => {
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
 
   const profileList = profiles ?? [];
+
+  useLayoutEffect(() => {
+    selectedAccountIdRef.current = selectedAccountId;
+  }, [selectedAccountId]);
 
   useEffect(() => {
     if (!selectedProfileId || !profiles) return;
@@ -98,6 +103,7 @@ export const AccountSwitcher: FC = () => {
 
   const handleCreateProfile = async (event: React.FormEvent) => {
     event.preventDefault();
+    const accountIdAtStart = selectedAccountIdRef.current;
     setProfileError(null);
     setIsCreatingProfile(true);
     try {
@@ -116,7 +122,8 @@ export const AccountSwitcher: FC = () => {
       });
       setNewName("");
       setNewUsername("");
-      setSelectedProfileId(profile.id);
+      if (selectedAccountIdRef.current === accountIdAtStart)
+        setSelectedProfileId(profile.id);
     } catch {
       setProfileError("プロフィールを作成できませんでした。");
     } finally {
