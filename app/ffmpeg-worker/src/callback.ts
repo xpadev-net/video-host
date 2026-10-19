@@ -46,6 +46,22 @@ export const sendCallback = async (payload: CallbackPayload) => {
       }
       return;
     }
+    if (res.status === 400) {
+      const body = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      if (
+        ["Movie not found", "No matching variant found"].includes(
+          body?.message ?? "",
+        )
+      ) {
+        // The movie or its variant was deleted while this encode was running.
+        if (payload.status === "success") {
+          await deleteFromProd(payload.s3Key);
+        }
+        return;
+      }
+    }
     if (!res.ok) {
       console.error(`Failed to send callback: ${res.statusText}`);
       throw new Error(`Failed to send callback: ${res.statusText}`);
