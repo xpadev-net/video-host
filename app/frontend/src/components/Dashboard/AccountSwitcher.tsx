@@ -1,6 +1,6 @@
 import type { InferResponseType } from "hono";
 import { useAtom, useSetAtom } from "jotai";
-import { type FC, useEffect, useState } from "react";
+import { type FC, useEffect, useRef, useState } from "react";
 import { StopPlayerAtom } from "@/atoms/Player";
 import {
   selectedAccountIdAtom,
@@ -31,6 +31,8 @@ export const AccountSwitcher: FC = () => {
     selectedProfileIdAtom,
   );
   const stopPlayer = useSetAtom(StopPlayerAtom);
+  const previousProfileIdRef = useRef(selectedProfileId);
+  const refreshingUnknownProfilesRef = useRef(new Set<string>());
   const [newName, setNewName] = useState("");
   const [newUsername, setNewUsername] = useState("");
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -39,16 +41,43 @@ export const AccountSwitcher: FC = () => {
   const profileList = profiles ?? [];
 
   useEffect(() => {
-    if (!selectedProfileId) return;
-    if (!profiles) return;
+    if (previousProfileIdRef.current === selectedProfileId) return;
+    previousProfileIdRef.current = selectedProfileId;
+    stopPlayer();
+  }, [selectedProfileId, stopPlayer]);
+
+  useEffect(() => {
+    if (!selectedProfileId || !profiles) return;
     const selectedProfile = profiles.find(
       (profile) => profile.id === selectedProfileId,
     );
-    if (!selectedProfile || selectedProfile.isDefault) {
-      stopPlayer();
+    if (selectedProfile?.isDefault) {
       setSelectedProfileId(null);
+      return;
     }
-  }, [profiles, selectedProfileId, setSelectedProfileId, stopPlayer]);
+    if (selectedProfile || profilesLoadError) return;
+    if (refreshingUnknownProfilesRef.current.has(selectedProfileId)) return;
+    refreshingUnknownProfilesRef.current.add(selectedProfileId);
+    void mutateProfiles()
+      .then((refreshedProfiles) => {
+        if (
+          refreshedProfiles?.some((profile) => profile.id === selectedProfileId)
+        )
+          return;
+        setSelectedProfileId((current) =>
+          current === selectedProfileId ? null : current,
+        );
+      })
+      .catch(() => {
+        // Keep the stored selection when a refresh fails; it may be valid.
+      });
+  }, [
+    profiles,
+    profilesLoadError,
+    selectedProfileId,
+    setSelectedProfileId,
+    mutateProfiles,
+  ]);
 
   useEffect(() => {
     if (user && !isAdmin) {
