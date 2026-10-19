@@ -36,6 +36,9 @@ try {
   console.info("Waiting for the database migration lock");
   await prisma.$transaction(
     async (transaction) => {
+      // Interactive transactions pin every `transaction` query to one MySQL
+      // connection. GET_LOCK is session-scoped, so this connection holds the
+      // gate while the CLI migrates on its own connection.
       const result = await transaction.$queryRawUnsafe(
         "SELECT GET_LOCK(?, 1800) AS acquired",
         migrationLockName,
