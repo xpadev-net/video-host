@@ -155,7 +155,7 @@ jobs:
             local sha="$1"
             local event="$2"
             local run_id=""
-            for attempt in $(seq 1 60); do
+            for ((attempt = 0; attempt < 60; attempt++)); do
               run_id="$(gh run list --workflow ci.yaml --commit "$sha" --event "$event" --json databaseId --jq '.[0].databaseId // empty')"
               [ -n "$run_id" ] && break
               sleep 5
