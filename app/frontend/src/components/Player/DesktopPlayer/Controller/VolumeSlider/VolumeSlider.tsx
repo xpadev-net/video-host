@@ -7,12 +7,19 @@ import {
   useState,
 } from "react";
 
-import { PlayerVolumeAtom, VideoRefAtom } from "@/atoms/Player";
+import {
+  PlayerMutedAtom,
+  PlayerVolumeAtom,
+  VideoRefAtom,
+} from "@/atoms/Player";
+import { effectiveVolume } from "@/utils/volume";
 
 const VolumeSlider = () => {
   const videoRef = useAtomValue(VideoRefAtom);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const configVolume = useAtomValue(PlayerVolumeAtom);
+  const storedVolume = useAtomValue(PlayerVolumeAtom);
+  const muted = useAtomValue(PlayerMutedAtom);
+  const configVolume = effectiveVolume(storedVolume, muted);
   const [isDragging, setIsDragging] = useState(false);
 
   const updateVolume = useCallback(
@@ -23,6 +30,8 @@ const VolumeSlider = () => {
       if (x < 0) x = 0;
       else if (x > rect.width) x = rect.width;
       videoRef.volume = x / rect.width;
+      // Moving the slider is an explicit request to hear something.
+      videoRef.muted = false;
     },
     [videoRef],
   );
@@ -54,10 +63,12 @@ const VolumeSlider = () => {
       event.preventDefault();
       const newVolume = Math.max(0, videoRef.volume - 0.05);
       videoRef.volume = newVolume;
+      videoRef.muted = false;
     } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
       event.preventDefault();
       const newVolume = Math.min(1, videoRef.volume + 0.05);
       videoRef.volume = newVolume;
+      videoRef.muted = false;
     }
   };
 

@@ -1,7 +1,7 @@
 import type { FormattedMovie } from "@video-host/backend";
 import type Hls from "hls.js";
 import { atom } from "jotai";
-import { atomWithStorage } from "jotai/utils";
+import { atomWithStorage, createJSONStorage } from "jotai/utils";
 import type {
   PlayerAudioTrack,
   PlayerConfig,
@@ -30,11 +30,33 @@ const PlayerStateAtom = atom<PlayerState>({
   isFullscreen: false,
   error: null,
 });
-const PlayerConfigAtom = atomWithStorage<PlayerConfig>("playerConfig", {
-  windowFullscreen: true,
-  autoPlay: true,
-  isTheatre: false,
-});
+// "autoPlay" was renamed to "autoPlayNext" (it only ever meant "play the next
+// movie"). Keep the value people already chose when reading older storage.
+const baseConfigStorage = createJSONStorage<PlayerConfig>();
+const playerConfigStorage = {
+  ...baseConfigStorage,
+  getItem: (key: string, initialValue: PlayerConfig): PlayerConfig => {
+    const stored = baseConfigStorage.getItem(
+      key,
+      initialValue,
+    ) as PlayerConfig & Partial<{ autoPlay: boolean }>;
+    if (!stored || typeof stored !== "object" || !("autoPlay" in stored)) {
+      return stored;
+    }
+    const { autoPlay, ...rest } = stored;
+    return { ...rest, autoPlayNext: rest.autoPlayNext ?? autoPlay ?? true };
+  },
+};
+
+const PlayerConfigAtom = atomWithStorage<PlayerConfig>(
+  "playerConfig",
+  {
+    windowFullscreen: true,
+    autoPlayNext: true,
+    isTheatre: false,
+  },
+  playerConfigStorage,
+);
 
 const PlayerPlaybackRateAtom = atomWithStorage<number>(
   "playerConfig.playerPlaybackRate",
@@ -44,6 +66,13 @@ const PlayerPlaybackRateAtom = atomWithStorage<number>(
 const PlayerVolumeAtom = atomWithStorage<number>(
   "playerConfig.playerVolume",
   1,
+);
+
+// Mute is its own flag: muting must not touch the stored volume, or the
+// pre-mute volume is lost.
+const PlayerMutedAtom = atomWithStorage<boolean>(
+  "playerConfig.playerMuted",
+  false,
 );
 
 const PlayerSettingAtom = atom<SettingKey[]>(["main"]);
@@ -64,6 +93,7 @@ export {
   DurablePlayerAtom,
   HlsRefAtom,
   PlayerConfigAtom,
+  PlayerMutedAtom,
   PlayerPlaybackRateAtom,
   PlayerPlayPauseNotificationAtom,
   PlayerSeekNotificationAtom,

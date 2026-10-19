@@ -73,6 +73,7 @@ const KeyboardHandler: FC<Props> = ({ data }) => {
         e.preventDefault();
         const volume = videoRef.volume + 0.1 * (e.code === "ArrowUp" ? 1 : -1);
         videoRef.volume = Math.min(1, Math.max(0, volume));
+        videoRef.muted = false;
         return true;
       }
       if ((e.code === "Period" || e.code === "Comma") && e.shiftKey) {

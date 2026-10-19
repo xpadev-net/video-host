@@ -12,12 +12,14 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import {
+  PlayerMutedAtom,
   PlayerPlaybackRateAtom,
   PlayerPlayPauseNotificationAtom,
   PlayerSeekNotificationAtom,
   PlayerVolumeAtom,
 } from "@/atoms/Player";
 import { useTemporaryVisible } from "@/hooks/useTemporaryVisible";
+import { effectiveVolume, isSilent } from "@/utils/volume";
 
 type StatusType = "playbackRate" | "volume" | "seek" | "playPause";
 
@@ -29,6 +31,7 @@ interface StatusInfo {
 const PlayerStatusDisplay = () => {
   const playbackRate = useAtomValue(PlayerPlaybackRateAtom);
   const volume = useAtomValue(PlayerVolumeAtom);
+  const muted = useAtomValue(PlayerMutedAtom);
   const seekNotification = useAtomValue(PlayerSeekNotificationAtom);
   const playPauseNotification = useAtomValue(PlayerPlayPauseNotificationAtom);
   const { visible, show } = useTemporaryVisible(1000);
@@ -36,6 +39,7 @@ const PlayerStatusDisplay = () => {
 
   const previousPlaybackRate = useRef<number | null>(null);
   const previousVolume = useRef<number | null>(null);
+  const previousMuted = useRef<boolean | null>(null);
 
   useEffect(() => {
     if (previousPlaybackRate.current === null) {
@@ -58,30 +62,33 @@ const PlayerStatusDisplay = () => {
   }, [playbackRate, show]);
 
   useEffect(() => {
-    if (previousVolume.current === null) {
+    if (previousVolume.current === null || previousMuted.current === null) {
       previousVolume.current = volume;
+      previousMuted.current = muted;
       return;
     }
-    if (previousVolume.current !== volume) {
+    if (previousVolume.current !== volume || previousMuted.current !== muted) {
+      const shown = effectiveVolume(volume, muted);
       setCurrentStatus({
         type: "volume",
         value: (
           <div className="flex items-center justify-center gap-2">
-            {volume === 0 ? (
+            {isSilent(volume, muted) ? (
               <VolumeX size={24} />
-            ) : volume < 0.5 ? (
+            ) : shown < 0.5 ? (
               <Volume1 size={24} />
             ) : (
               <Volume2 size={24} />
             )}
-            <span>{Math.round(volume * 100)}%</span>
+            <span>{muted ? "ミュート" : `${Math.round(volume * 100)}%`}</span>
           </div>
         ),
       });
       show();
       previousVolume.current = volume;
+      previousMuted.current = muted;
     }
-  }, [volume, show]);
+  }, [volume, muted, show]);
 
   useEffect(() => {
     if (seekNotification) {
