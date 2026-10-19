@@ -129,7 +129,7 @@ configMapGenerator:
       - s3-region=ap-northeast-1
       - s3-endpoint=https://s3.ap-northeast-1.amazonaws.com
       - s3-force-path-style=false
-      - backend-callback-url=http://backend:3000
+      - backend-base-url=http://backend:3000
       # Public browser-reachable origin, no trailing /vod path.
       - vod-base-url=https://your-frontend-domain.com
       - poll-interval-ms=5000

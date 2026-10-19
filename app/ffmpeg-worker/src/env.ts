@@ -36,8 +36,11 @@ export const S3_ENDPOINT = process.env.S3_ENDPOINT;
 export const S3_FORCE_PATH_STYLE = process.env.S3_FORCE_PATH_STYLE === "true";
 
 // Backend callback
-export const BACKEND_CALLBACK_URL =
-  process.env.BACKEND_CALLBACK_URL || "http://localhost:3001";
+export const BACKEND_BASE_URL =
+  process.env.BACKEND_BASE_URL ||
+  // Keep the old setting as a compatibility fallback for existing deployments.
+  process.env.BACKEND_CALLBACK_URL ||
+  "http://localhost:3001";
 export const CALLBACK_SECRET = requireEnv(
   "CALLBACK_SECRET",
   "dev-callback-secret",
