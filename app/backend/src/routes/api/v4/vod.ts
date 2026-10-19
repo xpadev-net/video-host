@@ -2,7 +2,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Hono } from "hono";
 import type { Env, HonoApp } from "@/@types/hono";
-import { S3_PROD_BUCKET, VOD_INTERNAL_SECRET } from "@/env";
+import { S3_PROD_BUCKET, VOD_ALLOW_UNSIGNED, VOD_INTERNAL_SECRET } from "@/env";
 import { s3Client } from "@/lib/s3";
 import { verifyVodToken } from "@/lib/vod-token";
 import { unauthorized } from "@/utils/response";
@@ -57,7 +57,10 @@ export const vodRoute = app.get("/mapping/*", async (c) => {
   const tokenAndKey = fullPath.replace("/api/v4/vod/mapping/", "");
   const separator = tokenAndKey.indexOf("/");
   const token = separator === -1 ? "" : tokenAndKey.slice(0, separator);
-  const s3Key = separator === -1 ? "" : tokenAndKey.slice(separator + 1);
+  const signedKey = separator === -1 ? "" : tokenAndKey.slice(separator + 1);
+  const tokenValid = !!signedKey && verifyVodToken(token, signedKey);
+  // During a rolling deploy older pods still hand out unsigned URLs.
+  const s3Key = tokenValid || !VOD_ALLOW_UNSIGNED ? signedKey : tokenAndKey;
 
   if (!s3Key) {
     return c.json({ error: "Missing s3Key" }, 400);
@@ -70,7 +73,7 @@ export const vodRoute = app.get("/mapping/*", async (c) => {
 
   // The URL must have been issued by the API for a viewer allowed to watch
   // this movie; knowing the (guessable) key alone is not enough.
-  if (!verifyVodToken(token, s3Key)) {
+  if (!tokenValid && !VOD_ALLOW_UNSIGNED) {
     unauthorized("Invalid or expired playback token");
   }
 

@@ -183,7 +183,7 @@ const Video = ({ className, videoRef, movie }: props) => {
       return;
     }
 
-    if (variant.contentUrl === url) {
+    if (url !== "" && sameVodSource(variant.contentUrl, url)) {
       const currentTime = videoRef.current.currentTime;
       void loadVideo(
         videoRef.current,
@@ -238,5 +238,13 @@ const Video = ({ className, videoRef, movie }: props) => {
     />
   );
 };
+
+// Playback URLs embed a short-lived token (/vod/<token>/<key>/...) that
+// rotates hourly; the same movie must not look like a new source when only
+// the token changed, or the position would reset.
+const stripVodToken = (contentUrl: string): string =>
+  contentUrl.replace(/(\/vod\/)[^/]+\//, "$1");
+const sameVodSource = (a: string, b: string): boolean =>
+  stripVodToken(a) === stripVodToken(b);
 
 export { Video };

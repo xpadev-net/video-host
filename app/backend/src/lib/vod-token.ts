@@ -44,15 +44,37 @@ export const verifyVodToken = (
  * the playlist, so they inherit the token. Only call this for callers already
  * allowed to watch the movie.
  */
+const keyFromContentUrl = (path: string): string | null => {
+  const suffix = "/master.m3u8";
+  if (!path.endsWith(suffix)) {
+    return null;
+  }
+  try {
+    return path
+      .slice(0, -suffix.length)
+      .split("/")
+      .map(decodeURIComponent)
+      .join("/");
+  } catch {
+    return null;
+  }
+};
+
 export const signVodContentUrl = (
   contentUrl: string,
   s3Key: string | null | undefined,
 ): string => {
   const marker = "/vod/";
   const index = contentUrl.indexOf(marker);
-  if (!s3Key || index === -1) {
+  if (index === -1) {
     return contentUrl;
   }
   const split = index + marker.length;
-  return `${contentUrl.slice(0, split)}${createVodToken(s3Key)}/${contentUrl.slice(split)}`;
+  // Variants created before `s3Key` was stored have it NULL, but their URL
+  // still embeds the key: <origin>/vod/<key>/master.m3u8.
+  const key = s3Key || keyFromContentUrl(contentUrl.slice(split));
+  if (!key) {
+    return contentUrl;
+  }
+  return `${contentUrl.slice(0, split)}${createVodToken(key)}/${contentUrl.slice(split)}`;
 };

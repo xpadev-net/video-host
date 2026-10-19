@@ -50,8 +50,16 @@ describe("signVodContentUrl", () => {
     expect(verifyVodToken(match?.[1] ?? "", key)).toBe(true);
   });
 
-  it("leaves URLs without a key or /vod/ marker alone", () => {
-    expect(signVodContentUrl(url, null)).toBe(url);
+  it("derives the key from the URL for legacy variants without s3Key", () => {
+    const signed = signVodContentUrl(url, null);
+    const token = /\/vod\/([^/]+)\//.exec(signed)?.[1] ?? "";
+    expect(verifyVodToken(token, key)).toBe(true);
+  });
+
+  it("leaves URLs without a derivable key or /vod/ marker alone", () => {
+    expect(signVodContentUrl("https://h/vod/odd", null)).toBe(
+      "https://h/vod/odd",
+    );
     expect(signVodContentUrl("", key)).toBe("");
   });
 });

@@ -161,6 +161,12 @@ spec:
                 configMapKeyRef:
                   name: backend-config
                   key: s3-tmp-bucket
+            - name: VOD_ALLOW_UNSIGNED
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: vod-allow-unsigned
+                  optional: true
             - name: MAX_UPLOAD_BYTES
               valueFrom:
                 configMapKeyRef:

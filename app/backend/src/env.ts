@@ -74,6 +74,13 @@ export const BackendEnvSchema = z.object({
     }),
   CALLBACK_SECRET: z.string().min(1),
   VOD_INTERNAL_SECRET: z.string().min(1),
+  // Transitional: also serve VOD mapping requests that carry no playback
+  // token, for the duration of a rolling deploy from pre-token releases.
+  VOD_ALLOW_UNSIGNED: z
+    .string()
+    .optional()
+    .transform((val) => val === "true")
+    .default(false),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   SIGNUP_ENABLED: flag(false),
   SIGNUP_CODE: z.string().optional(),
@@ -177,6 +184,13 @@ export const EnvSchema = z.preprocess(
         ].some((value) => value.startsWith("CHANGE_ME"))
       ) {
         issue("Production cannot use CHANGE_ME placeholder secrets");
+      }
+      if (env.VOD_INTERNAL_SECRET.length < 32) {
+        // Playback tokens are HMACs under this secret and appear in public
+        // URLs, so a weak secret could be brute-forced offline.
+        issue(
+          "VOD_INTERNAL_SECRET must be at least 32 characters in production",
+        );
       }
       if (
         ![
@@ -287,6 +301,7 @@ export const {
   REDIS_SENTINEL_PASSWORD,
   CALLBACK_SECRET,
   VOD_INTERNAL_SECRET,
+  VOD_ALLOW_UNSIGNED,
   OTEL_EXPORTER_OTLP_ENDPOINT,
   OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
   OTEL_SERVICE_NAME,
