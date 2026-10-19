@@ -125,6 +125,16 @@ export function PlayerSurface({
           <PlayerStatusDisplay />
         </div>
       </button>
+      {/* Outside the <button>: its descendants are flattened for assistive
+          technology, so an alert inside it would not be announced. */}
+      {state.error && (
+        <div
+          role="alert"
+          className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/80 px-4 text-center text-sm text-white"
+        >
+          {state.error}
+        </div>
+      )}
       {isMobile ? (
         <MobileController
           className="z-10"
