@@ -91,6 +91,7 @@ function SystemAccountsPage() {
           <div className="form-row">
             <input
               type="text"
+              aria-label="ユーザー名"
               placeholder="ユーザー名"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -98,6 +99,7 @@ function SystemAccountsPage() {
             />
             <input
               type="text"
+              aria-label="表示名"
               placeholder="表示名"
               value={name}
               onChange={(e) => setName(e.target.value)}

@@ -115,6 +115,7 @@ const DesktopPlayer = ({ className, data, id, isPipMode = false }: props) => {
                 width={720}
                 height={480}
                 alt={""}
+                priority
                 className={"absolute z-10 left-0 top-0 w-full h-full"}
               />
             )}

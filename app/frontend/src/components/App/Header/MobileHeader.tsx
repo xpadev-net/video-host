@@ -29,13 +29,20 @@ const MobileHeader = ({ className }: props) => {
         <HeaderMenu />
       </div>
       <div className="w-[225px] flex justify-end gap-1">
-        <Button variant="ghost" size="icon" onClick={onSearchButtonClick}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onSearchButtonClick}
+          aria-label="検索を開く"
+        >
           <SearchIcon size={16} />
         </Button>
         <ToggleTheme />
         <AuthButton />
       </div>
       <div
+        aria-hidden={!isInputActive}
+        inert={!isInputActive}
         className={cn(
           `absolute left-0 top-0 h-full w-full flex bg-[var(--color-background)] px-2 z-10 items-center`,
           isInputActive
@@ -43,7 +50,12 @@ const MobileHeader = ({ className }: props) => {
             : "opacity-0 pointer-events-none",
         )}
       >
-        <Button variant="ghost" onClick={closeSearch} size={"icon"}>
+        <Button
+          variant="ghost"
+          onClick={closeSearch}
+          size={"icon"}
+          aria-label="検索を閉じる"
+        >
           <ArrowLeft />
         </Button>
         <Search className="flex-1 my-1" ref={inputRef} />

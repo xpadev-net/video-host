@@ -47,6 +47,7 @@ const Search_ = ({ className }: props, ref: ForwardedRef<HTMLInputElement>) => {
         <input
           type="text"
           ref={inputRef}
+          aria-label="動画やシリーズを検索"
           className="outline-none border-none bg-transparent text-base font-normal leading-6 ml-1 w-full placeholder:text-[var(--color-sub-text)]"
           placeholder={"検索"}
           onKeyDown={onKeyDown}
@@ -87,6 +88,7 @@ const Search_ = ({ className }: props, ref: ForwardedRef<HTMLInputElement>) => {
         type="button"
         className="cursor-pointer w-16 border border-quaternary-background bg-quaternary-background rounded-r-sm m-0 inline-flex text-center items-center justify-center hover:bg-accent"
         onClick={onSearchClick}
+        aria-label="検索を送信"
       >
         <SearchIcon size={16} />
       </button>

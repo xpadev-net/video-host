@@ -1,4 +1,4 @@
-import { Skeleton } from "@radix-ui/themes";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const PlayerSkeleton = () => {
   return (

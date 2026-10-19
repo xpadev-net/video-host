@@ -1,10 +1,5 @@
 import { CircleQuestionMark } from "lucide-react";
-import {
-  type ImgHTMLAttributes,
-  type SyntheticEvent,
-  useEffect,
-  useState,
-} from "react";
+import { type ImgHTMLAttributes, type SyntheticEvent, useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface ImageWithFallbackProps
@@ -26,26 +21,30 @@ const ImageWithFallback = ({
   onLoad,
   ...props
 }: ImageWithFallbackProps) => {
-  const [imgSrc, setImgSrc] = useState(src);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-  const [usedFallback, setUsedFallback] = useState(false);
+  const [imageState, setImageState] = useState<{
+    src: string;
+    status: "loading" | "fallback" | "loaded" | "error";
+    usingFallback: boolean;
+  }>({ src, status: "loading", usingFallback: false });
 
-  useEffect(() => {
-    setImgSrc(src);
-    setIsLoading(true);
-    setHasError(false);
-    setUsedFallback(false);
-  }, [src]);
+  if (imageState.src !== src) {
+    setImageState({ src, status: "loading", usingFallback: false });
+  }
+  const isLoading =
+    imageState.status === "loading" || imageState.status === "fallback";
+  const hasError = imageState.status === "error";
+  const imgSrc = imageState.usingFallback ? fallbackSrc : src;
 
   const handleError = () => {
-    if (fallbackSrc && !usedFallback) {
-      setImgSrc(fallbackSrc);
-      setIsLoading(true);
-      setUsedFallback(true);
+    if (fallbackSrc && !imageState.usingFallback) {
+      setImageState({ src, status: "fallback", usingFallback: true });
       return;
     }
-    setHasError(true);
+    setImageState({
+      src,
+      status: "error",
+      usingFallback: imageState.usingFallback,
+    });
   };
 
   if (hasError && showErrorIcon) {
@@ -67,10 +66,15 @@ const ImageWithFallback = ({
       )}
       src={imgSrc}
       alt={alt}
-      loading={priority ? "eager" : props.loading}
+      loading={priority ? "eager" : (props.loading ?? "lazy")}
+      decoding={props.decoding ?? "async"}
       onError={handleError}
       onLoad={(event: SyntheticEvent<HTMLImageElement>) => {
-        setIsLoading(false);
+        setImageState({
+          src,
+          status: "loaded",
+          usingFallback: imageState.usingFallback,
+        });
         onLoad?.(event);
       }}
     />

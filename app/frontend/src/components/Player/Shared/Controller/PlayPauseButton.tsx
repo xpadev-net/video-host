@@ -1,6 +1,6 @@
 import { useAtomValue } from "jotai";
+import { Pause, Play } from "lucide-react";
 import type { MouseEvent } from "react";
-import { MdPause, MdPlayArrow } from "react-icons/md";
 
 import { PlayerStateAtom, VideoRefAtom } from "@/atoms/Player";
 
@@ -21,8 +21,13 @@ const PlayPauseButton = ({ className }: props) => {
   };
 
   return (
-    <button type="button" onClick={togglePlayerState} className={className}>
-      {paused ? <MdPlayArrow /> : <MdPause />}
+    <button
+      type="button"
+      onClick={togglePlayerState}
+      className={className}
+      aria-label={paused ? "動画を再生" : "動画を一時停止"}
+    >
+      {paused ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}
     </button>
   );
 };

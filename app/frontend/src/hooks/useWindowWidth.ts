@@ -1,29 +1,18 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
-import { useIsomorphicEffect } from "@/libraries/IsomorphicEffect";
-
-export const useWindowWidth = (
-  containerRef: React.RefObject<HTMLElement | null>,
-) => {
+export const useWindowWidth = () => {
   const [containerWidth, setContainerWidth] = useState(1920);
   const observer = useRef<ResizeObserver | null>(null);
-  const isomorphicEffect = useIsomorphicEffect();
+  const ref = useCallback((element: HTMLElement | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
+    if (!element) return;
 
-  const handleResize = () => {
-    const width = containerRef.current?.clientWidth || 1920;
-    setContainerWidth(width);
-  };
+    const updateWidth = () => setContainerWidth(element.clientWidth || 1920);
+    updateWidth();
+    observer.current = new ResizeObserver(updateWidth);
+    observer.current.observe(element);
+  }, []);
 
-  isomorphicEffect(() => {
-    if (!observer.current) observer.current = new ResizeObserver(handleResize);
-    if (!containerRef.current) return;
-    handleResize();
-    observer.current?.observe(containerRef.current);
-
-    return () => {
-      observer.current?.disconnect();
-    };
-  }, [containerRef.current]);
-
-  return containerWidth;
+  return { containerWidth, ref };
 };

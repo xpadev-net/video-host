@@ -97,6 +97,7 @@ const MobilePlayer = ({ className, data, id, isPipMode = false }: props) => {
                 width={360}
                 height={240}
                 alt={""}
+                priority
                 className="absolute inset-0 w-full h-full z-0"
               />
             )}

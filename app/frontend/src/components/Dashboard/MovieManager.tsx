@@ -208,6 +208,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
       {/* Add Movie Section */}
       <div className="add-movie-section">
         <select
+          aria-label="追加する動画を選択"
           value={selectedMovieId}
           onChange={(e) => setSelectedMovieId(e.target.value)}
           disabled={isLoadingMovies || isAdding}
@@ -253,6 +254,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
                   disabled={index === 0}
                   className="move-btn"
                   title="上へ"
+                  aria-label={`${m.movie.title}を上へ移動`}
                 >
                   ↑
                 </button>
@@ -262,6 +264,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
                   disabled={index === movies.length - 1}
                   className="move-btn"
                   title="下へ"
+                  aria-label={`${m.movie.title}を下へ移動`}
                 >
                   ↓
                 </button>

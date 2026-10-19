@@ -13,7 +13,7 @@ const Thumbnail = ({ movie, hideMetadata }: ThumbnailProps) => {
   const history = useAtomValue(watchedHistoryAtom);
 
   return (
-    <div className="relative aspect-video w-full h-full overflow-hidden bg-[var(--gray-1)] rounded-[4px]">
+    <div className="relative aspect-video w-full h-full overflow-hidden bg-background rounded-[4px]">
       {movie?.thumbnailUrl && (
         <ImageWithFallback
           src={movie.thumbnailUrl ?? ""}
@@ -31,7 +31,7 @@ const Thumbnail = ({ movie, hideMetadata }: ThumbnailProps) => {
               width: `${(history[movie?.id]?.watched || 0) * 100}%`,
             }}
           />
-          <span className="absolute bottom-0 right-0 m-1 px-[4px] py-[3px] bg-[var(--gray-1)] text-[var(--gray-12)] rounded-[2px] h-[18px] text-[12px] leading-[12px]">
+          <span className="absolute bottom-0 right-0 m-1 px-[4px] py-[3px] bg-background text-foreground rounded-[2px] h-[18px] text-[12px] leading-[12px]">
             {time2str(movie.duration)}
           </span>
         </>

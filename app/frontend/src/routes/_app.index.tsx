@@ -21,8 +21,7 @@ export const Route = createFileRoute("/_app/")({
 function IndexRoute() {
   const { movies, setSize, hasNext, isValidating } = useMovies();
 
-  const wrapper = useRef<HTMLDivElement | null>(null);
-  const containerWidth = useWindowWidth(wrapper);
+  const { containerWidth, ref: wrapperRef } = useWindowWidth();
 
   const width = useMemo(() => {
     const cardCount = Math.floor(containerWidth / 380) + 1;
@@ -47,7 +46,7 @@ function IndexRoute() {
   return (
     <div className="p-4">
       <div
-        ref={wrapper}
+        ref={wrapperRef}
         style={{ "--width": `${width}px` } as CSSProperties}
         className="grid gap-0.5 grid-cols-[repeat(auto-fill,_var(--width))]"
       >

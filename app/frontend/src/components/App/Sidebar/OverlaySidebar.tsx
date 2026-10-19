@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { MdHistory, MdHomeFilled } from "react-icons/md";
+import { History, House } from "lucide-react";
 
 import { sidebarState } from "@/atoms/SidebarState";
 import { HeaderMenu } from "@/components/App/Menu/Menu";
@@ -30,14 +30,14 @@ const OverlaySidebar = () => {
           className="py-2 my-2 flex gap-2 items-center text-[var(--color-text)]"
           to={"/"}
         >
-          <MdHomeFilled className="w-6 h-6" />
+          <House className="w-6 h-6" aria-hidden="true" />
           <span className="leading-6 h-6">ホーム</span>
         </Link>
         <Link
           className="py-2 my-2 flex gap-2 items-center text-[var(--color-text)]"
           to={"/history"}
         >
-          <MdHistory className="w-6 h-6" />
+          <History className="w-6 h-6" aria-hidden="true" />
           <span className="leading-6 h-6">履歴</span>
         </Link>
       </div>
