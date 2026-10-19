@@ -2,6 +2,7 @@ import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { type FC, useCallback, useEffect, useState } from "react";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { useNotify } from "@/components/Feedback/FeedbackProvider";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
@@ -28,6 +29,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const { data: authSession } = authClient.useSession();
   const session = authSession?.user.id;
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
+  const notify = useNotify();
   const [availableMovies, setAvailableMovies] = useState<Movie[]>([]);
   const [selectedMovieId, setSelectedMovieId] = useState<string>("");
   const [isLoadingMovies, setIsLoadingMovies] = useState(false);
@@ -99,7 +101,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
       }
       setSelectedMovieId("");
     } catch {
-      alert("動画の追加に失敗しました");
+      notify("動画の追加に失敗しました");
     } finally {
       setIsAdding(false);
     }
@@ -123,7 +125,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
 
       onMoviesChange(movies.filter((m) => m.movie.id !== movieId));
     } catch {
-      alert("動画の削除に失敗しました");
+      notify("動画の削除に失敗しました");
     }
   };
 
@@ -162,7 +164,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
             });
       if (!res.ok) throw new Error("Failed to update order");
     } catch {
-      alert("並び替えに失敗しました");
+      notify("並び替えに失敗しました");
       // Could revert here if needed
     }
   };

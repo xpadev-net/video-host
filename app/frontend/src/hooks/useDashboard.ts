@@ -1,10 +1,11 @@
 import { useAtomValue } from "jotai";
 import useSWR from "swr";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { DashboardPageSize } from "@/constants/pagination";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
-export const useMyMovies = (page = 1, limit = 20) => {
+export const useMyMovies = (page = 1, limit = DashboardPageSize) => {
   const { data: authSession } = authClient.useSession();
   const session = authSession?.user.id;
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
@@ -30,7 +31,7 @@ export const useMyMovies = (page = 1, limit = 20) => {
   );
 };
 
-export const useMySeries = (page = 1, limit = 20) => {
+export const useMySeries = (page = 1, limit = DashboardPageSize) => {
   const { data: authSession } = authClient.useSession();
   const session = authSession?.user.id;
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
@@ -56,7 +57,7 @@ export const useMySeries = (page = 1, limit = 20) => {
   );
 };
 
-export const useMyPlaylists = (page = 1, limit = 20) => {
+export const useMyPlaylists = (page = 1, limit = DashboardPageSize) => {
   const { data: authSession } = authClient.useSession();
   const session = authSession?.user.id;
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);

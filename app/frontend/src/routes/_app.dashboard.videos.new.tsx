@@ -1,8 +1,11 @@
 import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
 import type { FilteredUser, Visibility } from "@video-host/backend";
 import { useAtomValue } from "jotai";
+import { Film } from "lucide-react";
 import { type ChangeEvent, type FormEvent, useRef, useState } from "react";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
+import { useConfirm } from "@/components/Feedback/FeedbackProvider";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { useUpload } from "@/hooks/useUpload";
 import { useSelf } from "@/hooks/useUser";
@@ -15,6 +18,7 @@ export const Route = createFileRoute("/_app/dashboard/videos/new")({
 
 function NewVideoPage() {
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
+  const confirm = useConfirm();
   const { data: user, isLoading: isUserLoading } = useSelf();
   const {
     init,
@@ -57,8 +61,13 @@ function NewVideoPage() {
   // changes need their own confirm gate.
   const needsLeaveGuard = isBusy || savePending;
   useBlocker({
-    shouldBlockFn: () =>
-      !window.confirm("アップロード中です。このページを離れますか？"),
+    shouldBlockFn: async () =>
+      !(await confirm({
+        title: "アップロード中です",
+        description: "このページを離れると進行中のアップロードが中断されます。",
+        confirmLabel: "ページを離れる",
+        destructive: true,
+      })),
     enableBeforeUnload: needsLeaveGuard,
     disabled: !needsLeaveGuard,
   });
@@ -200,7 +209,7 @@ function NewVideoPage() {
   };
 
   if (isUserLoading) {
-    return <div>Loading...</div>;
+    return <DashboardLoading />;
   }
 
   if (!user) {
@@ -223,7 +232,7 @@ function NewVideoPage() {
               >
                 {file ? (
                   <div className="file-info">
-                    <span className="file-icon">🎬</span>
+                    <Film aria-hidden="true" className="file-icon" />
                     <span className="file-name">{file.name}</span>
                     <span className="file-size">
                       ({(file.size / 1024 / 1024).toFixed(2)} MB)
@@ -248,23 +257,23 @@ function NewVideoPage() {
 
           {movieId && isBusy && (
             <div className="flex flex-col gap-3">
-              <div className="text-sm text-[color:var(--text-secondary,#999)]">
+              <div className="text-sm text-muted-foreground">
                 {uploadState.phase === "uploading" &&
                   `アップロード中 (${uploadState.progress}%)`}
                 {(uploadState.phase === "creating" ||
                   uploadState.phase === "completing") &&
                   "アップロード処理中..."}
               </div>
-              <div className="relative h-2 overflow-hidden rounded bg-[var(--background-primary,#0d0d0d)]">
+              <div className="relative h-2 overflow-hidden rounded bg-background">
                 <div
-                  className="h-full bg-[var(--primary-color,#3b82f6)] transition-[width]"
+                  className="h-full bg-primary transition-[width]"
                   style={{ width: `${uploadState.progress}%` }}
                 />
               </div>
               {uploadState.phase === "uploading" && (
                 <button
                   type="button"
-                  className="self-start cursor-pointer rounded-md border border-[var(--border-color,#333)] bg-transparent px-3.5 py-1.5 text-[0.8rem] text-[color:var(--text-secondary,#999)] hover:border-[#ef4444] hover:text-[#ef4444]"
+                  className="self-start cursor-pointer rounded-md border border-border bg-transparent px-3.5 py-1.5 text-[0.8rem] text-muted-foreground hover:border-[#ef4444] hover:text-[#ef4444]"
                   onClick={() => void handleCancelUpload()}
                 >
                   アップロードをキャンセル
@@ -357,7 +366,7 @@ function NewVideoPage() {
                   <option value="LIMITED">指定ユーザー公開</option>
                   <option value="PRIVATE">非公開</option>
                 </select>
-                <p className="m-0 text-[0.8rem] text-[color:var(--text-secondary,#999)]">
+                <p className="m-0 text-[0.8rem] text-muted-foreground">
                   エンコードが完了するまでは設定に関わらず非公開になります
                 </p>
               </div>
@@ -391,111 +400,6 @@ function NewVideoPage() {
           )}
         </form>
       </div>
-      <style>{`
-        .upload-page h1 {
-          margin-bottom: 2rem;
-          color: var(--text-primary, #fff);
-        }
-        .upload-form {
-          max-width: 600px;
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        .form-group label {
-          color: var(--text-secondary, #999);
-          font-size: 0.875rem;
-        }
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-          padding: 0.75rem;
-          background: var(--background-primary, #0d0d0d);
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
-          color: var(--text-primary, #fff);
-          font-size: 1rem;
-        }
-        .form-group input:focus,
-        .form-group textarea:focus,
-        .form-group select:focus {
-          outline: none;
-          border-color: var(--primary-color, #3b82f6);
-        }
-        .file-drop-zone {
-          padding: 2rem;
-          border: 2px dashed var(--border-color, #333);
-          border-radius: 12px;
-          text-align: center;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-        .file-drop-zone:hover:not(:disabled) {
-          border-color: var(--primary-color, #3b82f6);
-        }
-        .file-drop-zone:disabled {
-          opacity: 0.7;
-          cursor: default;
-        }
-        .file-placeholder {
-          color: var(--text-secondary, #999);
-        }
-        .file-info {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.5rem;
-        }
-        .file-icon {
-          font-size: 1.5rem;
-        }
-        .file-name {
-          color: var(--text-primary, #fff);
-        }
-        .file-size {
-          color: var(--text-secondary, #999);
-          font-size: 0.875rem;
-        }
-        .error-message {
-          padding: 0.75rem;
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid #ef4444;
-          border-radius: 8px;
-          color: #ef4444;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-        }
-        .form-actions {
-          display: flex;
-          gap: 1rem;
-          align-items: center;
-        }
-        .submit-button {
-          padding: 0.875rem 1.5rem;
-          background: var(--primary-color, #3b82f6);
-          color: white;
-          border: none;
-          border-radius: 8px;
-          font-size: 1rem;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-        .submit-button:hover:not(:disabled) {
-          background: #2563eb;
-        }
-        .submit-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      `}</style>
     </>
   );
 }
