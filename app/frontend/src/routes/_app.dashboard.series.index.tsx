@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { useEffect, useRef, useState } from "react";
+import { type SetStateAction, useCallback, useState } from "react";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { PaginationControls } from "@/components/Dashboard/PaginationControls";
@@ -18,20 +18,29 @@ export const Route = createFileRoute("/_app/dashboard/series/")({
 function SeriesPage() {
   const { data: user, isLoading: isUserLoading } = useSelf();
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
-  const [page, setPage] = useState(1);
-  const { data: seriesData, mutate } = useMySeries(page);
+  const [pagination, setPagination] = useState({
+    accountId: selectedAccountId,
+    page: 1,
+  });
+  const page = pagination.accountId === selectedAccountId ? pagination.page : 1;
+  const setPage = useCallback(
+    (nextPage: SetStateAction<number>) => {
+      setPagination((current) => {
+        const currentPage =
+          current.accountId === selectedAccountId ? current.page : 1;
+        return {
+          accountId: selectedAccountId,
+          page:
+            typeof nextPage === "function" ? nextPage(currentPage) : nextPage,
+        };
+      });
+    },
+    [selectedAccountId],
+  );
+  const { data: seriesData, error, mutate } = useMySeries(page);
   const confirm = useConfirm();
   const notify = useNotify();
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const previousAccountId = useRef(selectedAccountId);
-
-  useEffect(() => {
-    if (previousAccountId.current !== selectedAccountId) {
-      previousAccountId.current = selectedAccountId;
-      setPage(1);
-    }
-  }, [selectedAccountId]);
-
   const handleDelete = async (id: string) => {
     if (
       !(await confirm({
@@ -83,7 +92,27 @@ function SeriesPage() {
           </Link>
         </div>
 
-        {seriesList.length === 0 ? (
+        {error ? (
+          <div className="empty-state" role="alert">
+            <p>シリーズを読み込めませんでした</p>
+            <button
+              className="action-btn"
+              onClick={() => void mutate()}
+              type="button"
+            >
+              再試行
+            </button>
+            {page > 1 && (
+              <button
+                className="action-btn"
+                onClick={() => setPage(page - 1)}
+                type="button"
+              >
+                前のページへ戻る
+              </button>
+            )}
+          </div>
+        ) : seriesList.length === 0 ? (
           <div className="empty-state">
             <p>シリーズがありません</p>
             <Link to="/dashboard/series/new">最初のシリーズを作成</Link>
@@ -124,7 +153,7 @@ function SeriesPage() {
             ))}
           </div>
         )}
-        {seriesData?.pagination && (
+        {!error && seriesData?.pagination && (
           <PaginationControls
             onPageChange={setPage}
             page={page}

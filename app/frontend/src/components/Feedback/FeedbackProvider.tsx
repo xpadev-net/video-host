@@ -1,3 +1,4 @@
+import { useRouterState } from "@tanstack/react-router";
 import {
   createContext,
   type ReactNode,
@@ -29,26 +30,41 @@ type FeedbackContextValue = {
 const FeedbackContext = createContext<FeedbackContextValue | null>(null);
 
 export function FeedbackProvider({ children }: { children: ReactNode }) {
+  const locationHref = useRouterState({
+    select: (state) => state.location.href,
+  });
   const [confirmation, setConfirmation] = useState<ConfirmOptions | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const pendingConfirm = useRef<((accepted: boolean) => void) | null>(null);
+  const pendingConfirm = useRef<{
+    resolve: (accepted: boolean) => void;
+    locationHref: string;
+  } | null>(null);
   const nextToastId = useRef(0);
 
-  const confirm = useCallback((options: ConfirmOptions) => {
-    pendingConfirm.current?.(false);
-    setConfirmation(options);
-    return new Promise<boolean>((resolve) => {
-      pendingConfirm.current = resolve;
-    });
-  }, []);
+  const confirm = useCallback(
+    (options: ConfirmOptions) => {
+      pendingConfirm.current?.resolve(false);
+      setConfirmation(options);
+      return new Promise<boolean>((resolve) => {
+        pendingConfirm.current = { resolve, locationHref };
+      });
+    },
+    [locationHref],
+  );
 
   const settleConfirmation = useCallback((accepted: boolean) => {
-    const resolve = pendingConfirm.current;
+    const resolve = pendingConfirm.current?.resolve;
     pendingConfirm.current = null;
     setConfirmation(null);
     resolve?.(accepted);
   }, []);
+
+  useEffect(() => {
+    if (pendingConfirm.current?.locationHref !== locationHref) {
+      if (pendingConfirm.current) settleConfirmation(false);
+    }
+  }, [locationHref, settleConfirmation]);
 
   const notify = useCallback(
     (message: string, kind: Toast["kind"] = "error") => {
