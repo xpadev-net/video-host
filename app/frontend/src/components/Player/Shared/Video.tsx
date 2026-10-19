@@ -258,7 +258,16 @@ const Video = ({ className, videoRef, movie }: props) => {
             networkRetries < MAX_RECOVERY_ATTEMPTS
           ) {
             networkRetries += 1;
-            hls.startLoad();
+            // startLoad() only resumes fragment loading; a failed manifest has
+            // to be requested again from scratch.
+            if (
+              data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+              data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT
+            ) {
+              hls.loadSource(sourceUrl);
+            } else {
+              hls.startLoad();
+            }
             return;
           }
           if (

@@ -16,6 +16,10 @@ const hlsMock = vi.hoisted(() => {
       FRAG_LOADED: "fragLoaded",
       ERROR: "error",
     };
+    static ErrorDetails = {
+      MANIFEST_LOAD_ERROR: "manifestLoadError",
+      MANIFEST_LOAD_TIMEOUT: "manifestLoadTimeOut",
+    };
     static ErrorTypes = {
       NETWORK_ERROR: "networkError",
       MEDIA_ERROR: "mediaError",
@@ -231,6 +235,35 @@ describe("Video", () => {
     act(() => hls.emit("error", { fatal: true, type: "mediaError" }));
     expect(hls.recoverMediaError).toHaveBeenCalledTimes(4);
     expect(store.get(PlayerStateAtom).error).toBeNull();
+  });
+
+  it("re-requests the manifest when the initial manifest load fails", () => {
+    renderVideo(movieWith(url("1.a")));
+    const hls = hlsMock.instances[0];
+    expect(hls.loadSource).toHaveBeenCalledTimes(1);
+
+    for (const details of ["manifestLoadError", "manifestLoadTimeOut"]) {
+      act(() =>
+        hls.emit("error", { fatal: true, type: "networkError", details }),
+      );
+    }
+    // startLoad() would be a no-op for a missing manifest: load it again.
+    expect(hls.loadSource).toHaveBeenCalledTimes(3);
+    expect(hls.loadSource).toHaveBeenLastCalledWith(url("1.a"));
+    expect(hls.startLoad).not.toHaveBeenCalled();
+
+    // The retry budget still applies, ending in the error overlay.
+    for (let i = 0; i < 3; i++) {
+      act(() =>
+        hls.emit("error", {
+          fatal: true,
+          type: "networkError",
+          details: "manifestLoadError",
+        }),
+      );
+    }
+    expect(hls.destroy).toHaveBeenCalled();
+    expect(store.get(PlayerStateAtom).error).toBeTruthy();
   });
 
   it("ignores non-fatal errors", () => {
