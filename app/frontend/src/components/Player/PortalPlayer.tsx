@@ -1,9 +1,8 @@
 import { useRouterState } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { CurrentMovieAtom, DurablePlayerAtom } from "@/atoms/Player";
-import { useIsMobile } from "@/libraries/isMobile";
 import { DesktopPlayer } from "./DesktopPlayer";
 import { MobilePlayer } from "./MobilePlayer";
 
@@ -62,11 +61,15 @@ type props = {
 };
 
 const Player = ({ data, className, id, isPipMode = false }: props) => {
-  const isMobile = useIsMobile();
+  const [playerMode, setPlayerMode] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setPlayerMode(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
 
   return (
     <div id={id}>
-      {isMobile && (
+      {playerMode === true && (
         <MobilePlayer
           className={className}
           data={data}
@@ -74,7 +77,7 @@ const Player = ({ data, className, id, isPipMode = false }: props) => {
           isPipMode={isPipMode}
         />
       )}
-      {!isMobile && (
+      {playerMode === false && (
         <DesktopPlayer
           className={className}
           data={data}

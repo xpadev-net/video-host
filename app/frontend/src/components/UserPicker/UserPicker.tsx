@@ -101,6 +101,7 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
       setActiveIndex((index) => Math.max(index - 1, 0));
     } else if (
       event.key === "Enter" &&
+      !event.nativeEvent.isComposing &&
       showOptions &&
       !isCurrentQueryPending &&
       currentResults[activeIndex]
@@ -147,6 +148,7 @@ export const UserPicker: FC<Props> = ({ selected, onChange, id }) => {
         onChange={(e) => {
           setQuery(e.target.value);
           setActiveIndex(0);
+          setIsFocused(true);
         }}
         onFocus={() => setIsFocused(true)}
         onKeyDown={handleInputKeyDown}
