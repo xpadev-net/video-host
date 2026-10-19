@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { sendCallback } from "./callback";
@@ -11,7 +12,6 @@ import {
 import { getMeter, initOtelMetrics } from "./otel";
 import {
   addJobToRetryQueue,
-  addTmpCleanup,
   claimProcessingJob,
   closeRedis,
   commitProcessingJob,
@@ -29,7 +29,6 @@ import {
   requeueInterruptedJob,
   requeueStaleProcessingJob,
   setEncodeProgress,
-  takeTmpCleanups,
 } from "./queue";
 import { deleteFromTmp, downloadFromTmp, uploadToProd } from "./s3";
 
@@ -125,18 +124,6 @@ const deleteTmpInput = async (s3Key: string): Promise<boolean> => {
     }
   }
   return false;
-};
-
-// Retry deletions that failed earlier; entries that still fail go back.
-const retryPendingTmpCleanups = async (): Promise<void> => {
-  for (const s3Key of await takeTmpCleanups(10)) {
-    try {
-      await deleteFromTmp(s3Key);
-    } catch (error) {
-      console.error(`Tmp cleanup still failing, will retry: ${s3Key}`, error);
-      await addTmpCleanup(s3Key).catch(() => {});
-    }
-  }
 };
 
 const reapStaleProcessingJobs = async (): Promise<void> => {
@@ -294,9 +281,12 @@ const requeueWithRetry = async (
   claim: string | null,
 ): Promise<Awaited<ReturnType<typeof requeueInterruptedJob>>> => {
   const attempts = 5;
+  // One token for every retry of this handoff, so a retry after a lost reply
+  // cannot publish the job a second time.
+  const attemptToken = randomUUID();
   for (let attempt = 1; ; attempt++) {
     try {
-      return await requeueInterruptedJob(job, claim);
+      return await requeueInterruptedJob(job, claim, attemptToken);
     } catch (error) {
       if (attempt >= attempts) throw error;
       console.error(
@@ -557,15 +547,9 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     // Delete from tmp-bucket. The outcome is already recorded, so a failure
     // only leaves an orphaned input behind.
     console.log(`Deleting from tmp-bucket: ${job.s3Key}`);
-    if (!(await deleteTmpInput(job.s3Key))) {
-      // Keep the cleanup retryable instead of forgetting the object.
-      await addTmpCleanup(job.s3Key).catch((error) =>
-        console.error(
-          `Failed to record tmp cleanup, input left orphaned: movieId=${job.movieId}`,
-          error,
-        ),
-      );
-    }
+    // The outcome is already recorded, so a delete that keeps failing only
+    // leaves an orphaned input behind; sweeping tmp orphans is tracked in #74.
+    await deleteTmpInput(job.s3Key);
 
     if (jobRelinquished) {
       return "relinquished";
@@ -719,11 +703,6 @@ const pollForJobs = async (): Promise<void> => {
         await reapStaleProcessingJobs();
       } catch (error) {
         console.error("Error reaping stale processing jobs:", error);
-      }
-      try {
-        await retryPendingTmpCleanups();
-      } catch (error) {
-        console.error("Error retrying tmp cleanups:", error);
       }
     } else {
       clearInterval(retryQueueInterval);

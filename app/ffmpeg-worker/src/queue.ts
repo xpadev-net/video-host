@@ -128,21 +128,12 @@ export const getEncodeProgress = async (
   }
 };
 
-// Tmp inputs whose delete failed after the output was safely committed. A set
-// (not a queue) so repeated failures for one key collapse into one entry.
-const TMP_CLEANUP_KEY = "video:encode:tmp-cleanup";
-
-export const addTmpCleanup = async (s3Key: string): Promise<void> => {
-  const client = await getRedisClient();
-  await client.sAdd(TMP_CLEANUP_KEY, s3Key);
-};
-
-export const takeTmpCleanups = async (count: number): Promise<string[]> => {
-  const client = await getRedisClient();
-  return client.sPopCount(TMP_CLEANUP_KEY, count);
-};
-
 const REQUEUE_INTERRUPTED_JOB_SCRIPT = `
+  -- A retry of a handoff whose first attempt executed but whose reply was
+  -- lost: the per-attempt token already exists, so the job is already queued.
+  if redis.call('SET', KEYS[5], '1', 'NX', 'EX', 300) == false then
+    return 1
+  end
   if ARGV[1] ~= '' then
     -- This worker was running the job. A completion record means its output
     -- is already committed, so it must not go back as a fresh encode; the
@@ -175,6 +166,7 @@ const REQUEUE_INTERRUPTED_JOB_SCRIPT = `
 export const requeueInterruptedJob = async (
   job: EncodeJob,
   claimMember: string | null,
+  attemptToken: string,
 ): Promise<"requeued" | "gone" | "completed"> => {
   const client = await getRedisClient();
   const result = await (client as RedisClientType).eval(
@@ -185,6 +177,7 @@ export const requeueInterruptedJob = async (
         ENCODE_QUEUE_KEY,
         `${ENCODE_PROGRESS_PREFIX}${job.movieId}`,
         `${JOB_COMPLETION_PREFIX}${job.movieId}`,
+        `video:encode:requeue-token:${attemptToken}`,
       ],
       arguments: [claimMember ?? "", JSON.stringify(job)],
     },
