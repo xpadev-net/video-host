@@ -12,11 +12,17 @@ type UserNotFoundResponse = {
   message: string;
 };
 
-const fetcher = async ([key]: readonly [string, string | null]) => {
+const fetcher = async ([key, profileId]: readonly [string, string | null]) => {
   const res =
     key === "me"
-      ? await client.api.v4.users.me.$get()
-      : await client.api.v4.users[":user"].$get({ param: { user: key } });
+      ? await client.api.v4.users.me.$get(
+          {},
+          { headers: { "X-Profile-Id": profileId ?? "" } },
+        )
+      : await client.api.v4.users[":user"].$get(
+          { param: { user: key } },
+          { headers: { "X-Profile-Id": profileId ?? "" } },
+        );
 
   if (!res.ok) {
     if ((res.status as number) !== 404) {
@@ -44,9 +50,12 @@ export const useSelf = () => {
   // Better Auth identifies the login; domain profile, roles and system-account
   // permissions must continue to come from the application API.
   const swr = useSWR<FilteredUser | null>(
-    session ? ["self", session.user.id, selectedProfileId] : null,
-    async () => {
-      const response = await client.api.v4.users.me.$get();
+    session ? (["self", session.user.id, selectedProfileId] as const) : null,
+    async ([, , profileId]: readonly [string, string, string | null]) => {
+      const response = await client.api.v4.users.me.$get(
+        {},
+        { headers: { "X-Profile-Id": profileId ?? "" } },
+      );
       const result = await response.json();
       return result.status === "ok" ? result.data : null;
     },

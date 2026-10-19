@@ -1,4 +1,6 @@
 import type { InferResponseType } from "hono";
+import { useAtomValue } from "jotai";
+import { selectedProfileIdAtom } from "@/atoms/SelectedAccount";
 import { useStickySWR } from "@/hooks/useStickySWR";
 import { client } from "@/lib/client";
 
@@ -6,11 +8,14 @@ const seriesApiClient = client.api.v4.series[":series"].$get;
 type SeriesApiType = typeof seriesApiClient;
 export type SeriesResponse = InferResponseType<SeriesApiType>;
 
-const fetcher = async (key: string): Promise<SeriesResponse> => {
-  const res = await client.api.v4.series[":series"].$get({
-    query: {},
-    param: { series: key },
-  });
+const fetcher = async ([seriesId, profileId]: readonly [
+  string,
+  string | null,
+]): Promise<SeriesResponse> => {
+  const res = await client.api.v4.series[":series"].$get(
+    { query: {}, param: { series: seriesId } },
+    { headers: { "X-Profile-Id": profileId ?? "" } },
+  );
   const response = await res.json();
   if (!res.ok && (res.status as number) !== 404) {
     throw new Error("Failed to fetch series");
@@ -19,5 +24,10 @@ const fetcher = async (key: string): Promise<SeriesResponse> => {
 };
 
 export const useSeries = (query?: string) => {
-  return useStickySWR(query, fetcher, {});
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
+  return useStickySWR(
+    query ? ([query, selectedProfileId] as const) : null,
+    fetcher,
+    {},
+  );
 };

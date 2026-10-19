@@ -1,5 +1,7 @@
+import { useAtomValue } from "jotai";
 import useSWRInfinite from "swr/infinite";
 import type { SeriesListResponse } from "@/@types/api";
+import { selectedProfileIdAtom } from "@/atoms/SelectedAccount";
 import { client } from "@/lib/client";
 
 type FetcherKey = {
@@ -8,12 +10,16 @@ type FetcherKey = {
     query?: string;
     author?: string;
   };
+  profileId: string | null;
 };
 
 export type { SeriesListResponse } from "@/@types/api";
 
 const fetcher = async (key: FetcherKey): Promise<SeriesListResponse> => {
-  const res = await client.api.v4.series.$get(key);
+  const { profileId, ...request } = key;
+  const res = await client.api.v4.series.$get(request, {
+    headers: { "X-Profile-Id": profileId ?? "" },
+  });
   const response = await res.json();
   if (!res.ok || response.status !== "ok") {
     throw new Error("Failed to fetch series");
@@ -27,6 +33,7 @@ type Props = {
 };
 
 export const useSeriesListInfinite = (params?: Props) => {
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   const getKey = (
     pageIndex: number,
     previousPageData: SeriesListResponse | null,
@@ -44,6 +51,7 @@ export const useSeriesListInfinite = (params?: Props) => {
         query: params?.query,
         author: params?.author,
       },
+      profileId: selectedProfileId,
     };
   };
 

@@ -1,5 +1,7 @@
 import type { InferResponseType } from "hono";
+import { useAtomValue } from "jotai";
 import useSWRInfinite from "swr/infinite";
+import { selectedProfileIdAtom } from "@/atoms/SelectedAccount";
 import { client } from "@/lib/client";
 
 // Define the Key type matching what getKey returns and fetcher expects
@@ -9,13 +11,17 @@ type FetcherKey = {
     query?: string;
     author?: string;
   };
+  profileId: string | null;
 };
 
 type MoviesResponseType = typeof client.api.v4.movies.$get;
 export type MoviesResponse = InferResponseType<MoviesResponseType>;
 
 const fetcher = async (key: FetcherKey) => {
-  const res = await client.api.v4.movies.$get(key);
+  const { profileId, ...request } = key;
+  const res = await client.api.v4.movies.$get(request, {
+    headers: { "X-Profile-Id": profileId ?? "" },
+  });
   const response = await res.json();
   if (!res.ok || response.status !== "ok") {
     throw new Error("Failed to fetch movies");
@@ -29,6 +35,7 @@ type Props = {
 };
 
 export const useMovies = (params?: Props) => {
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   const getKey = (
     pageIndex: number,
     previousPageData: MoviesResponse | null,
@@ -47,6 +54,7 @@ export const useMovies = (params?: Props) => {
         query: params?.query,
         author: params?.author,
       },
+      profileId: selectedProfileId,
     };
   };
 
