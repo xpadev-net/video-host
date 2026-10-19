@@ -18,15 +18,18 @@ export const useMyMovies = (page = 1, limit = DashboardPageSize) => {
     session
       ? ["movies", page, limit, selectedAccountId, selectedProfileId, session]
       : null,
-    async ([_, p, l, account]) => {
-      const res = await client.api.v4.movies.$get({
-        query: {
-          page: p.toString(),
-          limit: l.toString(),
-          author: account || undefined,
-          mine: account ? undefined : "true",
+    async ([_, p, l, account, profileId]) => {
+      const res = await client.api.v4.movies.$get(
+        {
+          query: {
+            page: p.toString(),
+            limit: l.toString(),
+            author: account || undefined,
+            mine: account ? undefined : "true",
+          },
         },
-      });
+        { headers: { "X-Profile-Id": profileId ?? "" } },
+      );
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
       return json.data;
@@ -47,15 +50,18 @@ export const useMySeries = (page = 1, limit = DashboardPageSize) => {
     session
       ? ["series", page, limit, selectedAccountId, selectedProfileId, session]
       : null,
-    async ([_, p, l, account]) => {
-      const res = await client.api.v4.series.$get({
-        query: {
-          page: p.toString(),
-          limit: l.toString(),
-          author: account || undefined,
-          mine: account ? undefined : "true",
+    async ([_, p, l, account, profileId]) => {
+      const res = await client.api.v4.series.$get(
+        {
+          query: {
+            page: p.toString(),
+            limit: l.toString(),
+            author: account || undefined,
+            mine: account ? undefined : "true",
+          },
         },
-      });
+        { headers: { "X-Profile-Id": profileId ?? "" } },
+      );
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
       return json.data;
@@ -83,15 +89,18 @@ export const useMyPlaylists = (page = 1, limit = DashboardPageSize) => {
           session,
         ]
       : null,
-    async ([_, p, l, account]) => {
-      const res = await client.api.v4.playlists.$get({
-        query: {
-          page: p.toString(),
-          limit: l.toString(),
-          author: account || undefined,
-          mine: account ? undefined : "true",
+    async ([_, p, l, account, profileId]) => {
+      const res = await client.api.v4.playlists.$get(
+        {
+          query: {
+            page: p.toString(),
+            limit: l.toString(),
+            author: account || undefined,
+            mine: account ? undefined : "true",
+          },
         },
-      });
+        { headers: { "X-Profile-Id": profileId ?? "" } },
+      );
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
       return json.data;

@@ -112,8 +112,9 @@ function EditVideoPage() {
     const selectedFile = e.target.files?.[0];
     e.target.value = "";
     if (!selectedFile || typeof id !== "string") return;
+    const profileId = selectedProfileId;
     const succeeded = await resume(id, selectedFile);
-    if (succeeded) {
+    if (succeeded && getSelectedProfileId() === profileId) {
       // Variant flipped to PROCESSING; the SSE effect picks it up.
       await fetchMovie();
     }

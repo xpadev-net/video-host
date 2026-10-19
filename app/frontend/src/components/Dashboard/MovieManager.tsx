@@ -40,6 +40,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const [isAdding, setIsAdding] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const requestIdRef = useRef(0);
+  const addMutationIdRef = useRef(0);
   const profileIdRef = useRef(selectedProfileId);
   const mountedRef = useRef(true);
   profileIdRef.current = selectedProfileId;
@@ -111,6 +112,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
     if (!selectedMovieId || !session) return;
     const profileId = selectedProfileId;
     const requestId = requestIdRef.current;
+    const mutationId = ++addMutationIdRef.current;
     setIsAdding(true);
     try {
       const res =
@@ -147,7 +149,8 @@ export const MovieManager: FC<MovieManagerProps> = ({
       if (isCurrentProfileRequest(profileId, requestId))
         notify("動画の追加に失敗しました");
     } finally {
-      if (isCurrentProfileRequest(profileId, requestId)) setIsAdding(false);
+      if (mountedRef.current && addMutationIdRef.current === mutationId)
+        setIsAdding(false);
     }
   };
 
