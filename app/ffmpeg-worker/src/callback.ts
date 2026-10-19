@@ -31,6 +31,12 @@ export const sendCallback = async (payload: CallbackPayload) => {
       }),
     });
 
+    if (res.status === 409) {
+      // The backend has already moved this variant on or the upload key has
+      // changed; retrying this callback cannot make the old job current again.
+      console.warn(`Stale encode callback ignored for ID ${payload.movieId}`);
+      return;
+    }
     if (!res.ok) {
       console.error(`Failed to send callback: ${res.statusText}`);
       throw new Error(`Failed to send callback: ${res.statusText}`);

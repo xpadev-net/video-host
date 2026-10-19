@@ -43,16 +43,16 @@ export const callbackRoute = app.post(
       thumbnailUrl,
     } = c.req.valid("json");
 
-    await prisma.$transaction(async (tx) => {
-      const movie = await tx.movie.findUnique({
-        where: { id: movieId },
-        select: { id: true },
-      });
-      if (!movie) badRequest("Movie not found");
-      if (!variantId || !s3Key) {
-        badRequest("variantId and s3Key are required");
-      }
+    const movie = await prisma.movie.findUnique({
+      where: { id: movieId },
+      select: { id: true },
+    });
+    if (!movie) badRequest("Movie not found");
+    if (!variantId || !s3Key) {
+      badRequest("variantId and s3Key are required");
+    }
 
+    await prisma.$transaction(async (tx) => {
       const targetVariant = await tx.movieVariant.findFirst({
         where: { movieId, variantId },
         select: { id: true },
