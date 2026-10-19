@@ -64,9 +64,6 @@ importers:
       hono:
         specifier: ^4.13.13
         version: 4.13.13
-      prisma:
-        specifier: 6.19.3
-        version: 6.19.3(typescript@5.9.3)
       redis:
         specifier: ^5.12.1
         version: 5.12.1(@opentelemetry/api@1.9.1)
@@ -80,6 +77,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.11
         version: 4.1.11(vitest@4.1.11)
+      prisma:
+        specifier: 6.19.3
+        version: 6.19.3(typescript@5.9.3)
       tsc-alias:
         specifier: ^1.9.7
         version: 1.9.7
@@ -113,9 +113,6 @@ importers:
       '@opentelemetry/semantic-conventions':
         specifier: ^1.43.0
         version: 1.43.0
-      '@video-host/backend':
-        specifier: workspace:*
-        version: link:../backend
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2

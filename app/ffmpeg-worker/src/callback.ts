@@ -1,5 +1,6 @@
-import { client } from "./client";
-import { CALLBACK_SECRET } from "./env";
+import { BACKEND_CALLBACK_URL, CALLBACK_SECRET } from "./env";
+
+const callbackUrl = new URL("/api/v4/callback", BACKEND_CALLBACK_URL);
 
 export interface CallbackPayload {
   movieId: string;
@@ -13,24 +14,22 @@ export interface CallbackPayload {
 
 export const sendCallback = async (payload: CallbackPayload) => {
   try {
-    const res = await client.api.v4.callback.$post(
-      {
-        json: {
-          movieId: payload.movieId,
-          status: payload.status === "success" ? "success" : "failed",
-          variantId: payload.variantId,
-          s3Key: payload.s3Key,
-          contentUrl: payload.contentUrl,
-          duration: payload.duration,
-          thumbnailUrl: payload.thumbnailUrl,
-        },
+    const res = await fetch(callbackUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${CALLBACK_SECRET}`,
       },
-      {
-        headers: {
-          Authorization: `Bearer ${CALLBACK_SECRET}`,
-        },
-      },
-    );
+      body: JSON.stringify({
+        movieId: payload.movieId,
+        status: payload.status === "success" ? "success" : "failed",
+        variantId: payload.variantId,
+        s3Key: payload.s3Key,
+        contentUrl: payload.contentUrl,
+        duration: payload.duration,
+        thumbnailUrl: payload.thumbnailUrl,
+      }),
+    });
 
     if (!res.ok) {
       console.error(`Failed to send callback: ${res.statusText}`);

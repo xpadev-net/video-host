@@ -1,42 +1,27 @@
-FROM node:22-slim AS backend-builder
+ARG NODE_VERSION=22.12.0-bookworm-slim
+
+FROM node:${NODE_VERSION} AS builder
 WORKDIR /app
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY app/backend/package.json ./app/backend/
-RUN npm install -g pnpm@10
-RUN pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/backend
-COPY app/backend/ ./app/backend/
-WORKDIR /app/app/backend
-RUN pnpm prisma generate
-WORKDIR /app
-RUN pnpm --filter @video-host/backend build
-
-FROM node:22-slim
-
-ARG COMMIT_HASH
-ENV COMMIT_HASH=$COMMIT_HASH
-
-# Install ffmpeg
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copy root workspace files
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN npm install --global corepack@0.34.5 \
+    && corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY app/ffmpeg-worker/package.json ./app/ffmpeg-worker/
-COPY app/backend/package.json ./app/backend/
-
-# Install pnpm and dependencies
-RUN npm install -g pnpm@10 \
-    && pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/ffmpeg-worker
-
-# Copy backend artifacts
-COPY --from=backend-builder /app/app/backend/dist ./app/backend/dist
-
-# Copy source
+RUN pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/ffmpeg-worker
 COPY app/ffmpeg-worker/ ./app/ffmpeg-worker/
+RUN pnpm --filter @video-host/ffmpeg-worker build
+RUN pnpm --filter @video-host/ffmpeg-worker --prod deploy --legacy /prod/worker
 
-WORKDIR /app/app/ffmpeg-worker
-
-# Start worker
+FROM node:${NODE_VERSION} AS runner
+ARG COMMIT_HASH
+ENV COMMIT_HASH=$COMMIT_HASH
+LABEL org.opencontainers.image.source=https://github.com/xpadev-net/video-host
+WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /prod/worker/ ./
 USER node
-CMD ["pnpm", "start"]
+WORKDIR /app
+CMD ["node", "dist/index.js"]
