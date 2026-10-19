@@ -62,6 +62,17 @@ export function useSeekSlider() {
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const isSliderKey = [
+      "ArrowLeft",
+      "ArrowDown",
+      "ArrowRight",
+      "ArrowUp",
+      "Home",
+      "End",
+    ].includes(event.key);
+    if (!isSliderKey) return;
+    event.preventDefault();
+    event.stopPropagation();
     if (!video || !Number.isFinite(video.duration) || video.duration <= 0)
       return;
     const step = event.shiftKey ? 10 : 5;
@@ -73,7 +84,6 @@ export function useSeekSlider() {
     if (event.key === "Home") nextTime = 0;
     if (event.key === "End") nextTime = video.duration;
     if (nextTime === null) return;
-    event.preventDefault();
     video.currentTime = Math.max(0, Math.min(video.duration, nextTime));
     const nextProgress = (video.currentTime / video.duration) * 100;
     setProgress(nextProgress);

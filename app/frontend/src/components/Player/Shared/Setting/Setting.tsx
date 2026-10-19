@@ -94,6 +94,7 @@ const Setting = ({ className }: Props) => {
   const onKeyDown = (e: KeyboardEvent<HTMLFieldSetElement>) => {
     if (e.key === "Escape") {
       e.preventDefault();
+      e.stopPropagation();
       setState((pv) => ({ ...pv, isSetting: false }));
       requestAnimationFrame(() => {
         document
