@@ -61,7 +61,9 @@ try {
     throw new Error(`Unsupported MySQL SSL mode: ${sslMode}`);
   }
   if (sslMode === "disable" && (sslCert || sslIdentity || sslAccept)) {
-    throw new Error("MySQL sslmode=disable conflicts with SSL certificate options");
+    throw new Error(
+      "MySQL sslmode=disable conflicts with SSL certificate options",
+    );
   }
   const verifyCertificate = sslAccept !== "accept_invalid_certs";
   const ssl =
@@ -92,6 +94,7 @@ try {
   });
   activeConnection = connection;
   let lockAcquired = false;
+  let lockReleased = false;
   try {
     const [rows] = await connection.execute(
       "SELECT GET_LOCK(?, ?) AS acquired",
@@ -107,12 +110,19 @@ try {
   } finally {
     try {
       if (lockAcquired) {
-        await connection.execute("SELECT RELEASE_LOCK(?)", [migrationLockName]);
+        const [rows] = await connection.execute(
+          "SELECT RELEASE_LOCK(?) AS released",
+          [migrationLockName],
+        );
+        lockReleased = Number(rows[0]?.released) === 1;
       }
     } finally {
       activeConnection = undefined;
       await connection.end();
     }
+  }
+  if (lockAcquired && !lockReleased) {
+    throw new Error("Lost the database migration lock before release");
   }
 
   if (shutdownSignal) {
