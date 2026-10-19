@@ -1,11 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useAtomValue } from "jotai";
-import { type FormEvent, useEffect, useRef, useState } from "react";
-import {
-  selectedAccountIdAtom,
-  selectedProfileIdAtom,
-} from "@/atoms/SelectedAccount";
+import { type FormEvent, useRef, useState } from "react";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
+import { useProfileSelectionGeneration } from "@/hooks/useProfileSelectionGeneration";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
 
@@ -16,8 +12,6 @@ export const Route = createFileRoute("/_app/dashboard/series/new")({
 
 function NewSeriesPage() {
   const navigate = useNavigate();
-  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
-  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   const { data: user, isLoading } = useSelf();
 
   const [title, setTitle] = useState("");
@@ -27,31 +21,18 @@ function NewSeriesPage() {
   >("PUBLIC");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const previousSelectionRef = useRef({ selectedAccountId, selectedProfileId });
-  const selectionGenerationRef = useRef(0);
   const submissionIdRef = useRef(0);
-  const currentSelectionRef = useRef({ selectedAccountId, selectedProfileId });
-  if (
-    currentSelectionRef.current.selectedAccountId !== selectedAccountId ||
-    currentSelectionRef.current.selectedProfileId !== selectedProfileId
-  ) {
-    currentSelectionRef.current = { selectedAccountId, selectedProfileId };
-    selectionGenerationRef.current += 1;
-  }
-
-  useEffect(() => {
-    if (
-      previousSelectionRef.current.selectedAccountId === selectedAccountId &&
-      previousSelectionRef.current.selectedProfileId === selectedProfileId
-    )
-      return;
-    previousSelectionRef.current = { selectedAccountId, selectedProfileId };
+  const {
+    selectedAccountId,
+    selectedProfileId,
+    generationRef: selectionGenerationRef,
+  } = useProfileSelectionGeneration(() => {
     setTitle("");
     setDescription("");
     setVisibility("PUBLIC");
     setError(null);
     setIsSubmitting(false);
-  }, [selectedAccountId, selectedProfileId]);
+  });
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

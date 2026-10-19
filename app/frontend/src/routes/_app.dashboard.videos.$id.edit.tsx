@@ -4,7 +4,6 @@ import type {
   FormattedMovie,
   Visibility,
 } from "@video-host/backend";
-import { useAtomValue } from "jotai";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -13,13 +12,10 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  selectedAccountIdAtom,
-  selectedProfileIdAtom,
-} from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { ApiEndpoint } from "@/contexts/env";
+import { useProfileSelectionGeneration } from "@/hooks/useProfileSelectionGeneration";
 import { useUpload } from "@/hooks/useUpload";
 import { authClient } from "@/lib/auth-client";
 import { client, getSelectedProfileId } from "@/lib/client";
@@ -43,8 +39,6 @@ function EditVideoPage() {
   const { data: authSession, isPending: sessionPending } =
     authClient.useSession();
   const session = authSession?.user.id;
-  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
-  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
 
   const [movie, setMovie] = useState<FormattedMovie | null>(null);
   const [title, setTitle] = useState("");
@@ -61,28 +55,12 @@ function EditVideoPage() {
   const { resume, state: uploadState } = useUpload();
   const resumeFileInputRef = useRef<HTMLInputElement>(null);
   const fetchGenerationRef = useRef(0);
-  const selectionGenerationRef = useRef(0);
   const submissionIdRef = useRef(0);
-  const previousSelectionRef = useRef({ selectedAccountId, selectedProfileId });
-  const currentSelectionRef = useRef({ selectedAccountId, selectedProfileId });
-  if (
-    currentSelectionRef.current.selectedAccountId !== selectedAccountId ||
-    currentSelectionRef.current.selectedProfileId !== selectedProfileId
-  ) {
-    currentSelectionRef.current = { selectedAccountId, selectedProfileId };
-    selectionGenerationRef.current += 1;
-  }
-
-  useEffect(() => {
-    if (
-      previousSelectionRef.current.selectedAccountId === selectedAccountId &&
-      previousSelectionRef.current.selectedProfileId === selectedProfileId
-    )
-      return;
-    previousSelectionRef.current = { selectedAccountId, selectedProfileId };
-    setIsSubmitting(false);
-    setError(null);
-  }, [selectedAccountId, selectedProfileId]);
+  const { selectedProfileId, generationRef: selectionGenerationRef } =
+    useProfileSelectionGeneration(() => {
+      setIsSubmitting(false);
+      setError(null);
+    });
 
   const fetchMovie = useCallback(async () => {
     const generation = ++fetchGenerationRef.current;

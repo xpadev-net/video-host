@@ -1,13 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { BasicVisibility, FormattedMovie } from "@video-host/backend";
-import { useAtomValue } from "jotai";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import {
-  selectedAccountIdAtom,
-  selectedProfileIdAtom,
-} from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { MovieManager } from "@/components/Dashboard/MovieManager";
+import { useProfileSelectionGeneration } from "@/hooks/useProfileSelectionGeneration";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
@@ -27,21 +23,8 @@ function EditSeriesPage() {
   const { data: authSession, isPending: sessionPending } =
     authClient.useSession();
   const session = authSession?.user.id;
-  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
-  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   const fetchGenerationRef = useRef(0);
-  const selectionGenerationRef = useRef(0);
   const submissionIdRef = useRef(0);
-  const previousSelectionRef = useRef({ selectedAccountId, selectedProfileId });
-  const currentSelectionRef = useRef({ selectedAccountId, selectedProfileId });
-  if (
-    currentSelectionRef.current.selectedAccountId !== selectedAccountId ||
-    currentSelectionRef.current.selectedProfileId !== selectedProfileId
-  ) {
-    currentSelectionRef.current = { selectedAccountId, selectedProfileId };
-    selectionGenerationRef.current += 1;
-  }
-
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<BasicVisibility>("PUBLIC");
@@ -51,16 +34,11 @@ function EditSeriesPage() {
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (
-      previousSelectionRef.current.selectedAccountId === selectedAccountId &&
-      previousSelectionRef.current.selectedProfileId === selectedProfileId
-    )
-      return;
-    previousSelectionRef.current = { selectedAccountId, selectedProfileId };
-    setIsSubmitting(false);
-    setError(null);
-  }, [selectedAccountId, selectedProfileId]);
+  const { selectedProfileId, generationRef: selectionGenerationRef } =
+    useProfileSelectionGeneration(() => {
+      setIsSubmitting(false);
+      setError(null);
+    });
 
   useEffect(() => {
     const generation = ++fetchGenerationRef.current;
