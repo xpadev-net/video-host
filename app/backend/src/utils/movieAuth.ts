@@ -1,6 +1,6 @@
 import type { User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { badRequest, unauthorized } from "@/utils/response";
+import { badRequest, notFound, unauthorized } from "@/utils/response";
 import { isSystemAccount } from "@/utils/systemAccountCache";
 
 // Admins may act on behalf of a system account (a user row explicitly marked SYSTEM).
@@ -32,4 +32,22 @@ export const canManageMovie = async (
     return true;
   }
   return user.role === "ADMIN" && (await isSystemAccount(authorId));
+};
+
+// Rejects (404 when missing, 401 when not manageable) before a movie is
+// attached to a series, so nobody can inject movies into another user's series.
+export const assertCanManageSeries = async (
+  user: User,
+  seriesId: string,
+): Promise<void> => {
+  const series = await prisma.series.findUnique({
+    where: { id: seriesId },
+    select: { authorId: true },
+  });
+  if (!series) {
+    notFound("Series not found");
+  }
+  if (!(await canManageMovie(user, series.authorId))) {
+    unauthorized("Not authorized to edit this series");
+  }
 };

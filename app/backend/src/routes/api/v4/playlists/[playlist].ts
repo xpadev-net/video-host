@@ -7,6 +7,7 @@ import { filterPlaylist } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
 import {
   buildMovieAccessWhere,
+  canViewMovie,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
 import { badRequest, notFound, unauthorized } from "@/utils/response";
@@ -187,8 +188,17 @@ export const playlistDetailRoute = app
 
     const movie = await prisma.movie.findUnique({
       where: { id: movieId },
+      include: { viewers: true, variants: true },
     });
-    if (!movie) {
+    // Movies the caller cannot watch are reported as missing so the
+    // endpoint is not an existence oracle for private movies.
+    if (
+      !movie ||
+      !canViewMovie(movie, user) ||
+      (movie.authorId !== user.id &&
+        user.role !== "ADMIN" &&
+        !movie.variants.some((v) => v.status === "READY"))
+    ) {
       notFound("Movie not found");
     }
 
