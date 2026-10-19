@@ -21,8 +21,17 @@ const useStickyResult = <T>(
 export const useStickySWR = <T, U, V extends SWRConfiguration>(
   ...args: Parameters<typeof useSWR<T, U, V>>
 ): ReturnType<typeof useSWR<T, U, V>> => {
-  const swr = useSWR<T, U, V>(...args);
-  const isEnabled = Boolean(args[0]);
+  const [inputKey, fetcher, config] = args;
+  let key = inputKey;
+  if (typeof inputKey === "function") {
+    try {
+      key = inputKey();
+    } catch {
+      key = null;
+    }
+  }
+  const swr = useSWR<T, U, V>(key, fetcher, config);
+  const isEnabled = Boolean(key);
   return {
     ...swr,
     data: useStickyResult(swr.data, isEnabled) as T,

@@ -40,5 +40,21 @@ describe("useStickySWR", () => {
 
     rerender({ key: null });
     expect(result.current.data).toBeUndefined();
+
+    const conditional = renderHook(
+      ({ ready }: { ready: boolean }) =>
+        useStickySWR(
+          () => (ready ? "/conditional" : null),
+          (url: string) => Promise.resolve(url),
+          {},
+        ),
+      { initialProps: { ready: true }, wrapper },
+    );
+
+    await waitFor(() =>
+      expect(conditional.result.current.data).toBe("/conditional"),
+    );
+    conditional.rerender({ ready: false });
+    expect(conditional.result.current.data).toBeUndefined();
   });
 });
