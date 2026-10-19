@@ -39,7 +39,7 @@ cp app/frontend/.env.example app/frontend/.env
 
 Set `DATABASE_URL` in `app/backend/.env` for the disposable database. Keep `CALLBACK_SECRET` the same in backend and worker files. The root `.env.example` is a combined reference for environment managers that inject variables into workspace commands; pnpm package processes do not load it automatically. Then apply migrations and start services in separate terminals:
 
-The local backend example signs MinIO URLs for `http://localhost:9000`; the VOD container forwards them to the Compose service `minio:9000` while preserving the signed `Host`. If you change `S3_ENDPOINT`, update the `Host` header in `nginx/nginx.conf` to the same host and port.
+The local backend example signs MinIO URLs for `http://localhost:9000`; the VOD container forwards them to the Compose service `minio:9000` while preserving the signed `Host`. If you change `S3_ENDPOINT`, update both `proxy_pass` targets and the `Host` header in `nginx/nginx.conf` to match the new endpoint.
 
 ```sh
 pnpm -F @video-host/backend prisma:generate
@@ -69,7 +69,7 @@ pnpm build
 
 ## Deployment
 
-Kubernetes manifests are under `k8s/`. The production overlay expects externally managed MySQL, Redis, S3-compatible storage, and an Ingress. Review and fill the sample ConfigMaps and Secrets; never apply sample credentials to a live deployment. Render the overlay with `kubectl kustomize k8s/overlays/prod` before deployment. Authentication cutover, database backup requirements, OIDC configuration, and proxy trust are documented in [the Better Auth migration and deployment guide](docs/better-auth-migration.md). Release images are built by the GitHub Actions release workflow; see [CONTRIBUTING.md](CONTRIBUTING.md) before changing release configuration.
+Kubernetes manifests are under `k8s/`. The production overlay expects externally managed MySQL, Redis, S3-compatible storage, and an Ingress. Set the production values in `k8s/overlays/prod/kustomization.yaml` and replace every `CHANGE_ME` secret; the files in `k8s/base/config` are reference samples and are not consumed by the production overlay. Never apply sample credentials to a live deployment. Render the overlay with `kubectl kustomize k8s/overlays/prod` before deployment. Authentication cutover, database backup requirements, OIDC configuration, and proxy trust are documented in [the Better Auth migration and deployment guide](docs/better-auth-migration.md). Release images are built by the GitHub Actions release workflow; see [CONTRIBUTING.md](CONTRIBUTING.md) before changing release configuration.
 
 To publish a release, use **Actions → Release → Run workflow**. Choose the version bump (`patch`, `minor`, or `major`) and select which of the backend, frontend, and worker to release. Review the resulting workflow runs and image tags before deploying them.
 

@@ -28,7 +28,7 @@
 ## VOD 用 nginx 設定
 
 - `nginx/nginx.conf` はローカルの `docker-compose.yml` が `./nginx` ディレクトリごとコンテナへマウントする HTTP 設定です。ローカル開発用で、Kubernetes には適用しません。
-- `k8s/base/config/vod-nginx-config.sample.yaml` は、base のVOD Deploymentに使うConfigMapテンプレートです。HTTPS/443でlistenし、`nginx` init containerが生成する `/etc/nginx/ssl/tls.crt` と `/etc/nginx/ssl/tls.key` を参照します。base standaloneでは、`minio:9000`を利用できるS3サービスとbackend Serviceを用意してください。
+- `k8s/base/config/vod-nginx-config.sample.yaml` は、base のVOD Deploymentに使うConfigMapテンプレートです。HTTPS/443でlistenし、`nginx` init containerが生成する `/etc/nginx/ssl/tls.crt` と `/etc/nginx/ssl/tls.key` を参照します。base standaloneでは、`minio:9000`を利用できるS3サービスとbackend Serviceを用意してください。`ffmpeg-worker-config.sample.yaml`の`vod-base-url`は、公開Ingressのorigin（`/vod`なし）に置き換えてください。Ingressは`/vod/*`をVOD Serviceの443番portへ転送する必要があります。
 - 通常の本番 Kustomize 経路では `k8s/overlays/prod/kustomization.yaml` が同じ `vod-nginx-config` を生成し、同じディレクトリの `nginx.conf` を読み込みます。設定はKubernetes Service `backend:3000`へマッピングを転送し、VOD init containerが`backend-config`の`S3_ENDPOINT`、`S3_REGION`、bucket、path-style設定からpresigned URLのupstreamを復元します。AWSのvirtual-hosted URLではbucketをupstream hostnameに加え、path-style URLではbucketをURIに含めます。S3リージョンやendpointを変更するときはbackendとworkerの設定を揃えてください。HTTPS upstreamではVOD init containerからマウントしたCA bundleを使ってTLS証明書を検証します。
 - production overlay の`vod-base-url`は`https://your-vod-domain.com`を公開Ingressのoriginへ置き換えます。末尾に`/vod`を付けず、Ingressは`/vod/*`をVOD Serviceの443番portへ転送してください。これはworkerが保存するURLをブラウザーから到達可能にする設定です。
 

@@ -7,7 +7,7 @@ data:
   nginx.conf: |
     user root;
     worker_processes auto;
-    error_log /dev/stderr debug;
+    error_log /dev/stderr warn;
     pid /tmp/nginx.pid;
 
     events {
