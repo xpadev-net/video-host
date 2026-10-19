@@ -28,4 +28,4 @@ The root `.env.example` is a combined reference for environment managers that in
 
 See the backend README for callback security and the root README for the local service topology.
 
-The worker accepts MP4/MOV, Matroska/WebM, AVI, MPEG-TS/PS, FLV, and ASF inputs up to 3840×2160 and two hours. HLS playlists and concat inputs are rejected; the transcoder also restricts input protocols to local files and crypto wrappers.
+The worker accepts MP4/MOV, Matroska/WebM, AVI, MPEG-TS/PS, FLV, and ASF inputs up to 3840×2160 and two hours. HLS playlists and concat inputs are rejected; the transcoder also restricts input protocols to local files and crypto wrappers. Outputs are H.264 High/yuv420p at up to 1080p with 48 kHz stereo AAC, and HDR sources are tone-mapped to BT.709.
