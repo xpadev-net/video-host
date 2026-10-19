@@ -1,6 +1,7 @@
 import type { InferResponseType } from "hono";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import { type FC, useEffect, useState } from "react";
+import { StopPlayerAtom } from "@/atoms/Player";
 import {
   selectedAccountIdAtom,
   selectedProfileIdAtom,
@@ -29,6 +30,7 @@ export const AccountSwitcher: FC = () => {
   const [selectedProfileId, setSelectedProfileId] = useAtom(
     selectedProfileIdAtom,
   );
+  const stopPlayer = useSetAtom(StopPlayerAtom);
   const [newName, setNewName] = useState("");
   const [newUsername, setNewUsername] = useState("");
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -38,18 +40,15 @@ export const AccountSwitcher: FC = () => {
 
   useEffect(() => {
     if (!selectedProfileId) return;
-    if (profilesLoadError && !profiles) {
-      setSelectedProfileId(null);
-      return;
-    }
     if (!profiles) return;
     const selectedProfile = profiles.find(
       (profile) => profile.id === selectedProfileId,
     );
     if (!selectedProfile || selectedProfile.isDefault) {
+      stopPlayer();
       setSelectedProfileId(null);
     }
-  }, [profiles, profilesLoadError, selectedProfileId, setSelectedProfileId]);
+  }, [profiles, selectedProfileId, setSelectedProfileId, stopPlayer]);
 
   useEffect(() => {
     if (user && !isAdmin) {
@@ -76,7 +75,9 @@ export const AccountSwitcher: FC = () => {
 
   const handleProfileChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const value = event.target.value;
-    setSelectedProfileId(value || null);
+    const nextProfileId = value || null;
+    if (nextProfileId !== selectedProfileId) stopPlayer();
+    setSelectedProfileId(nextProfileId);
   };
 
   const handleCreateProfile = async (event: React.FormEvent) => {
@@ -99,6 +100,7 @@ export const AccountSwitcher: FC = () => {
       });
       setNewName("");
       setNewUsername("");
+      if (profile.id !== selectedProfileId) stopPlayer();
       setSelectedProfileId(profile.id);
     } catch {
       setProfileError("プロフィールを作成できませんでした。");
@@ -174,6 +176,8 @@ export const AccountSwitcher: FC = () => {
             id="account-select"
             value={selectedAccountId || ""}
             onChange={(event) => {
+              if ((event.target.value || null) !== selectedAccountId)
+                stopPlayer();
               setSelectedAccountId(event.target.value || null);
               setSelectedProfileId(null);
             }}

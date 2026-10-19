@@ -4,6 +4,7 @@ import type {
   FormattedMovie,
   Visibility,
 } from "@video-host/backend";
+import { useAtomValue } from "jotai";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -12,6 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { selectedProfileIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { ApiEndpoint } from "@/contexts/env";
@@ -38,6 +40,7 @@ function EditVideoPage() {
   const { data: authSession, isPending: sessionPending } =
     authClient.useSession();
   const session = authSession?.user.id;
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
 
   const [movie, setMovie] = useState<FormattedMovie | null>(null);
   const [title, setTitle] = useState("");
@@ -53,8 +56,10 @@ function EditVideoPage() {
   );
   const { resume, state: uploadState } = useUpload();
   const resumeFileInputRef = useRef<HTMLInputElement>(null);
+  const fetchGenerationRef = useRef(0);
 
   const fetchMovie = useCallback(async () => {
+    const generation = ++fetchGenerationRef.current;
     if (sessionPending) return;
     if (!session) {
       setLoadError("ログイン状態を確認できませんでした");
@@ -63,12 +68,14 @@ function EditVideoPage() {
     }
 
     try {
-      const res = await client.api.v4.movies[":movie"].$get({
-        param: { movie: id },
-      });
+      const res = await client.api.v4.movies[":movie"].$get(
+        { param: { movie: id } },
+        { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+      );
 
       if (Number(res.status) === 404) {
-        setLoadError("動画が見つかりません");
+        if (generation === fetchGenerationRef.current)
+          setLoadError("動画が見つかりません");
         return;
       }
       if (!res.ok) {
@@ -77,20 +84,28 @@ function EditVideoPage() {
 
       const json = await res.json();
       const movieData = json.data;
+      if (generation !== fetchGenerationRef.current) return;
       setMovie(movieData);
       setTitle(movieData.title);
       setDescription(movieData.description || "");
       setVisibility(movieData.visibility);
       setViewers(movieData.viewers ?? []);
     } catch {
-      setLoadError("動画の取得に失敗しました");
+      if (generation === fetchGenerationRef.current)
+        setLoadError("動画の取得に失敗しました");
     } finally {
-      setIsLoading(false);
+      if (generation === fetchGenerationRef.current) setIsLoading(false);
     }
-  }, [id, session, sessionPending]);
+  }, [id, session, sessionPending, selectedProfileId]);
 
   useEffect(() => {
+    setIsLoading(true);
+    setLoadError(null);
+    setMovie(null);
     void fetchMovie();
+    return () => {
+      fetchGenerationRef.current += 1;
+    };
   }, [fetchMovie]);
 
   const handleResumeFileChange = async (e: ChangeEvent<HTMLInputElement>) => {

@@ -1,6 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { BasicVisibility, FormattedMovie } from "@video-host/backend";
-import { type FormEvent, useEffect, useState } from "react";
+import { useAtomValue } from "jotai";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { selectedProfileIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { MovieManager } from "@/components/Dashboard/MovieManager";
 import { authClient } from "@/lib/auth-client";
@@ -22,6 +24,8 @@ function EditPlaylistPage() {
   const { data: authSession, isPending: sessionPending } =
     authClient.useSession();
   const session = authSession?.user.id;
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
+  const fetchGenerationRef = useRef(0);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -33,6 +37,9 @@ function EditPlaylistPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    const generation = ++fetchGenerationRef.current;
+    setIsLoading(true);
+    setLoadError(null);
     if (sessionPending) return;
     if (!session) {
       setLoadError("ログイン状態を確認できませんでした");
@@ -41,14 +48,18 @@ function EditPlaylistPage() {
     }
     const fetchPlaylist = async () => {
       try {
-        const res = await client.api.v4.playlists[":playlist"].$get({
-          param: { playlist: id },
-        });
+        const res = await client.api.v4.playlists[":playlist"].$get(
+          {
+            param: { playlist: id },
+          },
+          { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+        );
 
         if (Number(res.status) === 404) throw new Error("not-found");
         if (!res.ok) throw new Error("Failed to fetch");
 
         const json = await res.json();
+        if (generation !== fetchGenerationRef.current) return;
         const data = json.data;
         setTitle(data.title);
         setDescription(data.description || "");
@@ -58,17 +69,21 @@ function EditPlaylistPage() {
         );
         setMovies(playlistMovies);
       } catch (cause) {
+        if (generation !== fetchGenerationRef.current) return;
         setLoadError(
           cause instanceof Error && cause.message === "not-found"
             ? "プレイリストが見つかりません"
             : "プレイリストの取得に失敗しました",
         );
       } finally {
-        setIsLoading(false);
+        if (generation === fetchGenerationRef.current) setIsLoading(false);
       }
     };
-    fetchPlaylist();
-  }, [id, session, sessionPending]);
+    void fetchPlaylist();
+    return () => {
+      fetchGenerationRef.current += 1;
+    };
+  }, [id, session, sessionPending, selectedProfileId]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

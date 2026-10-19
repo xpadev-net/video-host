@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
-import { client } from "@/lib/client";
+import { ApiEndpoint } from "@/contexts/env";
+import { client, getSelectedProfileId } from "@/lib/client";
 
 export type UploadPhase =
   | "idle"
@@ -47,6 +48,7 @@ export const useUpload = (): UseUploadResult => {
     error: null,
   });
   const xhrRef = useRef<XMLHttpRequest | null>(null);
+  const profileByMovieIdRef = useRef(new Map<string, string | null>());
 
   const reset = useCallback(() => {
     xhrRef.current?.abort();
@@ -105,9 +107,16 @@ export const useUpload = (): UseUploadResult => {
 
   const completeUpload = useCallback(async (movieId: string): Promise<void> => {
     setState((prev) => ({ ...prev, phase: "completing", progress: 100 }));
-    const res = await client.api.v4.upload[":movieId"].complete.$post({
-      param: { movieId },
-    });
+    const res = await fetch(
+      `${ApiEndpoint}/api/v4/upload/${encodeURIComponent(movieId)}/complete`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "X-Profile-Id": profileByMovieIdRef.current.get(movieId) ?? "",
+        },
+      },
+    );
     if (!res.ok) {
       throw new Error("Failed to finalize upload");
     }
@@ -120,6 +129,7 @@ export const useUpload = (): UseUploadResult => {
       options?: { asUserId?: string },
     ): Promise<InitUploadResult | null> => {
       setState({ phase: "creating", progress: 0, error: null });
+      const profileId = getSelectedProfileId();
       try {
         const res = await client.api.v4.upload.init.$post({
           json: {
@@ -133,6 +143,7 @@ export const useUpload = (): UseUploadResult => {
           throw new Error("Failed to create upload");
         }
         const json = await res.json();
+        profileByMovieIdRef.current.set(json.data.movie.id, profileId);
         return {
           movieId: json.data.movie.id,
           title: json.data.movie.title,
@@ -172,6 +183,7 @@ export const useUpload = (): UseUploadResult => {
   const resume = useCallback(
     async (movieId: string, file: File): Promise<boolean> => {
       setState({ phase: "creating", progress: 0, error: null });
+      profileByMovieIdRef.current.set(movieId, getSelectedProfileId());
       try {
         const res = await client.api.v4.upload[":movieId"].url.$post({
           param: { movieId },

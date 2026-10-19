@@ -18,8 +18,12 @@ export const getSelectedProfileId = (): string | null => {
 
 const customFetch = (input: RequestInfo | URL, requestInit?: RequestInit) => {
   const headers = new Headers(requestInit?.headers);
-  const profileId = getSelectedProfileId();
-  if (profileId) headers.set("X-Profile-Id", profileId);
+  if (headers.has("X-Profile-Id")) {
+    if (!headers.get("X-Profile-Id")) headers.delete("X-Profile-Id");
+  } else {
+    const profileId = getSelectedProfileId();
+    if (profileId) headers.set("X-Profile-Id", profileId);
+  }
   return fetch(input, {
     ...requestInit,
     headers,

@@ -1,6 +1,6 @@
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
-import { type FC, useCallback, useEffect, useState } from "react";
+import { type FC, useCallback, useEffect, useRef, useState } from "react";
 import {
   selectedAccountIdAtom,
   selectedProfileIdAtom,
@@ -39,10 +39,12 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const [isLoadingMovies, setIsLoadingMovies] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const requestIdRef = useRef(0);
 
   // Fetch available movies for selection
   const fetchAvailableMovies = useCallback(
     async (profileId: string | null) => {
+      const requestId = ++requestIdRef.current;
       if (!session) return;
       setIsLoadingMovies(true);
       try {
@@ -64,6 +66,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
         const allMovies = json.data.items;
         // Filter out movies already in the list
         const movieIds = new Set(movies.map((m) => m.movie.id));
+        if (requestId !== requestIdRef.current) return;
         setAvailableMovies(
           allMovies
             .filter((m) => !movieIds.has(m.id))
@@ -73,15 +76,17 @@ export const MovieManager: FC<MovieManagerProps> = ({
             })),
         );
       } catch (error) {
-        console.error("Failed to fetch movies", error);
+        if (requestId === requestIdRef.current)
+          console.error("Failed to fetch movies", error);
       } finally {
-        setIsLoadingMovies(false);
+        if (requestId === requestIdRef.current) setIsLoadingMovies(false);
       }
     },
     [session, selectedAccountId, movies],
   );
 
   useEffect(() => {
+    setSelectedMovieId("");
     void fetchAvailableMovies(selectedProfileId);
   }, [fetchAvailableMovies, selectedProfileId]);
 

@@ -1,7 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import { type SetStateAction, useCallback, useState } from "react";
-import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { PaginationControls } from "@/components/Dashboard/PaginationControls";
 import { useConfirm, useNotify } from "@/components/Feedback/FeedbackProvider";
@@ -18,24 +21,34 @@ export const Route = createFileRoute("/_app/dashboard/playlists/")({
 function PlaylistsPage() {
   const { data: user, isLoading: isUserLoading } = useSelf();
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   const [pagination, setPagination] = useState({
     accountId: selectedAccountId,
+    profileId: selectedProfileId,
     page: 1,
   });
-  const page = pagination.accountId === selectedAccountId ? pagination.page : 1;
+  const page =
+    pagination.accountId === selectedAccountId &&
+    pagination.profileId === selectedProfileId
+      ? pagination.page
+      : 1;
   const setPage = useCallback(
     (nextPage: SetStateAction<number>) => {
       setPagination((current) => {
         const currentPage =
-          current.accountId === selectedAccountId ? current.page : 1;
+          current.accountId === selectedAccountId &&
+          current.profileId === selectedProfileId
+            ? current.page
+            : 1;
         return {
           accountId: selectedAccountId,
+          profileId: selectedProfileId,
           page:
             typeof nextPage === "function" ? nextPage(currentPage) : nextPage,
         };
       });
     },
-    [selectedAccountId],
+    [selectedAccountId, selectedProfileId],
   );
   const { data: playlistsData, error, mutate } = useMyPlaylists(page);
   const confirm = useConfirm();

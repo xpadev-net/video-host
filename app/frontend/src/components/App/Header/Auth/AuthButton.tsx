@@ -8,6 +8,7 @@ import {
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
   PlayerVolumeAtom,
+  StopPlayerAtom,
 } from "@/atoms/Player";
 import {
   selectedAccountIdAtom,
@@ -30,6 +31,7 @@ const AuthButton = () => {
   const resetPlayerConfig = useSetAtom(PlayerConfigAtom);
   const resetPlaybackRate = useSetAtom(PlayerPlaybackRateAtom);
   const resetVolume = useSetAtom(PlayerVolumeAtom);
+  const stopPlayer = useSetAtom(StopPlayerAtom);
   const { mutate } = useSWRConfig();
   const signingOut = useRef(false);
   const [loading, setLoading] = useState(false);
@@ -42,6 +44,7 @@ const AuthButton = () => {
     try {
       const { error } = await authClient.signOut();
       if (error) throw new Error(error.message);
+      stopPlayer();
       setSelectedAccount(null);
       setSelectedProfile(null);
       setWatchedHistory({});
