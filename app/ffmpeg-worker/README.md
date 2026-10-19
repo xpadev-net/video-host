@@ -21,7 +21,7 @@ The root `.env.example` is a combined reference for environment managers that in
 | `REDIS_SENTINEL_HOSTS`, `REDIS_SENTINEL_NAME`, `REDIS_SENTINEL_PASSWORD` | Optional Redis Sentinel configuration |
 | `S3_TMP_BUCKET`, `S3_PROD_BUCKET`, `S3_REGION` | Source and output bucket names and AWS region |
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, `S3_FORCE_PATH_STYLE` | S3-compatible credentials and endpoint; endpoint/path-style settings support the local SeaweedFS S3 API |
-| `BACKEND_CALLBACK_URL`, `CALLBACK_SECRET` | Backend origin and shared machine secret for completion callbacks |
+| `BACKEND_BASE_URL`, `CALLBACK_SECRET` | Backend base URL (including any deployment path prefix) and shared machine secret for completion callbacks |
 | `VOD_BASE_URL` | Browser-reachable public VOD origin, without a trailing `/vod` path |
 | `POLL_INTERVAL_MS`, `TEMP_DIR`, `MIN_DISK_SPACE_GB`, `JOB_TIMEOUT_SECONDS`, `FFMPEG_THREADS` | Queue polling and local encoding resource limits |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_SERVICE_NAME` | Optional OpenTelemetry metrics export configuration |

@@ -101,11 +101,11 @@ spec:
                   name: ffmpeg-worker-secrets
                   key: s3-secret-access-key
             # Callback
-            - name: BACKEND_CALLBACK_URL
+            - name: BACKEND_BASE_URL
               valueFrom:
                 configMapKeyRef:
                   name: ffmpeg-worker-config
-                  key: backend-callback-url
+                  key: backend-base-url
             - name: CALLBACK_SECRET
               valueFrom:
                 secretKeyRef:
