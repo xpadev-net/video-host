@@ -56,6 +56,10 @@ function UserRoute() {
     );
   }
 
+  if (user.status === "error" && user.code === 404) {
+    return <LoadErrorMessage message="ユーザーが見つかりませんでした" />;
+  }
+
   if (user.status !== "ok" || !("data" in user) || !user.data) {
     return (
       <LoadErrorMessage
