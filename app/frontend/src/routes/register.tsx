@@ -49,7 +49,7 @@ function RegisterRoute() {
         if (cancelled) return;
         if (session.data) {
           await navigate({
-            to: getSafeCallback(callback) ?? "/",
+            to: getSafeCallback(callback ?? null) ?? "/",
             replace: true,
           });
           return;
