@@ -199,7 +199,9 @@ describe("upload validation", () => {
       size: 1024,
     });
     expect(initialized.status).toBe(200);
-    const { key: initialKey } = (await initialized.json()) as { key: string };
+    const {
+      data: { key: initialKey },
+    } = (await initialized.json()) as { data: { key: string } };
 
     database.movie.findUnique.mockResolvedValueOnce({
       id: "m1",
@@ -212,7 +214,9 @@ describe("upload validation", () => {
       size: 1024,
     });
     expect(refreshed.status).toBe(200);
-    const { key } = (await refreshed.json()) as { key: string };
+    const {
+      data: { key },
+    } = (await refreshed.json()) as { data: { key: string } };
 
     database.movie.findUnique.mockResolvedValueOnce({
       id: "m1",
