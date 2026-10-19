@@ -46,9 +46,12 @@ function NewVideoPage() {
   const [saved, setSaved] = useState(false);
   const [savePending, setSavePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cancelDeleteFailed, setCancelDeleteFailed] = useState(false);
+  const [cancelDeletePending, setCancelDeletePending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadActiveRef = useRef(false);
   const uploadOperationRef = useRef(0);
+  const cancelDeleteMovieIdRef = useRef<string | null>(null);
 
   // Latest form values for the auto-save that fires when the upload lands;
   // the .then callback registered at file-select time would otherwise save
@@ -249,6 +252,36 @@ function NewVideoPage() {
     }
   };
 
+  const clearCanceledUpload = () => {
+    cancelDeleteMovieIdRef.current = null;
+    setCancelDeleteFailed(false);
+    setFile(null);
+    setMovieId(null);
+    movieIdRef.current = null;
+    setTitle("");
+    setDescription("");
+    resetUpload();
+    uploadActiveRef.current = false;
+  };
+
+  const deleteCanceledMovie = async (id: string) => {
+    setCancelDeletePending(true);
+    setError(null);
+    try {
+      const res = await client.api.v4.movies[":movie"].$delete({
+        param: { movie: id },
+      });
+      if (!res.ok) throw new Error("Failed to delete canceled upload");
+      clearCanceledUpload();
+    } catch {
+      setCancelDeleteFailed(true);
+      setError("動画の削除に失敗しました。キャンセルを再試行してください。");
+      uploadActiveRef.current = false;
+    } finally {
+      setCancelDeletePending(false);
+    }
+  };
+
   const handleCancelUpload = async () => {
     // Once the upload PUT has landed the server is completing/enqueuing the
     // encode; deleting the movie here would race that completion, so cancel
@@ -257,19 +290,17 @@ function NewVideoPage() {
     if (!cancel()) return;
     uploadOperationRef.current += 1;
     if (movieId) {
-      // Discard the record created for this upload; a leftover UPLOADING
-      // movie would sit in the dashboard forever otherwise.
-      await client.api.v4.movies[":movie"]
-        .$delete({ param: { movie: movieId } })
-        .catch(() => {});
+      cancelDeleteMovieIdRef.current = movieId;
+      await deleteCanceledMovie(movieId);
+      return;
     }
-    setFile(null);
-    setMovieId(null);
-    movieIdRef.current = null;
-    setTitle("");
-    setDescription("");
-    resetUpload();
-    uploadActiveRef.current = false;
+    clearCanceledUpload();
+  };
+
+  const handleRetryCancelDelete = async () => {
+    const id = cancelDeleteMovieIdRef.current;
+    if (!id || cancelDeletePending) return;
+    await deleteCanceledMovie(id);
   };
 
   const handleStartNextUpload = () => {
@@ -408,6 +439,17 @@ function NewVideoPage() {
                 再試行
               </button>
             </div>
+          )}
+
+          {cancelDeleteFailed && (
+            <button
+              type="button"
+              className="self-start cursor-pointer rounded-md border border-[#ef4444] bg-transparent px-3.5 py-1.5 text-[0.8rem] text-[#ef4444] hover:bg-[rgba(239,68,68,0.15)]"
+              onClick={() => void handleRetryCancelDelete()}
+              disabled={cancelDeletePending}
+            >
+              {cancelDeletePending ? "削除中..." : "キャンセルを再試行"}
+            </button>
           )}
 
           {movieId && (
