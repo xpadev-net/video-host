@@ -8,9 +8,11 @@ RUN npm install --global corepack@0.34.5 \
     && corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY app/contracts/package.json ./app/contracts/
 COPY app/frontend/package.json ./app/frontend/
 COPY app/backend/package.json ./app/backend/
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter @video-host/frontend --filter @video-host/backend
+COPY app/contracts/ ./app/contracts/
 COPY app/frontend/ ./app/frontend/
 COPY app/backend/ ./app/backend/
 RUN pnpm --filter @video-host/backend build
