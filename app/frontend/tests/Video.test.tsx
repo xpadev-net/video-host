@@ -75,6 +75,7 @@ describe("Video", () => {
     hlsMock.supported = true;
     hlsMock.instances = [];
     vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockReturnValue("");
   });
   afterEach(cleanup);
@@ -132,6 +133,41 @@ describe("Video", () => {
     const { videoRef } = renderVideo(movieWith(url("1.a")));
     expect(hlsMock.instances).toHaveLength(0);
     expect(videoRef.current?.getAttribute("src")).toBe(url("1.a"));
+    expect(store.get(PlayerStateAtom).error).toBeNull();
+  });
+
+  it("does not seek the next source with a stale native resume callback", () => {
+    hlsMock.supported = false;
+    vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockReturnValue(
+      "maybe",
+    );
+    const { rerender, videoRef } = renderVideo(movieWith(url("1.a")));
+    const video = videoRef.current;
+    if (!video) throw new Error("no video element");
+    Object.defineProperty(video, "currentTime", {
+      value: 42,
+      configurable: true,
+      writable: true,
+    });
+    act(() => {
+      video.dispatchEvent(new Event("timeupdate"));
+    });
+    // Token rotation registers a resume callback; the user then leaves for
+    // another movie before metadata arrives.
+    rerender(movieWith(url("2.b")));
+    rerender(movieWith("https://host/vod/9.z/uploads/u/other.mp4/master.m3u8"));
+    (video as unknown as { currentTime: number }).currentTime = 0;
+    act(() => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    expect(video.currentTime).toBe(0);
+  });
+
+  it("clears a previous error when the next movie has no source yet", () => {
+    hlsMock.supported = false;
+    const { rerender } = renderVideo(movieWith(url("1.a")));
+    expect(store.get(PlayerStateAtom).error).toBeTruthy();
+    rerender(movieWith(""));
     expect(store.get(PlayerStateAtom).error).toBeNull();
   });
 

@@ -303,16 +303,16 @@ const Video = ({ className, videoRef, movie }: props) => {
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.removeAttribute("crossorigin");
         video.src = sourceUrl;
+        // Kept so cleanup can remove it: a stale resume callback must not seek
+        // whatever source is loaded next.
+        const resume = () => {
+          video.currentTime = resumeAt;
+        };
         if (resumeAt > 0) {
-          video.addEventListener(
-            "loadedmetadata",
-            () => {
-              video.currentTime = resumeAt;
-            },
-            { once: true },
-          );
+          video.addEventListener("loadedmetadata", resume, { once: true });
         }
         return () => {
+          video.removeEventListener("loadedmetadata", resume);
           video.removeAttribute("src");
           video.load();
         };
@@ -344,6 +344,9 @@ const Video = ({ className, videoRef, movie }: props) => {
   // object (SWR revalidation, ...) cannot recreate the player.
   useEffect(() => {
     if (!videoEl) return;
+    // Errors belong to the source that produced them; clear them for every new
+    // source, including an empty one (e.g. a movie still uploading).
+    setState((pv) => (pv.error ? { ...pv, error: null } : pv));
     if (!contentUrl) {
       loadedUrlRef.current = "";
       selectedAudioTrackRef.current = -1;
@@ -364,7 +367,6 @@ const Video = ({ className, videoRef, movie }: props) => {
     }
     loadedUrlRef.current = contentUrl;
 
-    setState((pv) => (pv.error ? { ...pv, error: null } : pv));
     const unload = loadVideo(
       videoEl,
       contentUrl,
