@@ -23,12 +23,14 @@ spec:
             - /bin/sh
             - -c
             - |
-              apk add --no-cache ca-certificates gettext openssl
-              openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-                -keyout /etc/nginx/ssl/tls.key \
-                -out /etc/nginx/ssl/tls.crt \
-                -subj "/CN=vod/O=video-host"
+              apk add --no-cache ca-certificates gettext
               cp /etc/ssl/cert.pem /etc/nginx/ssl/ca-certificates.crt
+              DNS_RESOLVER="$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf)"
+              if [ -z "$DNS_RESOLVER" ]; then
+                echo "No DNS resolver found in /etc/resolv.conf" >&2
+                exit 1
+              fi
+              export DNS_RESOLVER
               if [ -n "$S3_ENDPOINT" ]; then
                 S3_PROXY_SCHEME="${S3_ENDPOINT%%://*}"
                 S3_PROXY_HOST="${S3_ENDPOINT#*://}"
@@ -45,7 +47,7 @@ spec:
                 fi
               fi
               export S3_PROXY_SCHEME S3_PROXY_HOST
-              envsubst '${VOD_INTERNAL_SECRET} ${S3_PROXY_SCHEME} ${S3_PROXY_HOST}' < /etc/nginx/template/nginx.conf > /etc/nginx/rendered/nginx.conf
+              envsubst '${VOD_INTERNAL_SECRET} ${S3_PROXY_SCHEME} ${S3_PROXY_HOST} ${DNS_RESOLVER}' < /etc/nginx/template/nginx.conf > /etc/nginx/rendered/nginx.conf
           env:
             - name: VOD_INTERNAL_SECRET
               valueFrom:
@@ -74,7 +76,7 @@ spec:
                   name: backend-config
                   key: s3-prod-bucket
           volumeMounts:
-            - name: ssl-certs
+            - name: ca-certificates
               mountPath: /etc/nginx/ssl
             - name: nginx-config-template
               mountPath: /etc/nginx/template
@@ -85,7 +87,7 @@ spec:
         - name: vod
           image: ghcr.io/xpadev-net/nginx-vod-module-docker:latest
           ports:
-            - containerPort: 443
+            - containerPort: 80
               protocol: TCP
           env:
             - name: VOD_INTERNAL_SECRET
@@ -98,7 +100,7 @@ spec:
               mountPath: /etc/nginx/nginx.conf
               subPath: nginx.conf
               readOnly: true
-            - name: ssl-certs
+            - name: ca-certificates
               mountPath: /etc/nginx/ssl
               readOnly: true
           resources:
@@ -111,15 +113,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 443
-              scheme: HTTPS
+              port: 80
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health
-              port: 443
-              scheme: HTTPS
+              port: 80
             initialDelaySeconds: 10
             periodSeconds: 20
       volumes:
@@ -128,6 +128,6 @@ spec:
             name: vod-nginx-config
         - name: nginx-config-rendered
           emptyDir: {}
-        - name: ssl-certs
+        - name: ca-certificates
           emptyDir: {}
 
