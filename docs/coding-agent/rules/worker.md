@@ -20,6 +20,7 @@ last_updated: "2026-10-19"
 
 | Change Type | Required Checks | Notes |
 |---|---|---|
+| FFmpeg worker TypeScript/config | Worker lint, format:check, typecheck, and test | CI runs the same package commands. |
 | Frontend TS/TSX/CSS | frontend lint, format:check, typecheck, build, test | `test` includes Node unit tests and Vitest hook/component tests. Build backend declarations first. |
 | Frontend dependencies/config | frozen install, backend build, frontend lint, format:check, typecheck, build with `app/frontend/docker/.env.placeholder`, then test:all | `test:all` includes unit, Vitest, proxy, and runtime env checks. Confirm generated route-tree handling. |
 | Routes/navigation/player | frontend checks, frontend test, backend auth tests plus browser probe | Verify dynamic params, auth callback, and player continuity. |

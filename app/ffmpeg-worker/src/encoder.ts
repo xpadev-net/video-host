@@ -209,7 +209,6 @@ const runFfprobe = (
 export interface EncodeResult {
   success: boolean;
   kind?: "transient" | "permanent" | "timeout";
-  outputPath?: string;
   duration?: number;
   error?: string;
 }
@@ -469,7 +468,7 @@ export const encodeVideo = async (
         // Get duration from ffprobe
         getDuration(outputPath, abortSignal)
           .then((duration) => {
-            finish({ success: true, outputPath, duration });
+            finish({ success: true, duration });
           })
           .catch((error) => {
             finish({
