@@ -1,4 +1,5 @@
 import { BACKEND_CALLBACK_URL, CALLBACK_SECRET } from "./env";
+import { deleteFromProd } from "./s3";
 
 const callbackUrl = new URL("/api/v4/callback", BACKEND_CALLBACK_URL);
 
@@ -36,6 +37,30 @@ export const sendCallback = async (payload: CallbackPayload) => {
       // changed; retrying this callback cannot make the old job current again.
       console.warn(`Stale encode callback ignored for ID ${payload.movieId}`);
       return;
+    }
+    if (res.status === 410) {
+      // The movie was deleted while this encode was running. Do not leave its
+      // completed output behind in the production bucket.
+      if (payload.status === "success") {
+        await deleteFromProd(payload.s3Key);
+      }
+      return;
+    }
+    if (res.status === 400) {
+      const body = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      if (
+        ["Movie not found", "No matching variant found"].includes(
+          body?.message ?? "",
+        )
+      ) {
+        // The movie or its variant was deleted while this encode was running.
+        if (payload.status === "success") {
+          await deleteFromProd(payload.s3Key);
+        }
+        return;
+      }
     }
     if (!res.ok) {
       console.error(`Failed to send callback: ${res.statusText}`);

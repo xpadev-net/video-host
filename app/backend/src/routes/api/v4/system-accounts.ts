@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import { prisma } from "@/lib/prisma";
+import { deleteProdFile, deleteTmpFile } from "@/lib/s3";
 import { NameSchema, UsernameSchema } from "@/utils/inputSchemas";
 import { badRequest, forbidden, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
@@ -104,6 +105,11 @@ export const systemAccountsRoute = app
       badRequest("Cannot delete a regular user account");
     }
 
+    const variants = await prisma.movieVariant.findMany({
+      where: { movie: { authorId: id } },
+      select: { id: true, s3Key: true },
+    });
+
     // Delete associated data in a transaction to ensure atomicity
     await prisma.$transaction([
       prisma.movieOnPlaylist.deleteMany({
@@ -121,6 +127,28 @@ export const systemAccountsRoute = app
       prisma.series.deleteMany({ where: { authorId: id } }),
       prisma.user.delete({ where: { id } }),
     ]);
+
+    await Promise.all(
+      variants.flatMap((variant) => {
+        if (!variant.s3Key) return [];
+        return [
+          deleteProdFile(variant.s3Key).catch((error) =>
+            console.error(
+              "Failed to delete system account prod object",
+              variant.id,
+              error,
+            ),
+          ),
+          deleteTmpFile(variant.s3Key).catch((error) =>
+            console.error(
+              "Failed to delete system account tmp object",
+              variant.id,
+              error,
+            ),
+          ),
+        ];
+      }),
+    );
 
     return ok(c, { success: true });
   });

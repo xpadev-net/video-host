@@ -150,11 +150,13 @@ export const getQueuePosition = async (movieId: string): Promise<number> => {
 };
 
 export const closeRedis = async (): Promise<void> => {
-  if (redisClient) {
-    await (
-      (redisClient as RedisClientType).quit ||
-      (redisClient as RedisSentinelType).close
-    )?.();
-    redisClient = null;
+  const client = redisClient;
+  redisClient = null;
+  if (!client) return;
+
+  if ("quit" in client && typeof client.quit === "function") {
+    await client.quit();
+  } else if ("close" in client && typeof client.close === "function") {
+    await client.close();
   }
 };

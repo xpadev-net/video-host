@@ -29,6 +29,14 @@ PodDisruptionBudgets allow at most one unavailable replica. The base install
 keeps one replica and does not block voluntary eviction. NetworkPolicies
 restrict application ingress.
 
+Provision the configured temporary and production S3 buckets before starting
+the backend; startup only checks that both exist. Set a seven-day expiration
+lifecycle rule on the temporary bucket to remove abandoned uploads. Configure
+CORS on that bucket for the exact frontend origins with `PUT`, `GET`, and
+`HEAD`, and allow the `Content-Type` request header. The production bucket does
+not need browser upload CORS. The local Compose initializer applies this
+temporary-bucket policy to SeaweedFS for development.
+
 ## Standalone base install
 
 For a standalone base install, use the sample files as templates to create the

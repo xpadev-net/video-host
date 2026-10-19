@@ -230,23 +230,35 @@ export const movieRoute = app
       forbidden("Not authorized to delete this movie");
     }
 
-    // Try to delete S3 files (don't fail if this errors)
-    for (const variant of movie.variants) {
-      try {
-        if (variant.s3Key) {
-          await deleteProdFile(variant.s3Key);
-          await deleteTmpFile(variant.s3Key);
-        }
-      } catch (e) {
-        console.error("Failed to delete S3 files for variant", variant.id, e);
-      }
-    }
-
     // Join rows, variants, and viewer entries are removed by database
     // cascades as part of the same delete statement.
     await prisma.movie.delete({
       where: { id: param },
     });
+
+    // Database state is removed atomically first; object storage cleanup is
+    // best effort and can be retried independently if the provider is down.
+    await Promise.all(
+      movie.variants.flatMap((variant) => {
+        if (!variant.s3Key) return [];
+        return [
+          deleteProdFile(variant.s3Key).catch((error) =>
+            console.error(
+              "Failed to delete prod object for variant",
+              variant.id,
+              error,
+            ),
+          ),
+          deleteTmpFile(variant.s3Key).catch((error) =>
+            console.error(
+              "Failed to delete tmp object for variant",
+              variant.id,
+              error,
+            ),
+          ),
+        ];
+      }),
+    );
 
     return ok(c, { success: true });
   });

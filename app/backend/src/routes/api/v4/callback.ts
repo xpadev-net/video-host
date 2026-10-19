@@ -58,7 +58,9 @@ export const callbackRoute = app.post(
         select: { id: true },
       });
 
-      if (!targetVariant) badRequest("No matching variant found");
+      if (!targetVariant) {
+        badRequest("No matching variant found");
+      }
 
       // Only the job that still owns this processing key may change state.
       const updated = await tx.movieVariant.updateMany({
