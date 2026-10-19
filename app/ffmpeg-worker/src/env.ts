@@ -16,7 +16,7 @@ const requireEnv = (name: string, defaultForDev?: string): string => {
 
   throw new Error(
     `Required environment variable ${name} is not set. ` +
-    `Set it in your environment or use NODE_ENV=development for defaults.`,
+      `Set it in your environment or use NODE_ENV=development for defaults.`,
   );
 };
 

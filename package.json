@@ -1,6 +1,5 @@
 {
   "name": "video-host",
-  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "pnpm -r --parallel dev",
@@ -10,14 +9,12 @@
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
     "format": "pnpm -r format",
-    "typecheck": "pnpm -r --parallel typecheck",
-    "prepare": "lefthook install",
+    "typecheck": "pnpm -F @video-host/backend build && pnpm -r --workspace-concurrency=1 typecheck",
     "prisma:generate": "pnpm -r prisma:generate"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
-    "lefthook": "^2.2.2",
-    "typescript": "^5.9.3"
+    "lefthook": "^2.2.2"
   },
   "packageManager": "pnpm@10.25.0"
 }

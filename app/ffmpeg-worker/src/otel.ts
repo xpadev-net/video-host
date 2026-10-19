@@ -4,11 +4,11 @@ import {
   defaultResource,
   resourceFromAttributes,
 } from "@opentelemetry/resources";
-import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import {
   MeterProvider,
   PeriodicExportingMetricReader,
 } from "@opentelemetry/sdk-metrics";
+import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import {
   OTEL_EXPORTER_OTLP_ENDPOINT,
   OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,

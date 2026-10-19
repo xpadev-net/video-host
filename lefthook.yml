@@ -2,15 +2,18 @@ pre-commit:
   # parallel: true
   commands:
     backend-lint:
-      glob: "app/backend/*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}"
+      glob: "app/backend/**/*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}"
       root: "app/backend"
-      run: pnpm biome check --write --unsafe --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {staged_files}
-      stage_fixed: true
+      run: pnpm biome check --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {staged_files}
     frontend-lint:
-      glob: "app/frontend/*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}"
+      glob: "app/frontend/**/*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}"
       root: "app/frontend"
-      run: pnpm biome check --write --unsafe --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {staged_files}
-      stage_fixed: true
+      run: pnpm biome check --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {staged_files}
+    worker-lint:
+      glob: "app/ffmpeg-worker/**/*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}"
+      root: "app/ffmpeg-worker"
+      run: pnpm biome check --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {staged_files}
+pre-push:
+  commands:
     typecheck:
-      glob: "*.{ts,tsx}"
       run: pnpm typecheck

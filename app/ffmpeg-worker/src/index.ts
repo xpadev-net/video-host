@@ -1,29 +1,34 @@
-import { VOD_BASE_URL, TEMP_DIR, MIN_DISK_SPACE_GB, JOB_TIMEOUT_SECONDS } from "./env";
-import {
-  getEncodeJobBlocking,
-  closeRedis,
-  type EncodeJob,
-  type ProcessingClaim,
-  setEncodeProgress,
-  getEncodeProgress,
-  addJobToRetryQueue,
-  processRetryQueue,
-  getQueueDepths,
-  claimProcessingJob,
-  commitProcessingJob,
-  finishProcessingJob,
-  getJobCompletion,
-  releaseProcessingJob,
-  expireProcessingJob,
-  getStaleProcessingJobs,
-  requeueStaleProcessingJob,
-} from "./queue";
-import { downloadFromTmp, uploadToProd, deleteFromTmp } from "./s3";
-import { encodeVideo, getLocalPath, cleanup } from "./encoder";
-import { sendCallback } from "./callback";
-import { initOtelMetrics, getMeter } from "./otel";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { sendCallback } from "./callback";
+import { cleanup, encodeVideo, getLocalPath } from "./encoder";
+import {
+  JOB_TIMEOUT_SECONDS,
+  MIN_DISK_SPACE_GB,
+  TEMP_DIR,
+  VOD_BASE_URL,
+} from "./env";
+import { getMeter, initOtelMetrics } from "./otel";
+import {
+  addJobToRetryQueue,
+  claimProcessingJob,
+  closeRedis,
+  commitProcessingJob,
+  type EncodeJob,
+  expireProcessingJob,
+  finishProcessingJob,
+  getEncodeJobBlocking,
+  getEncodeProgress,
+  getJobCompletion,
+  getQueueDepths,
+  getStaleProcessingJobs,
+  type ProcessingClaim,
+  processRetryQueue,
+  releaseProcessingJob,
+  requeueStaleProcessingJob,
+  setEncodeProgress,
+} from "./queue";
+import { deleteFromTmp, downloadFromTmp, uploadToProd } from "./s3";
 
 const execFileAsync = promisify(execFile);
 
@@ -156,9 +161,7 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
           duration: completion.duration,
         });
         await finishProcessingJob(member, job.movieId);
-        console.log(
-          `Finalized job from stale claim: movieId=${job.movieId}`,
-        );
+        console.log(`Finalized job from stale claim: movieId=${job.movieId}`);
       } catch (err) {
         // Leave the claim in place so a later reap retries it.
         console.error(
@@ -171,9 +174,7 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
     try {
       const requeued = await requeueStaleProcessingJob(member);
       if (requeued) {
-        console.log(
-          `Requeued job from stale claim: movieId=${job.movieId}`,
-        );
+        console.log(`Requeued job from stale claim: movieId=${job.movieId}`);
       }
     } catch (err) {
       console.error(
@@ -192,7 +193,9 @@ const checkDiskSpace = async (): Promise<boolean> => {
     const { stdout } = await execFileAsync("df", ["-B1", TEMP_DIR]);
     const lines = stdout.trim().split("\n");
     if (lines.length < 2) {
-      console.warn("Could not parse df output, assuming disk space is available");
+      console.warn(
+        "Could not parse df output, assuming disk space is available",
+      );
       return true;
     }
 
@@ -200,14 +203,18 @@ const checkDiskSpace = async (): Promise<boolean> => {
     // or: Filesystem 1B-blocks Used Available Use% Mounted on
     const parts = lines[1].trim().split(/\s+/);
     if (parts.length < 4) {
-      console.warn("Could not parse df output, assuming disk space is available");
+      console.warn(
+        "Could not parse df output, assuming disk space is available",
+      );
       return true;
     }
 
     // Available space in bytes (3rd column when using -B1)
     const availableBytes = parseInt(parts[3], 10);
     if (Number.isNaN(availableBytes)) {
-      console.warn("Could not parse available disk space, assuming disk space is available");
+      console.warn(
+        "Could not parse available disk space, assuming disk space is available",
+      );
       return true;
     }
 
@@ -232,12 +239,7 @@ const checkDiskSpace = async (): Promise<boolean> => {
 // "error" marks unexpected processJob rejections (no confirmed terminal
 // outcome), distinct from handled "failed" paths. "relinquished" marks a
 // job whose ownership was transferred to the queue during shutdown.
-type JobResult =
-  | "completed"
-  | "failed"
-  | "retrying"
-  | "error"
-  | "relinquished";
+type JobResult = "completed" | "failed" | "retrying" | "error" | "relinquished";
 
 const processJob = async (job: EncodeJob): Promise<JobResult> => {
   console.log(`Processing job: movieId=${job.movieId}, s3Key=${job.s3Key}`);
@@ -261,7 +263,10 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         });
         return "retrying";
       } catch (retryError) {
-        console.error(`Failed to schedule retry: movieId=${job.movieId}`, retryError);
+        console.error(
+          `Failed to schedule retry: movieId=${job.movieId}`,
+          retryError,
+        );
         // Fall through to mark as failed
         await setEncodeProgress(job.movieId, {
           status: "failed",
@@ -299,8 +304,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
   // Set once the tmp input is deleted: past that point the job can only be
   // finalized as success — re-encoding is impossible, so errors in the
   // finalize steps must never fall into the retry/failed path.
-  let committedOutcome: { contentUrl: string; duration?: number } | null =
-    null;
+  let committedOutcome: { contentUrl: string; duration?: number } | null = null;
 
   // Create abort controller for timeout management
   const abortController = new AbortController();
@@ -363,7 +367,10 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
           });
           return "retrying";
         } catch (retryError) {
-          console.error(`Failed to schedule retry: movieId=${job.movieId}`, retryError);
+          console.error(
+            `Failed to schedule retry: movieId=${job.movieId}`,
+            retryError,
+          );
           // Fall through to mark as failed
         }
       }
@@ -379,7 +386,12 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 
     // Upload to prod-bucket (same key structure)
     console.log(`Uploading to prod-bucket: ${job.s3Key}`);
-    await uploadToProd(job.s3Key, outputPath, "video/mp4", abortController.signal);
+    await uploadToProd(
+      job.s3Key,
+      outputPath,
+      "video/mp4",
+      abortController.signal,
+    );
 
     // Delete from tmp-bucket
     console.log(`Deleting from tmp-bucket: ${job.s3Key}`);
@@ -494,7 +506,10 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         });
         return "retrying";
       } catch (retryError) {
-        console.error(`Failed to schedule retry for job: movieId=${job.movieId}`, retryError);
+        console.error(
+          `Failed to schedule retry for job: movieId=${job.movieId}`,
+          retryError,
+        );
         // If retry scheduling fails, mark as failed
         try {
           await setEncodeProgress(job.movieId, { status: "failed" });
@@ -504,7 +519,10 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
             status: "failed",
           });
         } catch (finalError) {
-          console.error(`Failed to mark job as failed: movieId=${job.movieId}`, finalError);
+          console.error(
+            `Failed to mark job as failed: movieId=${job.movieId}`,
+            finalError,
+          );
         }
       }
     } else {
@@ -618,10 +636,9 @@ const pollForJobs = async (): Promise<void> => {
             }
           }
           encodeJobs.add(1, { result: "completed" });
-          encodeJobDuration.record(
-            (performance.now() - jobStartedAt) / 1000,
-            { result: "completed" },
-          );
+          encodeJobDuration.record((performance.now() - jobStartedAt) / 1000, {
+            result: "completed",
+          });
           activeJob = null;
           activeJobClaim = null;
           activeJobCommitted = false;
@@ -657,8 +674,7 @@ const pollForJobs = async (): Promise<void> => {
           // committed job that failed to finalize keeps its claim so the
           // reaper can finish it instead of losing an uploaded video.
           const claimResolved =
-            !jobRelinquished &&
-            (!activeJobCommitted || result === "completed");
+            !jobRelinquished && (!activeJobCommitted || result === "completed");
           if (activeJobClaim && claimResolved) {
             try {
               if (result === "completed") {
@@ -678,10 +694,9 @@ const pollForJobs = async (): Promise<void> => {
           activeJobCommitted = false;
         }
         encodeJobs.add(1, { result });
-        encodeJobDuration.record(
-          (performance.now() - jobStartedAt) / 1000,
-          { result },
-        );
+        encodeJobDuration.record((performance.now() - jobStartedAt) / 1000, {
+          result,
+        });
       }
       // If no job, brPop will timeout and return null, then loop continues
     } catch (error) {
@@ -704,9 +719,7 @@ const shutdown = async (): Promise<void> => {
   // updates and callbacks are sent before the provider is shut down.
   await Promise.race([
     pollPromise,
-    new Promise((resolve) =>
-      setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS),
-    ),
+    new Promise((resolve) => setTimeout(resolve, SHUTDOWN_DRAIN_TIMEOUT_MS)),
   ]);
   // If the drain timed out mid-job, abort it so its own failure handling
   // puts it back on the retry queue. Requeueing while it still runs would
@@ -718,9 +731,7 @@ const shutdown = async (): Promise<void> => {
     jobShutdownAbort.abort();
     await Promise.race([
       pollPromise,
-      new Promise((resolve) =>
-        setTimeout(resolve, SHUTDOWN_SETTLE_TIMEOUT_MS),
-      ),
+      new Promise((resolve) => setTimeout(resolve, SHUTDOWN_SETTLE_TIMEOUT_MS)),
     ]);
   }
   // Last resort: the job did not settle even after abort (e.g. stuck in a

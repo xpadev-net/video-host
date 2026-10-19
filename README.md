@@ -15,6 +15,7 @@ From the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
+pnpm exec lefthook install
 docker compose up -d
 ```
 

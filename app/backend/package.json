@@ -1,16 +1,18 @@
 {
   "name": "@video-host/backend",
   "version": "0.0.37",
+  "private": true,
+  "license": "MIT",
   "types": "./dist/types.d.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && tsc-alias",
+    "build": "pnpm prisma:generate && tsc && tsc-alias",
     "run": "tsx src/index.ts",
     "lint": "biome check .",
-    "lint:fix": "biome check . --write --unsafe",
+    "lint:fix": "biome check . --write",
     "format": "biome format . --write",
+    "format:check": "biome format .",
     "typecheck": "tsc --noEmit --skipLibCheck --pretty --noErrorTruncation --skipDefaultLibCheck --project tsconfig.json",
-    "prepare": "pnpm prisma generate || true",
     "prisma:generate": "prisma generate",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -35,10 +37,11 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^24.19.2",
+    "@types/node": "^22.12.0",
     "@vitest/coverage-v8": "^4.1.11",
     "tsc-alias": "^1.9.7",
     "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   }
 }

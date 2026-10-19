@@ -3,7 +3,7 @@ import { hc } from "hono/client";
 
 const apiEndpoint = process.env.BACKEND_CALLBACK_URL;
 if (!apiEndpoint) {
-    throw new Error("BACKEND_CALLBACK_URL is not defined");
+  throw new Error("BACKEND_CALLBACK_URL is not defined");
 }
 
 // Convert full URL to base URL (remove /api/v4/callback if present, or just use origin?)

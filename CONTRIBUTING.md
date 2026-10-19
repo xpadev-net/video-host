@@ -4,6 +4,8 @@
 
 Read the root [README](README.md), then the relevant service README. Use the Node.js and pnpm versions documented there. Keep pull requests focused, describe user-visible and operational impact, and include the checks run and any checks that require external services.
 
+After installing dependencies, run `pnpm exec lefthook install` to enable the repository Git hooks. Pre-commit hooks check staged files with Biome; pre-push hooks run the workspace typecheck.
+
 ## Code changes
 
 - Follow existing TypeScript, Biome, and Prisma conventions.
