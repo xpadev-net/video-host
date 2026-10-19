@@ -3,8 +3,8 @@ import { streamSSE } from "hono/streaming";
 import type { Env, HonoApp } from "@/@types/hono";
 import { prisma } from "@/lib/prisma";
 import { getEncodeProgress, getQueuePosition } from "@/lib/redis";
-import { canManageMovie } from "@/utils/movieAuth";
-import { notFound, unauthorized } from "@/utils/response";
+import { canManageOwned } from "@/utils/movieAuth";
+import { forbidden, notFound, unauthorized } from "@/utils/response";
 
 const POLL_INTERVAL_MS = 2000;
 // Progress keys expire after an hour, so a stream never has reason to outlive it.
@@ -30,8 +30,8 @@ export const progressRoute = app.get("/:movieId", async (c) => {
   if (!movie) {
     notFound("Movie not found");
   }
-  if (!(await canManageMovie(user, movie.authorId))) {
-    unauthorized("Not authorized to view this movie's progress");
+  if (!(await canManageOwned(user, movie.authorId))) {
+    forbidden("Not authorized to view this movie's progress");
   }
 
   return streamSSE(c, async (stream) => {

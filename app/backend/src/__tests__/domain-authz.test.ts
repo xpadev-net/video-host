@@ -25,7 +25,7 @@ import { createVodToken } from "../lib/vod-token";
 import { callbackRoute } from "../routes/api/v4/callback";
 import { systemAccountsRoute } from "../routes/api/v4/system-accounts";
 import { vodRoute } from "../routes/api/v4/vod";
-import { canManageMovie, resolveAuthorId } from "../utils/movieAuth";
+import { canManageOwned, resolveAuthorId } from "../utils/movieAuth";
 import { isSystemAccount } from "../utils/systemAccountCache";
 
 const person = (id: string, role: User["role"] = "USER"): User => ({
@@ -88,7 +88,7 @@ describe("explicit HUMAN and SYSTEM authorization", () => {
   });
   it("rejects ordinary users posting for system accounts", async () => {
     await expect(resolveAuthorId(member, system.id)).rejects.toMatchObject({
-      status: 401,
+      status: 403,
     });
     expect(database.user.findUnique).not.toHaveBeenCalled();
     expect(await resolveAuthorId(member)).toBe(member.id);
@@ -97,10 +97,10 @@ describe("explicit HUMAN and SYSTEM authorization", () => {
     database.user.findUnique
       .mockResolvedValueOnce({ kind: "HUMAN" })
       .mockResolvedValueOnce({ kind: "SYSTEM" });
-    expect(await canManageMovie(member, member.id)).toBe(true);
-    expect(await canManageMovie(admin, humanSso.id)).toBe(false);
-    expect(await canManageMovie(admin, system.id)).toBe(true);
-    expect(await canManageMovie(member, system.id)).toBe(false);
+    expect(await canManageOwned(member, member.id)).toBe(true);
+    expect(await canManageOwned(admin, humanSso.id)).toBe(false);
+    expect(await canManageOwned(admin, system.id)).toBe(true);
+    expect(await canManageOwned(member, system.id)).toBe(false);
   });
   it("lists only explicitly classified SYSTEM accounts", async () => {
     database.user.findMany.mockResolvedValue([system]);
@@ -145,7 +145,7 @@ describe("explicit HUMAN and SYSTEM authorization", () => {
     async (actor) => {
       expect(
         (await appFor(actor).request("/api/v4/system-accounts")).status,
-      ).toBe(401);
+      ).toBe(actor ? 403 : 401);
       expect(database.user.findMany).not.toHaveBeenCalled();
     },
   );

@@ -11,9 +11,14 @@ import {
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
 import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
-import { badRequest, notFound, unauthorized } from "@/utils/response";
+import { canManageOwned } from "@/utils/movieAuth";
+import {
+  badRequest,
+  forbidden,
+  notFound,
+  unauthorized,
+} from "@/utils/response";
 import { ok } from "@/utils/response/ok";
-import { isSystemAccount } from "@/utils/systemAccountCache";
 
 const app = new Hono<Env>();
 
@@ -90,13 +95,8 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
-    const isOwner = existingPlaylist.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" &&
-      (await isSystemAccount(existingPlaylist.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this playlist");
+    if (!(await canManageOwned(user, existingPlaylist.authorId))) {
+      forbidden("Not authorized to edit this playlist");
     }
 
     const { title, description, visibility } = c.req.valid("json");
@@ -147,12 +147,8 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
-    const isOwner = playlist.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to delete this playlist");
+    if (!(await canManageOwned(user, playlist.authorId))) {
+      forbidden("Not authorized to delete this playlist");
     }
 
     // Join rows are removed by the database cascade with the playlist.
@@ -180,12 +176,8 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
-    const isOwner = playlist.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this playlist");
+    if (!(await canManageOwned(user, playlist.authorId))) {
+      forbidden("Not authorized to edit this playlist");
     }
 
     const { movieId } = c.req.valid("json");
@@ -274,12 +266,8 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
-    const isOwner = playlist.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this playlist");
+    if (!(await canManageOwned(user, playlist.authorId))) {
+      forbidden("Not authorized to edit this playlist");
     }
 
     await prisma.movieOnPlaylist.deleteMany({
@@ -312,12 +300,8 @@ export const playlistDetailRoute = app
         notFound("Playlist not found");
       }
 
-      const isOwner = playlist.authorId === user.id;
-      const isAdminForSystemAccount =
-        user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
-
-      if (!isOwner && !isAdminForSystemAccount) {
-        unauthorized("Not authorized to edit this playlist");
+      if (!(await canManageOwned(user, playlist.authorId))) {
+        forbidden("Not authorized to edit this playlist");
       }
 
       const { movieIds } = c.req.valid("json");

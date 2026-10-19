@@ -15,8 +15,9 @@ import {
   buildVisibilityFilter,
 } from "@/utils/buildVisibilityFilter";
 import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
+import { resolveAuthorId } from "@/utils/movieAuth";
 import { paginationQuerySchema } from "@/utils/pagination";
-import { badRequest, unauthorized } from "@/utils/response";
+import { unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { playlistDetailRoute } from "./[playlist]";
 
@@ -113,22 +114,7 @@ export const playlistsRoute = app
     }
     const { title, description, visibility, asUserId } = c.req.valid("json");
 
-    let authorId = user.id;
-    if (asUserId) {
-      if (user.role !== "ADMIN") {
-        unauthorized("Only admins can create playlists for other users");
-      }
-      const targetUser = await prisma.user.findUnique({
-        where: { id: asUserId },
-      });
-      if (!targetUser) {
-        badRequest("Target user not found");
-      }
-      if (targetUser.kind !== "SYSTEM") {
-        badRequest("Can only create playlists for system accounts");
-      }
-      authorId = asUserId;
-    }
+    const authorId = await resolveAuthorId(user, asUserId);
 
     const playlist = await prisma.playlist.create({
       data: {

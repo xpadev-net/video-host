@@ -13,8 +13,13 @@ import {
   getPresignedUploadUrl,
   getTmpFileSize,
 } from "@/lib/s3";
-import { canManageMovie, resolveAuthorId } from "@/utils/movieAuth";
-import { badRequest, notFound, unauthorized } from "@/utils/response";
+import { canManageOwned, resolveAuthorId } from "@/utils/movieAuth";
+import {
+  badRequest,
+  forbidden,
+  notFound,
+  unauthorized,
+} from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const FilenameSchema = z.string().min(1).max(255);
@@ -109,8 +114,8 @@ export const uploadRoute = app
       notFound("Movie not found");
     }
 
-    if (!(await canManageMovie(user, movie.authorId))) {
-      unauthorized("Not authorized to upload to this movie");
+    if (!(await canManageOwned(user, movie.authorId))) {
+      forbidden("Not authorized to upload to this movie");
     }
 
     const variant = movie.variants.find((v) => v.status === "UPLOADING");
@@ -163,8 +168,8 @@ export const uploadRoute = app
       notFound("Movie not found");
     }
 
-    if (!(await canManageMovie(user, movie.authorId))) {
-      unauthorized("Not authorized to complete this upload");
+    if (!(await canManageOwned(user, movie.authorId))) {
+      forbidden("Not authorized to complete this upload");
     }
 
     const variant = movie.variants.find((v) => v.status === "UPLOADING");
