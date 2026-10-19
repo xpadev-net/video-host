@@ -49,8 +49,10 @@ http {
     vod_last_modified 'Sun, 19 Nov 2000 08:52:00 GMT';
     vod_last_modified_types *;
     vod_metadata_cache metadata_cache 64m;
-    vod_response_cache response_cache 32m;
-    vod_mapping_cache mapping_cache 5m;
+    vod_response_cache response_cache 32m 60;
+    # Cache expirations are in seconds. They bound how long a cached mapping or
+    # manifest can outlive the playback token that authorised it.
+    vod_mapping_cache mapping_cache 5m 60;
     vod_manifest_segment_durations_mode accurate;
     vod_segment_duration 10000;
     vod_align_segments_to_key_frames on;

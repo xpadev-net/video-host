@@ -29,6 +29,8 @@ data:
   # S3
   s3-tmp-bucket: "video-tmp"
   s3-prod-bucket: "video-prod"
+  # ロールアウト中のみ "true": トークン無しの VOD mapping を一時的に許可 (完了後は削除)
+  # vod-allow-unsigned: "true"
   max-upload-bytes: "5368709120"  # 最大アップロードサイズ (bytes, 既定 5GiB)
   s3-region: "ap-northeast-1"
   s3-endpoint: "http://object-storage:8333"  # SeaweedFS S3 service

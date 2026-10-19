@@ -11,7 +11,7 @@ const production = (changes: Record<string, string | undefined> = {}) => ({
   FRONTEND_URL: "https://video.example.com",
   AUTH_TRUSTED_PROXY_CIDRS: "10.0.0.2/32, 2001:db8:100::/48",
   CALLBACK_SECRET: "synthetic-callback-secret",
-  VOD_INTERNAL_SECRET: "synthetic-vod-secret",
+  VOD_INTERNAL_SECRET: "synthetic-vod-secret-0123456789abcdef",
   ...changes,
 });
 const oidc = {
@@ -70,6 +70,12 @@ describe("authentication environment", () => {
       const match = line.match(/^(API_UPSTREAM_URL|VITE_[A-Z0-9_]+)=(.*)$/);
       if (match) expect(rootValues.get(match[1])).toBe(match[2]);
     }
+  });
+  it("rejects a short VOD secret in production", () => {
+    expect(
+      EnvSchema.safeParse(production({ VOD_INTERNAL_SECRET: "too-short" }))
+        .success,
+    ).toBe(false);
   });
   it("accepts complete production configuration", () => {
     expect(EnvSchema.safeParse(production()).success).toBe(true);

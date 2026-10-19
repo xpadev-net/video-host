@@ -5,6 +5,7 @@ import type {
   FilteredSeries,
   FilteredUser,
 } from "@/@types/models";
+import { signVodContentUrl } from "@/lib/vod-token";
 
 export const filterUser = (user: FilteredUser): FilteredUser => {
   return {
@@ -44,11 +45,13 @@ export const filterMovie = (episode: FilteredMovie): FilteredMovie => {
 };
 
 export const filterMovieVariant = (
-  variant: FilteredMovieVariant,
+  variant: FilteredMovieVariant & { s3Key?: string | null },
 ): FilteredMovieVariant => {
   return {
     variantId: variant.variantId,
-    contentUrl: variant.contentUrl,
+    // Playback URLs carry a short-lived token bound to the stored key; the
+    // VOD mapping endpoint rejects requests without a valid one.
+    contentUrl: signVodContentUrl(variant.contentUrl, variant.s3Key),
     status: variant.status,
   };
 };
