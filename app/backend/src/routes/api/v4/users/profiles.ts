@@ -4,13 +4,18 @@ import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import { filterUser } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
+import {
+  MAX_ADDITIONAL_PROFILES,
+  NameSchema,
+  UsernameSchema,
+} from "@/utils/inputSchemas";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const app = new Hono<Env>();
 const CreateProfileSchema = z.object({
-  name: z.string().trim().min(1).max(191),
-  username: z.string().regex(/^[a-zA-Z0-9_-]{3,32}$/),
+  name: NameSchema,
+  username: UsernameSchema,
 });
 
 export const profilesRoute = app
@@ -46,33 +51,46 @@ export const profilesRoute = app
     });
     if (!account?.profile) unauthorized("Profile not provisioned");
 
-    let profile: Awaited<ReturnType<typeof prisma.user.create>>;
-    try {
-      profile = await prisma.$transaction(async (tx) => {
-        const created = await tx.user.create({
-          data: {
-            name,
-            username,
-            kind: "HUMAN",
-            role: account.profile?.role ?? "USER",
+    let profile: Awaited<ReturnType<typeof prisma.user.create>> | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        profile = await prisma.$transaction(
+          async (tx) => {
+            const additionalProfileCount = await tx.authProfile.count({
+              where: { authUserId },
+            });
+            if (additionalProfileCount >= MAX_ADDITIONAL_PROFILES) {
+              badRequest(
+                `An account can have at most ${MAX_ADDITIONAL_PROFILES} additional profiles`,
+              );
+            }
+            const created = await tx.user.create({
+              data: {
+                name,
+                username,
+                kind: "HUMAN",
+                role: account.profile?.role ?? "USER",
+              },
+            });
+            await tx.authProfile.create({
+              data: { authUserId, profileId: created.id },
+            });
+            return created;
           },
-        });
-        await tx.authProfile.create({
-          data: { authUserId, profileId: created.id },
-        });
-        return created;
-      });
-    } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "code" in error &&
-        error.code === "P2002"
-      ) {
-        badRequest("Username already exists");
+          { isolationLevel: "Serializable" },
+        );
+        break;
+      } catch (error) {
+        const code =
+          error && typeof error === "object" && "code" in error
+            ? error.code
+            : undefined;
+        if (code === "P2002") badRequest("Username already exists");
+        if (code !== "P2034" || attempt === 2) throw error;
       }
-      throw error;
     }
+    if (!profile)
+      throw new Error("Profile creation transaction did not finish");
     return ok(c, { ...filterUser(profile), isDefault: false });
   });
 

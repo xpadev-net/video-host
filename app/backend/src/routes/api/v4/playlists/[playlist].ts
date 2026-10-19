@@ -10,6 +10,7 @@ import {
   canViewMovie,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
+import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
 import { canManageOwned } from "@/utils/movieAuth";
 import {
   badRequest,
@@ -22,8 +23,8 @@ import { ok } from "@/utils/response/ok";
 const app = new Hono<Env>();
 
 const PlaylistPatchSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
+  title: TitleSchema.optional(),
+  description: DescriptionSchema.nullable().optional(),
   visibility: ZBasicVisibility.optional(),
 });
 
@@ -105,7 +106,10 @@ export const playlistDetailRoute = app
       },
       data: {
         title: title ?? existingPlaylist.title,
-        description: description ?? existingPlaylist.description,
+        description:
+          description === undefined
+            ? existingPlaylist.description
+            : description,
         visibility: visibility ?? existingPlaylist.visibility,
       },
       include: {

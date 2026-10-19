@@ -15,33 +15,28 @@ import {
   buildMovieAccessWhere,
   buildVisibilityFilter,
 } from "@/utils/buildVisibilityFilter";
+import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
 import { resolveAuthorId } from "@/utils/movieAuth";
+import { paginationQuerySchema } from "@/utils/pagination";
 import { unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
-const DEFAULT_PAGE_SIZE = 100;
-const MAX_PAGE_SIZE = 200;
-
-const QuerySchema = z.object({
-  page: z
-    .string()
-    .optional()
-    .default("1")
-    .transform((v) => parseInt(v, 10)),
-  limit: z
-    .string()
-    .optional()
-    .default(DEFAULT_PAGE_SIZE.toString())
-    .transform((v) => Math.min(parseInt(v, 10), MAX_PAGE_SIZE)),
+const QuerySchema = paginationQuerySchema().extend({
   query: z.string().optional(),
-  suggest: z.string().optional(), // boolean check on length? "suggest" query param usually has no value if present? or "true"? Original: `c.req.queries("suggest")?.length ?? 0) > 0`. So simply presence.
+  suggest: z
+    .string()
+    .optional()
+    .transform((value) => value !== undefined),
   author: z.string().optional(),
-  mine: z.string().optional(),
+  mine: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 const PostSeriesSchema = z.object({
-  title: z.string(),
-  description: z.string(),
+  title: TitleSchema,
+  description: DescriptionSchema,
   visibility: ZBasicVisibility.optional().default("PUBLIC"),
   asUserId: z.string().optional(),
 });
@@ -51,14 +46,17 @@ const app = new Hono<Env>();
 export const seriesRoute = app
   .get("/", zValidator("query", QuerySchema), async (c) => {
     const user = c.get("user");
-    const { page, limit, query, author } = c.req.valid("query");
-    const suggest = c.req.query("suggest") !== undefined; // Check presence
+    const { page, limit, query, author, suggest, mine } = c.req.valid("query");
 
     const where: Prisma.SeriesWhereInput = buildVisibilityFilter(
       user,
       query,
       author,
     );
+    if (mine) {
+      if (!user) unauthorized("Authentication required");
+      where.authorId = user.role === "ADMIN" && author ? author : user.id;
+    }
 
     // Get total count for pagination metadata
     const totalCount = await prisma.series.count({ where });

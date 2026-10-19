@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import { filterUser } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
+import { AvatarUrlSchema, NameSchema } from "@/utils/inputSchemas";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
@@ -22,8 +23,8 @@ export const meRoute = app
     zValidator(
       "json",
       z.object({
-        name: z.string().optional(),
-        avatarUrl: z.string().optional(),
+        name: NameSchema.optional(),
+        avatarUrl: AvatarUrlSchema.nullable().optional(),
       }),
     ),
     async (c) => {
@@ -40,8 +41,9 @@ export const meRoute = app
           id: user.id,
         },
         data: {
-          name: data.name ?? user.name,
-          avatarUrl: data.avatarUrl ?? user.avatarUrl,
+          name: data.name === undefined ? user.name : data.name,
+          avatarUrl:
+            data.avatarUrl === undefined ? user.avatarUrl : data.avatarUrl,
         },
       });
       return ok(c, filterUser(updatedUser));

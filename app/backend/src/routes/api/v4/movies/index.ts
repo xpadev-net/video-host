@@ -1,4 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
+import type { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env } from "@/@types/hono";
@@ -12,42 +13,44 @@ import {
   canViewOwnedEntity,
   readyOrOwnMovieFilter,
 } from "@/utils/buildVisibilityFilter";
+import { paginationQuerySchema } from "@/utils/pagination";
+import { unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
-const DEFAULT_PAGE_SIZE = 100;
-const MAX_PAGE_SIZE = 200;
-
-const QuerySchema = z.object({
-  page: z
-    .string()
-    .optional()
-    .default("1")
-    .transform((v) => parseInt(v, 10)),
-  limit: z
-    .string()
-    .optional()
-    .default(DEFAULT_PAGE_SIZE.toString())
-    .transform((v) => Math.min(parseInt(v, 10), MAX_PAGE_SIZE)),
+const QuerySchema = paginationQuerySchema().extend({
   query: z.string().optional(),
   author: z.string().optional(),
-  mine: z.string().optional(),
+  mine: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 const app = new Hono<Env>();
 
 export const moviesRoute = app
   .get("/", zValidator("query", QuerySchema), async (c) => {
-    const { page, limit, query, author } = c.req.valid("query");
+    const { page, limit, query, author, mine } = c.req.valid("query");
     const user = c.get("user");
 
     // Others' movies additionally require a READY variant — in-flight
     // uploads stay private regardless of their stored visibility.
-    const where = {
-      AND: [
-        buildVisibilityFilter(user, query, author, true),
-        readyOrOwnMovieFilter(user),
-      ],
-    };
+    const conditions: Prisma.MovieWhereInput[] = [
+      buildVisibilityFilter(
+        user,
+        query,
+        mine && user?.role !== "ADMIN" ? undefined : author,
+        true,
+      ),
+      readyOrOwnMovieFilter(user),
+    ];
+    if (mine) {
+      if (!user) unauthorized("Authentication required");
+      conditions.push({
+        authorId: user.role === "ADMIN" && author ? author : user.id,
+      });
+    }
+    const where: Prisma.MovieWhereInput = { AND: conditions };
 
     // Get total count for pagination metadata
     const totalCount = await prisma.movie.count({ where });

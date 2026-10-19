@@ -13,9 +13,25 @@ const flag = (fallback: boolean) =>
   z
     .string()
     .optional()
-    .transform((value) =>
-      value === undefined || value === "" ? fallback : value === "true",
-    );
+    .transform((value, ctx) => {
+      if (value === undefined || value.trim() === "") return fallback;
+      switch (value.trim().toLowerCase()) {
+        case "true":
+        case "1":
+        case "yes":
+          return true;
+        case "false":
+        case "0":
+        case "no":
+          return false;
+        default:
+          ctx.addIssue({
+            code: "custom",
+            message: "Expected true/false, 1/0, or yes/no",
+          });
+          return z.NEVER;
+      }
+    });
 const origin = z.url().refine((value) => {
   let url: URL;
   try {
@@ -48,6 +64,13 @@ const origins = z
 
 export const BackendEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]),
+  DATABASE_URL: z
+    .string()
+    .url()
+    .refine(
+      (value) => new URL(value).protocol === "mysql:",
+      "Expected a MySQL connection URL",
+    ),
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: origin,
   FRONTEND_URL: origin,
@@ -122,11 +145,7 @@ export const BackendEnvSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().default(""),
   S3_SECRET_ACCESS_KEY: z.string().default(""),
   S3_ENDPOINT: z.string().optional(),
-  S3_FORCE_PATH_STYLE: z
-    .string()
-    .optional()
-    .transform((val) => val === "true")
-    .default(false),
+  S3_FORCE_PATH_STYLE: flag(false),
 
   // Largest accepted upload; enforced when an upload is completed because a
   // presigned PUT cannot carry a size limit.
@@ -161,6 +180,9 @@ export const EnvSchema = z.preprocess(
       if (!values.BETTER_AUTH_URL)
         values.BETTER_AUTH_URL = "http://localhost:3000";
       if (!values.FRONTEND_URL) values.FRONTEND_URL = "http://localhost:3000";
+      if (!values.DATABASE_URL)
+        values.DATABASE_URL =
+          "mysql://video_host:video_host@127.0.0.1:3306/video_host";
     }
     return values;
   },
@@ -268,6 +290,7 @@ if (!result.success) {
 const env = result.data;
 export const {
   NODE_ENV,
+  DATABASE_URL,
   BETTER_AUTH_SECRET,
   BETTER_AUTH_URL,
   FRONTEND_URL,

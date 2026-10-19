@@ -42,6 +42,7 @@ function EditSeriesPage() {
     const fetchSeries = async () => {
       try {
         const res = await client.api.v4.series[":series"].$get({
+          query: {},
           param: { series: id },
         });
 

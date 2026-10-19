@@ -4,18 +4,19 @@ import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import { CALLBACK_SECRET } from "@/env";
 import { prisma } from "@/lib/prisma";
+import { HttpUrlSchema } from "@/utils/inputSchemas";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 import { safeEqual } from "@/utils/safeEqual";
 
 const EncodeCompleteSchema = z.object({
   movieId: z.string(),
-  variantId: z.string().optional(), // Optional: if provided, updates specific variant
+  variantId: z.string().max(191).optional(), // Optional: if provided, updates specific variant
   status: z.enum(["success", "failed"]),
-  s3Key: z.string().optional(),
-  contentUrl: z.string().optional(), // The final content URL for streaming
-  duration: z.number().optional(),
-  thumbnailUrl: z.string().optional(),
+  s3Key: z.string().max(512).optional(),
+  contentUrl: HttpUrlSchema.optional(), // The final content URL for streaming
+  duration: z.number().int().nonnegative().max(2_147_483_647).optional(),
+  thumbnailUrl: HttpUrlSchema.optional(),
 });
 
 const app = new Hono<Env>();
