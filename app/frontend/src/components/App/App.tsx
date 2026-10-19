@@ -1,23 +1,15 @@
-import { useRouterState } from "@tanstack/react-router";
-import type { ReactElement } from "react";
+import type { ReactNode } from "react";
 
 import { Header } from "@/components/App/Header";
 import { Sidebar } from "@/components/App/Sidebar";
 import { useIsMobile } from "@/libraries/isMobile";
 
 type props = {
-  children: ReactElement[];
+  children: ReactNode;
 };
 
 const App = ({ children }: props) => {
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
-  });
   const isMobile = useIsMobile();
-
-  if (pathname === "/login" || pathname === "/register") {
-    return children;
-  }
 
   return (
     <>

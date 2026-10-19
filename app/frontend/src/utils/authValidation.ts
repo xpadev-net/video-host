@@ -31,17 +31,3 @@ export function validatePasswordMatch(
   }
   return { isValid: true };
 }
-
-export function validateRequiredFields(
-  fields: Record<string, string>,
-): ValidationResult {
-  for (const [fieldName, value] of Object.entries(fields)) {
-    if (!value.trim()) {
-      return {
-        isValid: false,
-        error: `${fieldName}は必須です`,
-      };
-    }
-  }
-  return { isValid: true };
-}

@@ -1,3 +1,4 @@
+import type { InferResponseType } from "hono";
 import { useAtom } from "jotai";
 import { type FC, useEffect, useState } from "react";
 import {
@@ -8,23 +9,15 @@ import { useSystemAccounts } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
 
-interface SystemAccount {
-  id: string;
-  username: string;
-  name: string;
-}
-
-interface Profile {
-  id: string;
-  username: string;
-  name: string;
-  isDefault: boolean;
-}
+type SystemAccount = InferResponseType<
+  (typeof client.api.v4)["system-accounts"]["$get"]
+>["data"][number];
+type Profile = InferResponseType<
+  typeof client.api.v4.users.profiles.$get
+>["data"][number];
 
 export const AccountSwitcher: FC = () => {
-  const { data: response } = useSelf();
-  // biome-ignore lint/suspicious/noExplicitAny: complex type inference
-  const user = response?.status === "ok" ? (response as any).data : null;
+  const { data: user } = useSelf();
   const isAdmin = user && "role" in user && user.role === "ADMIN";
   const { data: accounts } = useSystemAccounts();
   const [selectedAccountId, setSelectedAccountId] = useAtom(
@@ -48,7 +41,7 @@ export const AccountSwitcher: FC = () => {
         if (!res.ok) throw new Error("Profile request failed");
         const json = await res.json();
         if (!cancelled) {
-          setProfiles(json.data as Profile[]);
+          setProfiles(json.data);
           setProfilesLoadError(false);
         }
       } catch {
@@ -71,7 +64,7 @@ export const AccountSwitcher: FC = () => {
       const res = await client.api.v4.users.profiles.$get();
       if (!res.ok) throw new Error("Profile request failed");
       const json = await res.json();
-      setProfiles(json.data as Profile[]);
+      setProfiles(json.data);
       setProfilesLoadError(false);
     } catch {
       setProfilesLoadError(true);
@@ -94,14 +87,14 @@ export const AccountSwitcher: FC = () => {
       return;
     }
     if (selectedAccountId && accounts) {
-      const accountExists = (accounts as SystemAccount[]).some(
+      const accountExists = (accounts ?? []).some(
         (account) => account.id === selectedAccountId,
       );
       if (!accountExists) setSelectedAccountId(null);
     }
   }, [selectedAccountId, accounts, setSelectedAccountId, isAdmin, user]);
 
-  const systemAccounts = (accounts as SystemAccount[]) || [];
+  const systemAccounts: SystemAccount[] = accounts ?? [];
   const selectedAccount = selectedAccountId
     ? systemAccounts.find((account) => account.id === selectedAccountId)
     : null;
@@ -126,7 +119,7 @@ export const AccountSwitcher: FC = () => {
         );
         return;
       }
-      const profile = (await res.json()).data as Profile;
+      const profile = (await res.json()).data;
       setProfiles((current) => [...current, profile]);
       setNewName("");
       setNewUsername("");

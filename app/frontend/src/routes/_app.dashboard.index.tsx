@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
+import { useAuthConfig } from "@/hooks/useAuthConfig";
 import { useSelf } from "@/hooks/useUser";
 import { authClient } from "@/lib/auth-client";
-import { type AuthConfig, getAuthConfig } from "@/service/getAuthConfig";
 
 export const Route = createFileRoute("/_app/dashboard/")({
   head: () => ({ meta: [{ title: "ダッシュボード" }] }),
@@ -11,23 +11,11 @@ export const Route = createFileRoute("/_app/dashboard/")({
 });
 
 function DashboardPage() {
-  const { data: response, isLoading } = useSelf();
-  // biome-ignore lint/suspicious/noExplicitAny: complex type inference
-  const user = response?.status === "ok" ? (response as any).data : null;
-  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+  const { data: user, isLoading } = useSelf();
+  const { authConfig } = useAuthConfig();
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState("");
   const linkPending = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    void getAuthConfig().then((config) => {
-      if (!cancelled) setAuthConfig(config);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const handleLinkSso = async () => {
     if (

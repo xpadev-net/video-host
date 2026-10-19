@@ -62,49 +62,42 @@ function SeriesPage() {
           </div>
         ) : (
           <div className="series-list">
-            {seriesList.map(
-              (series: {
-                id: string;
-                title: string;
-                visibility: string;
-                movies?: unknown[];
-              }) => (
-                <div key={series.id} className="series-item">
-                  <div className="series-info">
-                    <h3>{series.title}</h3>
-                    <div className="series-meta">
-                      <span
-                        className={`visibility-badge ${series.visibility.toLowerCase()}`}
-                      >
-                        {series.visibility === "PUBLIC"
-                          ? "公開"
-                          : series.visibility === "UNLISTED"
-                            ? "限定公開"
-                            : "非公開"}
-                      </span>
-                      <span>{series.movies?.length || 0}本の動画</span>
-                    </div>
-                  </div>
-                  <div className="series-actions">
-                    <Link
-                      to="/dashboard/series/$id/edit"
-                      params={{ id: series.id }}
-                      className="action-btn"
+            {seriesList.map((series) => (
+              <div key={series.id} className="series-item">
+                <div className="series-info">
+                  <h3>{series.title}</h3>
+                  <div className="series-meta">
+                    <span
+                      className={`visibility-badge ${series.visibility.toLowerCase()}`}
                     >
-                      編集
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(series.id)}
-                      disabled={deletingId === series.id}
-                      className="action-btn delete"
-                    >
-                      {deletingId === series.id ? "削除中..." : "削除"}
-                    </button>
+                      {series.visibility === "PUBLIC"
+                        ? "公開"
+                        : series.visibility === "UNLISTED"
+                          ? "限定公開"
+                          : "非公開"}
+                    </span>
+                    <span>{series.movies?.length || 0}本の動画</span>
                   </div>
                 </div>
-              ),
-            )}
+                <div className="series-actions">
+                  <Link
+                    to="/dashboard/series/$id/edit"
+                    params={{ id: series.id }}
+                    className="action-btn"
+                  >
+                    編集
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(series.id)}
+                    disabled={deletingId === series.id}
+                    className="action-btn delete"
+                  >
+                    {deletingId === series.id ? "削除中..." : "削除"}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

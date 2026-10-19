@@ -16,14 +16,14 @@ const PrevNextButton = ({ className, type, data }: props) => {
   const item = type === "prev" ? findPrev(data) : findNext(data);
 
   if (!item) return null;
-  const onPrevClick = (e: MouseEvent<HTMLButtonElement>) => {
+  const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     void navigate({ to: "/movies/$movie", params: { movie: item.id } });
   };
   return (
     <button
       type="button"
-      onClick={onPrevClick}
+      onClick={handleClick}
       className={className}
       aria-label={type === "prev" ? "前の動画" : "次の動画"}
     >

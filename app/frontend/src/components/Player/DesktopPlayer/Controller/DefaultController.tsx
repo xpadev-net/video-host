@@ -2,15 +2,15 @@ import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue, useSetAtom } from "jotai";
 import { type KeyboardEvent, type MouseEvent, useState } from "react";
 import { VideoMetadataAtom, VideoRefAtom } from "@/atoms/Player";
-import { TimeDisplay } from "@/components/Player/DesktopPlayer/Controller/TimeDisplay";
 import { AutoPlayButton } from "@/components/Player/Shared/Controller/AutoPlayButton";
 import { FullscreenButton } from "@/components/Player/Shared/Controller/FullscreenButton";
 import { PlayPauseButton } from "@/components/Player/Shared/Controller/PlayPauseButton";
 import { PrevNextButton } from "@/components/Player/Shared/Controller/PrevNextButton";
 import { SettingButton } from "@/components/Player/Shared/Controller/SettingButton";
+import { Slider } from "@/components/Player/Shared/Controller/Slider";
+import { TimeDisplay } from "@/components/Player/Shared/Controller/TimeDisplay";
 import { Setting } from "@/components/Player/Shared/Setting/Setting";
 import { cn } from "@/lib/utils";
-import { Slider } from "./Slider";
 import { TheatreButton } from "./TheatreButton";
 import { VolumeIcon } from "./VolumeIcon";
 import { VolumeSlider } from "./VolumeSlider";
@@ -119,7 +119,7 @@ const DefaultController = ({ data, isHovering }: props) => {
           <FullscreenButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
         </div>
       </div>
-      <Slider />
+      <Slider showTimePreview />
       <Setting className="absolute right-3 bottom-[60px]" />
     </fieldset>
   );

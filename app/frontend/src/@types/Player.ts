@@ -52,7 +52,7 @@ export type SelectionItem<T = unknown> = BaseSettingItem & {
   type: "selection";
   options: Array<{ value: T; label: string | number }>;
   getValue: () => T;
-  onChange: (value: T) => void;
+  onChange: { bivarianceHack(value: T): void }["bivarianceHack"];
 };
 
 export type BackItem = {
@@ -64,6 +64,6 @@ export type BackItem = {
 export type SettingItem =
   | NavigationItem
   | ToggleItem
-  | SelectionItem<T>
+  | SelectionItem<unknown>
   | BackItem;
 export type SettingPageConfig = SettingItem[];

@@ -3,7 +3,7 @@ import {
   useNavigate,
   useRouter,
 } from "@tanstack/react-router";
-import type { BasicVisibility } from "@video-host/backend";
+import type { BasicVisibility, FormattedMovie } from "@video-host/backend";
 import { type FormEvent, useEffect, useState } from "react";
 import { MovieManager } from "@/components/Dashboard/MovieManager";
 import { authClient } from "@/lib/auth-client";
@@ -14,14 +14,8 @@ export const Route = createFileRoute("/_app/dashboard/playlists/$id/edit")({
   component: EditPlaylistPage,
 });
 
-interface Movie {
-  id: string;
-  title: string;
-  thumbnailUrl?: string;
-}
-
 interface PlaylistMovie {
-  movie: Movie;
+  movie: Pick<FormattedMovie, "id" | "title" | "thumbnailUrl">;
   order: number;
 }
 
@@ -55,12 +49,8 @@ function EditPlaylistPage() {
         setTitle(data.title);
         setDescription(data.description || "");
         setVisibility(data.visibility as BasicVisibility);
-        // Assuming backend returns matching structure.
-        const playlistMovies: PlaylistMovie[] = (data.movies || []).map(
-          (m: unknown, index: number) => ({
-            movie: m as Movie,
-            order: index + 1,
-          }),
+        const playlistMovies: PlaylistMovie[] = (data.movies ?? []).map(
+          (movie, index) => ({ movie, order: index + 1 }),
         );
         setMovies(playlistMovies);
       } catch {

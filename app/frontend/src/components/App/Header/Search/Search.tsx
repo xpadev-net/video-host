@@ -5,6 +5,7 @@ import {
   forwardRef,
   type KeyboardEvent,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -22,6 +23,7 @@ const Search_ = ({ className }: props, ref: ForwardedRef<HTMLInputElement>) => {
   const blurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggest = useSeriesSuggest({ query: input });
   const inputRef = useForwardRef<HTMLInputElement>(ref);
+  const inputId = useId();
   const isMobile = useIsMobile();
 
   useEffect(
@@ -66,7 +68,7 @@ const Search_ = ({ className }: props, ref: ForwardedRef<HTMLInputElement>) => {
           placeholder={"検索"}
           onKeyDown={onKeyDown}
           value={input}
-          id={"headerSearchInput"}
+          id={inputId}
           onChange={(e) => setInput(e.target.value)}
           onFocus={() => {
             if (blurTimeout.current) clearTimeout(blurTimeout.current);

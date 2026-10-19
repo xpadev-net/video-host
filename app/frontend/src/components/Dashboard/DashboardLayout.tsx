@@ -26,10 +26,7 @@ export const DashboardLayout: FC<DashboardLayoutProps> = ({ children }) => {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
-  const { data: response, isLoading } = useSelf();
-  const user =
-    // biome-ignore lint/suspicious/noExplicitAny: complex type inference
-    response?.status === "ok" ? (response as any).data : null;
+  const { data: user, isLoading } = useSelf();
   const isAdmin = user && "role" in user && user.role === "ADMIN";
 
   if (isLoading) return <p>読み込み中...</p>;

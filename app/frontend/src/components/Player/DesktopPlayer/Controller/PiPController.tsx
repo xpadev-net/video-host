@@ -3,8 +3,8 @@ import type { FormattedMovie } from "@video-host/backend";
 import { useSetAtom } from "jotai";
 import { Maximize2, X } from "lucide-react";
 import { CurrentMovieAtom, VideoMetadataAtom } from "@/atoms/Player";
+import { Slider } from "@/components/Player/Shared/Controller/Slider";
 import { cn } from "@/lib/utils";
-import { Slider } from "./Slider";
 
 type props = {
   data: FormattedMovie;
@@ -61,7 +61,10 @@ const PiPController = ({ data, isHovering }: props) => {
           <Maximize2 className="w-5 h-5" />
         </button>
       </div>
-      <Slider className="absolute bottom-0 left-0 w-full h-4 z-10" />
+      <Slider
+        className="absolute bottom-0 left-0 z-10 h-4 w-full"
+        showTimePreview
+      />
     </fieldset>
   );
 };

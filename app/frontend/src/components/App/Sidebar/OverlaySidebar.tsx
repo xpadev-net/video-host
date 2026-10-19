@@ -8,13 +8,6 @@ import { HeaderMenu } from "@/components/App/Menu/Menu";
 const OverlaySidebar = () => {
   const [isActive, setIsActive] = useAtom(sidebarState);
 
-  const handleBackgroundKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      setIsActive(false);
-    }
-  };
-
   return (
     <div>
       <div
@@ -50,9 +43,7 @@ const OverlaySidebar = () => {
             : "opacity-0 pointer-events-none",
         ].join(" ")}
         onClick={() => setIsActive(false)}
-        onKeyDown={handleBackgroundKeyDown}
         type="button"
-        tabIndex={0}
         aria-label="Close sidebar"
       />
     </div>

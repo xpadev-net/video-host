@@ -13,7 +13,7 @@ const VolumeSlider = () => {
   const videoRef = useAtomValue(VideoRefAtom);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const configVolume = useAtomValue(PlayerVolumeAtom);
-  const [isDrugging, setIsDrugging] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const updateVolume = useCallback(
     (clientX: number) => {
@@ -29,11 +29,11 @@ const VolumeSlider = () => {
 
   useEffect(() => {
     const onMouseMove = (e: globalThis.MouseEvent) => {
-      if (!isDrugging) return;
+      if (!isDragging) return;
       updateVolume(e.clientX);
     };
     const onMouseUp = () => {
-      setIsDrugging(false);
+      setIsDragging(false);
     };
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -41,9 +41,9 @@ const VolumeSlider = () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [isDrugging, updateVolume]);
+  }, [isDragging, updateVolume]);
   const onMouseDown = (e: MouseEvent<HTMLDivElement>) => {
-    setIsDrugging(true);
+    setIsDragging(true);
     updateVolume(e.clientX);
   };
 

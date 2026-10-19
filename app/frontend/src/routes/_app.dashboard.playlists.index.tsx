@@ -56,49 +56,42 @@ function PlaylistsPage() {
           </div>
         ) : (
           <div className="playlists-list">
-            {playlists.map(
-              (playlist: {
-                id: string;
-                title: string;
-                visibility: string;
-                movies?: unknown[];
-              }) => (
-                <div key={playlist.id} className="playlist-item">
-                  <div className="playlist-info">
-                    <h3>{playlist.title}</h3>
-                    <div className="playlist-meta">
-                      <span
-                        className={`visibility-badge ${playlist.visibility.toLowerCase()}`}
-                      >
-                        {playlist.visibility === "PUBLIC"
-                          ? "公開"
-                          : playlist.visibility === "UNLISTED"
-                            ? "限定公開"
-                            : "非公開"}
-                      </span>
-                      <span>{playlist.movies?.length || 0}本の動画</span>
-                    </div>
-                  </div>
-                  <div className="playlist-actions">
-                    <Link
-                      to="/dashboard/playlists/$id/edit"
-                      params={{ id: playlist.id }}
-                      className="action-btn"
+            {playlists.map((playlist) => (
+              <div key={playlist.id} className="playlist-item">
+                <div className="playlist-info">
+                  <h3>{playlist.title}</h3>
+                  <div className="playlist-meta">
+                    <span
+                      className={`visibility-badge ${playlist.visibility.toLowerCase()}`}
                     >
-                      編集
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(playlist.id)}
-                      disabled={deletingId === playlist.id}
-                      className="action-btn delete"
-                    >
-                      {deletingId === playlist.id ? "削除中..." : "削除"}
-                    </button>
+                      {playlist.visibility === "PUBLIC"
+                        ? "公開"
+                        : playlist.visibility === "UNLISTED"
+                          ? "限定公開"
+                          : "非公開"}
+                    </span>
+                    <span>{playlist.movies?.length || 0}本の動画</span>
                   </div>
                 </div>
-              ),
-            )}
+                <div className="playlist-actions">
+                  <Link
+                    to="/dashboard/playlists/$id/edit"
+                    params={{ id: playlist.id }}
+                    className="action-btn"
+                  >
+                    編集
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(playlist.id)}
+                    disabled={deletingId === playlist.id}
+                    className="action-btn delete"
+                  >
+                    {deletingId === playlist.id ? "削除中..." : "削除"}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

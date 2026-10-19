@@ -17,13 +17,6 @@ const PlayList = ({ data, className, maxHeight }: props) => {
   const [isOpen, setIsOpen] = useState(true);
   const next = findNext(data);
 
-  const handleToggleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      setIsOpen((pv) => !pv);
-    }
-  };
-
   if (!data.series) {
     return null;
   }
@@ -41,9 +34,7 @@ const PlayList = ({ data, className, maxHeight }: props) => {
       <button
         className="flex h-[60px] py-1 px-4 shrink-0 bg-[var(--color-thirdly-background)] flex-row items-center"
         onClick={() => setIsOpen((pv) => !pv)}
-        onKeyDown={handleToggleKeyDown}
         type="button"
-        tabIndex={0}
         aria-label={isOpen ? "Collapse playlist" : "Expand playlist"}
         aria-expanded={isOpen}
       >

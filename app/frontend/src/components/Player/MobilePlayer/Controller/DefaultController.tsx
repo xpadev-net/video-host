@@ -1,12 +1,12 @@
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { PlayerStateAtom } from "@/atoms/Player";
-import { TimeDisplay } from "@/components/Player/MobilePlayer/Controller/TimeDisplay";
 import { AutoPlayButton } from "@/components/Player/Shared/Controller/AutoPlayButton";
 import { FullscreenButton } from "@/components/Player/Shared/Controller/FullscreenButton";
 import { PlayPauseButton } from "@/components/Player/Shared/Controller/PlayPauseButton";
 import { PrevNextButton } from "@/components/Player/Shared/Controller/PrevNextButton";
 import { SettingButton } from "@/components/Player/Shared/Controller/SettingButton";
+import { TimeDisplay } from "@/components/Player/Shared/Controller/TimeDisplay";
 import { Setting } from "@/components/Player/Shared/Setting";
 import { cn } from "@/lib/utils";
 import { Slider } from "./Slider";
@@ -51,7 +51,7 @@ const DefaultController = ({ className, data, isHovering = false }: props) => {
         </div>
       </div>
       <div className="h-10 mx-2.5 flex">
-        <TimeDisplay />
+        <TimeDisplay compact />
         <Slider className="h-10 flex-1 mx-2.5" />
         <FullscreenButton className="w-10 h-10 border-none bg-transparent cursor-pointer flex justify-center items-center" />
       </div>

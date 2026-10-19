@@ -24,7 +24,7 @@ export const UserSkeleton: FC<Props> = ({ size = "3" }) => {
         height={avatarSize}
         style={{ borderRadius: "9999px" }}
       />
-      <Skeleton height="20px" className={`text-text text-nowrap w-3/4`} />
+      <Skeleton height="20px" className="text-text text-nowrap w-3/4" />
     </div>
   );
 };

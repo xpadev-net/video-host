@@ -3,7 +3,7 @@ import {
   useNavigate,
   useRouter,
 } from "@tanstack/react-router";
-import type { BasicVisibility } from "@video-host/backend";
+import type { BasicVisibility, FormattedMovie } from "@video-host/backend";
 import { type FormEvent, useEffect, useState } from "react";
 import { MovieManager } from "@/components/Dashboard/MovieManager";
 import { authClient } from "@/lib/auth-client";
@@ -14,14 +14,8 @@ export const Route = createFileRoute("/_app/dashboard/series/$id/edit")({
   component: EditSeriesPage,
 });
 
-interface Movie {
-  id: string;
-  title: string;
-  thumbnailUrl?: string;
-}
-
 interface SeriesMovie {
-  movie: Movie;
+  movie: Pick<FormattedMovie, "id" | "title" | "thumbnailUrl">;
   order: number;
 }
 
@@ -55,15 +49,8 @@ function EditSeriesPage() {
         setTitle(data.title);
         setDescription(data.description || "");
         setVisibility(data.visibility as BasicVisibility);
-        // Transform movies array
-        // Backend returns movies as Array<Movie>. We need to wrap them?
-        // Wait, the interface says `data.movies` is used.
-        // Assuming backend returns `movies: Movie[]`.
-        const seriesMovies: SeriesMovie[] = (data.movies || []).map(
-          (m: unknown, index: number) => ({
-            movie: m as Movie,
-            order: index + 1,
-          }),
+        const seriesMovies: SeriesMovie[] = (data.movies ?? []).map(
+          (movie, index) => ({ movie, order: index + 1 }),
         );
         setMovies(seriesMovies);
       } catch {
