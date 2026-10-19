@@ -16,5 +16,12 @@ const fetcher = async (key?: string) => {
 };
 
 export const useMovie = (query?: string) => {
-  return useStickySWR(query, fetcher, {});
+  // Playback URLs embed a token that expires after 6+ hours; refetching well
+  // before that hands a long-running player a fresh URL (SWR keeps the old
+  // data object while the response is unchanged, so nothing reloads until
+  // the token actually rotates).
+  return useStickySWR(query, fetcher, {
+    refreshInterval: 30 * 60 * 1000,
+    refreshWhenHidden: true,
+  });
 };
