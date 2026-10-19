@@ -276,6 +276,7 @@ export const PROCESSING_QUEUE_KEY = "video:encode:processing";
 
 export interface ProcessingClaimCompletion {
   s3Key?: string;
+  thumbnailKey?: string;
   contentUrl: string;
   duration?: number;
 }

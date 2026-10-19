@@ -124,6 +124,18 @@ http {
             proxy_ssl_verify_depth 5;
         }
 
+        location /vod/thumbnail/ {
+            proxy_pass ${BACKEND_THUMBNAIL_UPSTREAM};
+            proxy_set_header Host $http_host;
+            proxy_connect_timeout 5s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+            add_header Access-Control-Allow-Origin '*' always;
+            add_header Access-Control-Allow-Methods 'GET, OPTIONS' always;
+            add_header X-Content-Type-Options nosniff always;
+            add_header Referrer-Policy no-referrer always;
+        }
+
         location /vod/ {
             vod hls;
             add_header Access-Control-Allow-Origin '*' always;

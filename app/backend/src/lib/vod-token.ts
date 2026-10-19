@@ -78,3 +78,46 @@ export const signVodContentUrl = (
   }
   return `${contentUrl.slice(0, split)}${createVodToken(key)}/${contentUrl.slice(split)}`;
 };
+
+/** Build a stable unsigned thumbnail path from the corresponding playback URL. */
+export const createVodThumbnailUrl = (
+  contentUrl: string,
+  thumbnailKey: string,
+): string | null => {
+  try {
+    const url = new URL(contentUrl);
+    const marker = "/vod/";
+    const index = url.pathname.indexOf(marker);
+    if (index === -1 || !thumbnailKey) return null;
+    const vodPrefix = url.pathname.slice(0, index + marker.length - 1);
+    const encodedKey = thumbnailKey
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/");
+    return `${url.origin}${vodPrefix}/thumbnail/${encodedKey}`;
+  } catch {
+    return null;
+  }
+};
+
+/** Add a fresh bearer token when returning a thumbnail URL to a viewer. */
+export const signVodThumbnailUrl = (
+  thumbnailUrl?: string | null,
+): string | null => {
+  if (!thumbnailUrl) return thumbnailUrl ?? null;
+  try {
+    const url = new URL(thumbnailUrl);
+    const marker = "/vod/thumbnail/";
+    const index = url.pathname.indexOf(marker);
+    if (index === -1) return thumbnailUrl;
+    const encodedKey = url.pathname.slice(index + marker.length);
+    const key = encodedKey.split("/").map(decodeURIComponent).join("/");
+    if (!key) return thumbnailUrl;
+    const prefix = url.pathname.slice(0, index + marker.length);
+    const token = createVodToken(key);
+    const path = key.split("/").map(encodeURIComponent).join("/");
+    return `${url.origin}${prefix}${token}/${path}`;
+  } catch {
+    return thumbnailUrl;
+  }
+};

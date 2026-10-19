@@ -5,7 +5,7 @@ import type {
   FilteredSeries,
   FilteredUser,
 } from "@/@types/models";
-import { signVodContentUrl } from "@/lib/vod-token";
+import { signVodContentUrl, signVodThumbnailUrl } from "@/lib/vod-token";
 
 export const filterUser = (user: FilteredUser): FilteredUser => {
   return {
@@ -39,7 +39,7 @@ export const filterMovie = (episode: FilteredMovie): FilteredMovie => {
     description: episode.description,
     duration: episode.duration,
     variants: episode.variants.map(filterMovieVariant),
-    thumbnailUrl: episode.thumbnailUrl,
+    thumbnailUrl: signVodThumbnailUrl(episode.thumbnailUrl),
     visibility: episode.visibility,
     author: filterUser(episode.author),
     series: episode.series ? filterSeries(episode.series) : undefined,

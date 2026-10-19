@@ -108,6 +108,46 @@ export const vodRoute = app.get("/mapping/*", async (c) => {
   return c.json(mapping);
 });
 
+// Stable thumbnail URLs carry a token in the URL and stream the private S3
+// object through the API so they work with internal S3 endpoints too.
+export const vodThumbnailRoute = app.get("/thumbnail/:token/*", async (c) => {
+  const routePrefix = "/api/v4/vod/thumbnail/";
+  const routePrefixIndex = c.req.path.indexOf(routePrefix);
+  if (routePrefixIndex === -1) return c.notFound();
+  const suffix = c.req.path.slice(routePrefixIndex + routePrefix.length);
+  const separator = suffix.indexOf("/");
+  if (separator < 1) return c.notFound();
+
+  let token: string;
+  let thumbnailKey: string;
+  try {
+    token = decodeURIComponent(suffix.slice(0, separator));
+    thumbnailKey = suffix
+      .slice(separator + 1)
+      .split("/")
+      .map(decodeURIComponent)
+      .join("/");
+  } catch {
+    return c.notFound();
+  }
+  if (!isValidS3Key(thumbnailKey) || !verifyVodToken(token, thumbnailKey)) {
+    return c.notFound();
+  }
+
+  const object = await s3Client.send(
+    new GetObjectCommand({ Bucket: S3_PROD_BUCKET, Key: thumbnailKey }),
+  );
+  if (!object.Body) return c.notFound();
+
+  return new Response(object.Body.transformToWebStream(), {
+    headers: {
+      "Content-Type": "image/jpeg",
+      "Cache-Control": "public, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+});
+
 export const registerVodRoute = (app: HonoApp) => {
   app.route("/vod", vodRoute);
 };

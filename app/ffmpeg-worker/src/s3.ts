@@ -145,11 +145,16 @@ export const deleteFromTmp = async (s3Key: string): Promise<void> => {
 };
 
 export const deleteFromProd = async (s3Key: string): Promise<void> => {
-  const command = new DeleteObjectCommand({
-    Bucket: S3_PROD_BUCKET,
-    Key: s3Key,
-  });
-  await s3Client.send(command);
+  await Promise.all(
+    [s3Key, `${s3Key}.jpg`].map((key) =>
+      s3Client.send(
+        new DeleteObjectCommand({
+          Bucket: S3_PROD_BUCKET,
+          Key: key,
+        }),
+      ),
+    ),
+  );
 };
 
 export { S3_PROD_BUCKET, S3_TMP_BUCKET };
