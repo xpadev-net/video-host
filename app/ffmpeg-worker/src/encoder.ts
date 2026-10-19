@@ -7,6 +7,21 @@ const PROBE_TIMEOUT_MS = 30_000;
 const PROCESS_KILL_GRACE_MS = 5_000;
 const MAX_PROBE_OUTPUT_BYTES = 1024 * 1024;
 const MAX_FFMPEG_STDERR_BYTES = 8 * 1024;
+const MAX_VIDEO_WIDTH = 3840;
+const MAX_VIDEO_HEIGHT = 2160;
+const MAX_VIDEO_PIXELS = MAX_VIDEO_WIDTH * MAX_VIDEO_HEIGHT;
+const MAX_VIDEO_DURATION_SECONDS = 2 * 60 * 60;
+const ALLOWED_INPUT_FORMATS = new Set([
+  "mov,mp4,m4a,3gp,3g2,mj2",
+  "matroska,webm",
+  "avi",
+  "mpegts",
+  "mpeg",
+  "flv",
+  "asf",
+]);
+
+class PermanentMediaInputError extends Error {}
 
 interface ProbeResult {
   duration: number;
@@ -22,7 +37,7 @@ const probeMedia = async (
       "-v",
       "error",
       "-show_entries",
-      "format=duration:stream=index,codec_type,width,height:stream_disposition=attached_pic",
+      "format=duration,format_name:stream=index,codec_type,width,height:stream_disposition=attached_pic",
       "-show_format",
       "-show_streams",
       "-of",
@@ -36,7 +51,7 @@ const probeMedia = async (
     signal,
   );
   const parsed = JSON.parse(stdout) as {
-    format?: { duration?: string };
+    format?: { duration?: string; format_name?: string };
     streams?: {
       index: number;
       codec_type?: string;
@@ -46,6 +61,11 @@ const probeMedia = async (
     }[];
   };
   const duration = Number.parseFloat(parsed.format?.duration ?? "");
+  if (!ALLOWED_INPUT_FORMATS.has(parsed.format?.format_name ?? "")) {
+    throw new PermanentMediaInputError(
+      `Unsupported input format: ${parsed.format?.format_name || "unknown"}`,
+    );
+  }
   const videoStreams = (parsed.streams ?? []).filter(
     (stream) =>
       stream.codec_type === "video" && stream.disposition?.attached_pic !== 1,
@@ -60,9 +80,34 @@ const probeMedia = async (
     null,
   );
 
+  if (!bestVideo) {
+    throw new PermanentMediaInputError("Input contains no video stream");
+  }
+  const width = bestVideo.width ?? 0;
+  const height = bestVideo.height ?? 0;
+  if (
+    width < 1 ||
+    height < 1 ||
+    width > MAX_VIDEO_WIDTH ||
+    height > MAX_VIDEO_HEIGHT ||
+    width * height > MAX_VIDEO_PIXELS
+  ) {
+    throw new PermanentMediaInputError(
+      `Video dimensions exceed the ${MAX_VIDEO_WIDTH}x${MAX_VIDEO_HEIGHT} limit: ${width}x${height}`,
+    );
+  }
+  if (!Number.isFinite(duration) || duration <= 0) {
+    throw new PermanentMediaInputError("Input duration is missing or invalid");
+  }
+  if (duration > MAX_VIDEO_DURATION_SECONDS) {
+    throw new PermanentMediaInputError(
+      `Video duration exceeds the ${MAX_VIDEO_DURATION_SECONDS}-second limit`,
+    );
+  }
+
   return {
-    duration: Number.isFinite(duration) ? duration : 0,
-    videoMap: bestVideo ? `0:${bestVideo.index}` : "0:V",
+    duration,
+    videoMap: `0:${bestVideo.index}`,
   };
 };
 
@@ -76,9 +121,13 @@ const runFfprobe = (
       return;
     }
 
-    const ffprobe = spawn("ffprobe", args, {
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    const ffprobe = spawn(
+      "ffprobe",
+      ["-protocol_whitelist", "file,crypto", ...args],
+      {
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
     let stdout = "";
     let outputBytes = 0;
     let forcedError: Error | null = null;
@@ -144,6 +193,7 @@ const runFfprobe = (
 
 export interface EncodeResult {
   success: boolean;
+  permanent?: boolean;
   outputPath?: string;
   duration?: number;
   error?: string;
@@ -193,6 +243,7 @@ export const encodeVideo = async (
   } catch (error) {
     return {
       success: false,
+      permanent: error instanceof PermanentMediaInputError,
       error: `Failed to probe input: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
@@ -210,6 +261,8 @@ export const encodeVideo = async (
     // packaged as HLS by nginx-vod-module.
     const ffmpegArgs = [
       "-nostdin",
+      "-protocol_whitelist",
+      "file,crypto",
       "-i",
       inputPath,
       "-map",
