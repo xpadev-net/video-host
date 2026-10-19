@@ -39,6 +39,8 @@ cp app/frontend/.env.example app/frontend/.env
 
 Set `DATABASE_URL` in `app/backend/.env` for the disposable database. Keep `CALLBACK_SECRET` the same in backend and worker files. The root `.env.example` is a combined reference for environment managers that inject variables into workspace commands; pnpm package processes do not load it automatically. Then apply migrations and start services in separate terminals:
 
+The local backend example signs MinIO URLs for `http://localhost:9000`; the VOD container forwards them to the Compose service `minio:9000` while preserving the signed `Host`. If you change `S3_ENDPOINT`, update the `Host` header in `nginx/nginx.conf` to the same host and port.
+
 ```sh
 pnpm -F @video-host/backend prisma:generate
 pnpm -F @video-host/backend exec prisma migrate deploy
