@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 
+import { LoadErrorMessage } from "@/components/LoadErrorMessage";
 import { MoviesSearchList } from "@/components/SearchList/MoviesSearchList";
 import { SeriesSearchList } from "@/components/SearchList/SeriesSearchList";
 import { type TabItem, TabSwitcher } from "@/components/TabSwitcher";
 import { User } from "@/components/User/User";
+import { UserSkeleton } from "@/components/User/UserSkeleton";
 import { SiteName } from "@/contexts/env";
 import { useUser } from "@/hooks/useUser";
 
@@ -15,7 +17,7 @@ export const Route = createFileRoute("/_app/users/$user")({
 
 function UserRoute() {
   const { user: userId } = Route.useParams();
-  const { data: user, isLoading } = useUser(userId);
+  const { data: user, error, isLoading, mutate } = useUser(userId);
 
   useEffect(() => {
     if (user?.status === "ok" && "data" in user && user.data) {
@@ -28,16 +30,38 @@ function UserRoute() {
     }
   }, [user]);
 
-  if (isLoading || !user) return null;
+  if (isLoading && !user) {
+    return (
+      <div className="p-6 pt-3 max-w-[1070px] mx-auto" aria-busy="true">
+        <UserSkeleton size="4" />
+      </div>
+    );
+  }
+
+  if (error && !user) {
+    return (
+      <LoadErrorMessage
+        message="ユーザーを読み込めませんでした"
+        onRetry={() => void mutate()}
+      />
+    );
+  }
+
+  if (!user) {
+    return (
+      <LoadErrorMessage
+        message="ユーザーを読み込めませんでした"
+        onRetry={() => void mutate()}
+      />
+    );
+  }
 
   if (user.status !== "ok" || !("data" in user) || !user.data) {
     return (
-      <div className="p-6 pt-3 max-w-[1070px] mx-auto">
-        <h1>読み込みに失敗しました</h1>
-        <div className="error">
-          {user.code} - {"message" in user ? user.message : "Unknown error"}
-        </div>
-      </div>
+      <LoadErrorMessage
+        message="ユーザーを読み込めませんでした"
+        onRetry={() => void mutate()}
+      />
     );
   }
 
@@ -56,6 +80,12 @@ function UserRoute() {
 
   return (
     <div className="p-6 pt-3 max-w-[1070px] mx-auto">
+      {error ? (
+        <LoadErrorMessage
+          message="ユーザー情報を更新できませんでした"
+          onRetry={() => void mutate()}
+        />
+      ) : null}
       <User user={user.data} size="4" />
       <TabSwitcher tabs={tabs} defaultValue="series" />
     </div>

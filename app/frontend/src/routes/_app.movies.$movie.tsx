@@ -3,6 +3,7 @@ import { useAtomValue } from "jotai";
 import { useEffect, useState } from "react";
 
 import { PlayerConfigAtom, WrapperRefAtom } from "@/atoms/Player";
+import { LoadErrorMessage } from "@/components/LoadErrorMessage";
 import { MovieInfo } from "@/components/MovieInfo";
 import { MoviePageSkeleton } from "@/components/MoviePageSkeleton";
 import { Player } from "@/components/Player";
@@ -53,6 +54,14 @@ function MovieRoute() {
     }
   }, [data.data]);
 
+  if (data.error && !data.data) {
+    return (
+      <LoadErrorMessage
+        message="動画を読み込めませんでした"
+        onRetry={() => void data.mutate()}
+      />
+    );
+  }
   if (!data.data) return <MoviePageSkeleton />;
   if (data.data.status !== "ok") {
     return (
@@ -64,6 +73,12 @@ function MovieRoute() {
 
   return (
     <div className={cn("p-6 max-w-[1800px] mx-auto", isTheatre && "pt-0")}>
+      {data.error ? (
+        <LoadErrorMessage
+          message="動画情報を更新できませんでした"
+          onRetry={() => void data.mutate()}
+        />
+      ) : null}
       <div
         className={cn(
           "grid grid-cols-[1fr_minmax(300px,400px)] gap-6 max-[1000px]:grid-cols-1",
