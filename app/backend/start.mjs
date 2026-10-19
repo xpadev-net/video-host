@@ -49,7 +49,9 @@ try {
   const ssl =
     sslCert || sslIdentity || sslAccept
       ? {
-          ...(sslCert ? { ca: readFileSync(path.resolve("prisma", sslCert)) } : {}),
+            ...(sslCert
+              ? { ca: readFileSync(path.resolve("prisma", sslCert)) }
+              : {}),
           ...(sslIdentity
             ? { pfx: readFileSync(path.resolve("prisma", sslIdentity)) }
             : {}),
