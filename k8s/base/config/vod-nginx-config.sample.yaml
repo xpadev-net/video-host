@@ -128,6 +128,11 @@ data:
                 proxy_set_header Cookie "";
                 proxy_set_header Authorization "";
                 proxy_set_header Host $s3_host;
+                proxy_ssl_server_name on;
+                proxy_ssl_name $s3_host;
+                proxy_ssl_verify on;
+                proxy_ssl_trusted_certificate /etc/nginx/ssl/ca-certificates.crt;
+                proxy_ssl_verify_depth 5;
             }
 
             # VOD HLS endpoint

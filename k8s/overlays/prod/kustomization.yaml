@@ -58,8 +58,8 @@ configMapGenerator:
       - s3-prod-bucket=video-prod
       - s3-region=ap-northeast-1
       - s3-endpoint=https://s3.ap-northeast-1.amazonaws.com
-      # Keep bucket in the signed URI path; VOD mapping passes only path and query.
-      - s3-force-path-style=true
+      # The VOD proxy reconstructs the signed bucket hostname from this bucket and endpoint.
+      - s3-force-path-style=false
       - redis-url=redis://redis:6379
       - redis-sentinel-hosts=
       - redis-sentinel-name=
@@ -86,8 +86,7 @@ configMapGenerator:
       - s3-prod-bucket=video-prod
       - s3-region=ap-northeast-1
       - s3-endpoint=https://s3.ap-northeast-1.amazonaws.com
-      # Keep bucket in the URI path to match backend-generated media mappings.
-      - s3-force-path-style=true
+      - s3-force-path-style=false
       - backend-callback-url=http://backend:3000/api/internal/video/callback
       - vod-base-url=https://your-vod-domain.com
       - poll-interval-ms=5000

@@ -23,11 +23,12 @@ spec:
             - /bin/sh
             - -c
             - |
-              apk add --no-cache gettext openssl
+              apk add --no-cache ca-certificates gettext openssl
               openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
                 -keyout /etc/nginx/ssl/tls.key \
                 -out /etc/nginx/ssl/tls.crt \
                 -subj "/CN=vod/O=video-host"
+              cp /etc/ssl/cert.pem /etc/nginx/ssl/ca-certificates.crt
               if [ -n "$S3_ENDPOINT" ]; then
                 S3_PROXY_SCHEME="${S3_ENDPOINT%%://*}"
                 S3_PROXY_HOST="${S3_ENDPOINT#*://}"
