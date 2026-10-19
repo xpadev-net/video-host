@@ -4,7 +4,8 @@ export type FilteredUser = {
   id: string;
   name: string;
   username: string;
-  role: "USER" | "ADMIN";
+  // Only returned to the user themself (GET/PATCH /users/me); other users' roles are not public.
+  role?: "USER" | "ADMIN";
   avatarUrl?: string | null;
 };
 

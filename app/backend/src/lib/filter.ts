@@ -12,9 +12,13 @@ export const filterUser = (user: FilteredUser): FilteredUser => {
     id: user.id,
     name: user.name,
     username: user.username,
-    role: user.role,
     avatarUrl: user.avatarUrl,
   };
+};
+
+/** The requester's own profile: the only place `role` is exposed. */
+export const filterSelf = (user: FilteredUser): FilteredUser => {
+  return { ...filterUser(user), role: user.role };
 };
 
 export const filterSeries = (series: FilteredSeries): FilteredSeries => {

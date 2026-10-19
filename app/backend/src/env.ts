@@ -207,6 +207,11 @@ export const EnvSchema = z.preprocess(
       ) {
         issue("Production cannot use CHANGE_ME placeholder secrets");
       }
+      if (!env.S3_ACCESS_KEY_ID || !env.S3_SECRET_ACCESS_KEY) {
+        issue(
+          "S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are required in production",
+        );
+      }
       if (env.VOD_INTERNAL_SECRET.length < 32) {
         // Playback tokens are HMACs under this secret and appear in public
         // URLs, so a weak secret could be brute-forced offline.

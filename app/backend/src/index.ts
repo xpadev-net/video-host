@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { HonoApp } from "@/@types/hono";
 import { PORT } from "@/env";
+import { startAuthRateLimitCleanup } from "@/lib/auth-maintenance";
 import { initializeS3Buckets } from "@/lib/s3";
 import { initOtelMetrics } from "@/otel";
 import { registerMiddleware } from "./middleware";
@@ -20,6 +21,7 @@ const port = PORT;
 // Initialize S3 buckets and start server
 const startServer = async () => {
   await initializeS3Buckets();
+  startAuthRateLimitCleanup();
 
   console.log(`Server is running on port ${port}`);
 

@@ -267,7 +267,7 @@ spec:
               cpu: "500m"
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: 3000
             periodSeconds: 10
             timeoutSeconds: 2

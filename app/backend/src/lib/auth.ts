@@ -22,7 +22,10 @@ import {
   SIGNUP_ENABLED,
 } from "@/env";
 import {
+  decodeJwtPayload,
+  normalizeIssuer,
   oidcAccountId,
+  oidcIssuerMatches,
   oidcProviderId,
   signupCodeMatches,
 } from "@/lib/auth-policy";
@@ -134,7 +137,7 @@ export const auth = betterAuth({
                 },
                 clientId: OIDC_CLIENT_ID,
                 clientSecret: OIDC_CLIENT_SECRET,
-                discoveryUrl: `${OIDC_ISSUER_URL.replace(/\/+$/, "")}/.well-known/openid-configuration`,
+                discoveryUrl: `${normalizeIssuer(OIDC_ISSUER_URL)}/.well-known/openid-configuration`,
                 requireIdTokenVerification: true,
                 pkce: true,
                 // v1.7.7 verifies signature, issuer, audience and nonce BEFORE
@@ -142,11 +145,8 @@ export const auth = betterAuth({
                 // issuer as well: never fall back to email-only userinfo.
                 getUserInfo: async ({ idToken }) => {
                   if (!idToken) return null;
-                  const claims = JSON.parse(
-                    Buffer.from(idToken.split(".")[1], "base64url").toString(
-                      "utf8",
-                    ),
-                  ) as Record<string, unknown>;
+                  const claims = decodeJwtPayload(idToken);
+                  if (!claims) return null;
                   const now = Date.now() / 1000;
                   if (
                     typeof claims.exp !== "number" ||
@@ -156,7 +156,7 @@ export const auth = betterAuth({
                     !Number.isFinite(claims.iat) ||
                     claims.iat > now + OIDC_IAT_CLOCK_TOLERANCE_SECONDS ||
                     claims.exp <= claims.iat ||
-                    claims.iss !== OIDC_ISSUER_URL ||
+                    !oidcIssuerMatches(claims.iss, OIDC_ISSUER_URL ?? "") ||
                     typeof claims.sub !== "string" ||
                     !/^[\x20-\x7E]{1,255}$/.test(claims.sub) ||
                     !z.email().safeParse(claims.email).success
