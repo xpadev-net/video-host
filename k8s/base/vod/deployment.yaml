@@ -28,13 +28,32 @@ spec:
                 -keyout /etc/nginx/ssl/tls.key \
                 -out /etc/nginx/ssl/tls.crt \
                 -subj "/CN=vod/O=video-host"
-              envsubst '${VOD_INTERNAL_SECRET}' < /etc/nginx/template/nginx.conf > /etc/nginx/rendered/nginx.conf
+              if [ -n "$S3_ENDPOINT" ]; then
+                S3_PROXY_SCHEME="${S3_ENDPOINT%%://*}"
+                S3_PROXY_HOST="${S3_ENDPOINT#*://}"
+                S3_PROXY_HOST="${S3_PROXY_HOST%%/*}"
+              else
+                S3_PROXY_SCHEME=https
+                S3_PROXY_HOST="s3.${S3_REGION}.amazonaws.com"
+              fi
+              export S3_PROXY_SCHEME S3_PROXY_HOST
+              envsubst '${VOD_INTERNAL_SECRET} ${S3_PROXY_SCHEME} ${S3_PROXY_HOST}' < /etc/nginx/template/nginx.conf > /etc/nginx/rendered/nginx.conf
           env:
             - name: VOD_INTERNAL_SECRET
               valueFrom:
                 secretKeyRef:
                   name: vod-secrets
                   key: vod-internal-secret
+            - name: S3_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: s3-endpoint
+            - name: S3_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: s3-region
           volumeMounts:
             - name: ssl-certs
               mountPath: /etc/nginx/ssl

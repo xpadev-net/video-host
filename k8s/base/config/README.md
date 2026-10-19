@@ -29,7 +29,7 @@
 
 - `nginx/nginx.conf` はローカルの `docker-compose.yml` が `./nginx` ディレクトリごとコンテナへマウントする HTTP 設定です。ローカル開発用で、Kubernetes には適用しません。
 - `k8s/base/config/vod-nginx-config.sample.yaml` は、base のVOD Deploymentに使うConfigMapテンプレートです。HTTPS/443でlistenし、`nginx` init containerが生成する `/etc/nginx/ssl/tls.crt` と `/etc/nginx/ssl/tls.key` を参照します。base standaloneでは、`minio:9000`を利用できるS3サービスとbackend Serviceを用意してください。
-- 通常の本番 Kustomize 経路では `k8s/overlays/prod/kustomization.yaml` が同じ `vod-nginx-config` を生成し、同じディレクトリの `nginx.conf` を読み込みます。設定はKubernetes Service `backend:3000`へマッピングを転送し、`s3.ap-northeast-1.amazonaws.com`をpresigned URLのupstreamとして使います。S3リージョンやendpointを変更する場合は、overlayの`S3_REGION`、`S3_ENDPOINT`、`S3_FORCE_PATH_STYLE`とnginxの`$s3_host`を同じ接続先に合わせてください。
+- 通常の本番 Kustomize 経路では `k8s/overlays/prod/kustomization.yaml` が同じ `vod-nginx-config` を生成し、同じディレクトリの `nginx.conf` を読み込みます。設定はKubernetes Service `backend:3000`へマッピングを転送し、VOD init containerが`backend-config`の`S3_ENDPOINT`と`S3_REGION`からpresigned URLのupstreamを設定します。S3リージョンやendpointを変更するときはbackendとworkerの設定を揃えてください。
 
 現行の `k8s/base/vod/deployment.yaml` はinit containerで起動時に365日有効な自己署名証明書を生成し、共有 `emptyDir` に配置します。信頼された公開TLS証明書ではなく、Pod再作成後には新しい証明書になります。クライアントがVODへ直接HTTPS接続する本番環境では、証明書の信頼と更新要件に応じて外部管理の証明書へ置き換えてください。nginxの設定も別のinit container処理でConfigMapテンプレートから生成し、`vod-secrets`の`vod-internal-secret`をマッピング用headerへ埋め込みます。
 

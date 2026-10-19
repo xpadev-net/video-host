@@ -115,13 +115,14 @@ data:
 
                 # %3F が無ければそのまま、あれば ?qs を付ける
                 # REPLACE_S3_HOST: S3/MinIOホストを設定 (例: minio:9000)
-                set $s3_host "minio:9000";
+                set $s3_scheme "${S3_PROXY_SCHEME}";
+                set $s3_host "${S3_PROXY_HOST}";
                 
                 if ($qs_part = "") {
-                    proxy_pass http://$s3_host/$backend_uri;
+                    proxy_pass $s3_scheme://$s3_host/$backend_uri;
                 }
                 if ($qs_part != "") {
-                    proxy_pass http://$s3_host/$path_part?$qs_part;
+                    proxy_pass $s3_scheme://$s3_host/$path_part?$qs_part;
                 }
 
                 proxy_set_header Cookie "";
