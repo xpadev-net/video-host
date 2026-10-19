@@ -94,9 +94,7 @@ function LoginRoute() {
     try {
       const { error } = await authClient.signIn.email({ email, password });
       if (error)
-        handleAuthError(
-          getAuthErrorMessage(error, "ログインに失敗しました"),
-        );
+        handleAuthError(getAuthErrorMessage(error, "ログインに失敗しました"));
       else await handleAuthSuccess();
     } catch {
       handleAuthError("ネットワークエラーが発生しました");
