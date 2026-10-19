@@ -28,6 +28,16 @@ function NewSeriesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const previousSelectionRef = useRef({ selectedAccountId, selectedProfileId });
+  const selectionGenerationRef = useRef(0);
+  const submissionIdRef = useRef(0);
+  const currentSelectionRef = useRef({ selectedAccountId, selectedProfileId });
+  if (
+    currentSelectionRef.current.selectedAccountId !== selectedAccountId ||
+    currentSelectionRef.current.selectedProfileId !== selectedProfileId
+  ) {
+    currentSelectionRef.current = { selectedAccountId, selectedProfileId };
+    selectionGenerationRef.current += 1;
+  }
 
   useEffect(() => {
     if (
@@ -40,6 +50,7 @@ function NewSeriesPage() {
     setDescription("");
     setVisibility("PUBLIC");
     setError(null);
+    setIsSubmitting(false);
   }, [selectedAccountId, selectedProfileId]);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -48,25 +59,35 @@ function NewSeriesPage() {
 
     setIsSubmitting(true);
     setError(null);
+    const selectionGeneration = selectionGenerationRef.current;
+    const submissionId = ++submissionIdRef.current;
 
     try {
-      const res = await client.api.v4.series.$post({
-        json: {
-          title: title.trim(),
-          description: description.trim(),
-          visibility,
-          asUserId: selectedAccountId || undefined,
+      const res = await client.api.v4.series.$post(
+        {
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+            asUserId: selectedAccountId || undefined,
+          },
         },
-      });
+        {
+          headers: { "X-Profile-Id": selectedProfileId ?? "" },
+        },
+      );
 
       if (!res.ok) {
         throw new Error("作成に失敗しました");
       }
 
-      await navigate({ to: "/dashboard/series" });
+      if (selectionGenerationRef.current === selectionGeneration)
+        await navigate({ to: "/dashboard/series" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "作成に失敗しました");
-      setIsSubmitting(false);
+      if (selectionGenerationRef.current === selectionGeneration)
+        setError(err instanceof Error ? err.message : "作成に失敗しました");
+    } finally {
+      if (submissionIdRef.current === submissionId) setIsSubmitting(false);
     }
   };
 
