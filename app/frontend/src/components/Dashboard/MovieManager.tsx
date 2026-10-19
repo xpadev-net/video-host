@@ -42,14 +42,23 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const requestIdRef = useRef(0);
   const addMutationIdRef = useRef(0);
   const profileIdRef = useRef(selectedProfileId);
+  const profileGenerationRef = useRef(0);
+  const moviesRef = useRef(movies);
   const mountedRef = useRef(true);
-  profileIdRef.current = selectedProfileId;
+  if (profileIdRef.current !== selectedProfileId) {
+    profileIdRef.current = selectedProfileId;
+    profileGenerationRef.current += 1;
+  }
+  moviesRef.current = movies;
 
-  const isCurrentProfileRequest = (profileId: string | null, id: number) =>
+  const isCurrentProfileMutation = (
+    profileId: string | null,
+    generation: number,
+  ) =>
     mountedRef.current &&
     profileIdRef.current === profileId &&
     getSelectedProfileId() === profileId &&
-    requestIdRef.current === id;
+    profileGenerationRef.current === generation;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -111,8 +120,9 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const handleAddMovie = async () => {
     if (!selectedMovieId || !session) return;
     const profileId = selectedProfileId;
-    const requestId = requestIdRef.current;
+    const profileGeneration = profileGenerationRef.current;
     const mutationId = ++addMutationIdRef.current;
+    const movie = availableMovies.find((item) => item.id === selectedMovieId);
     setIsAdding(true);
     try {
       const res =
@@ -133,20 +143,21 @@ export const MovieManager: FC<MovieManagerProps> = ({
             );
 
       if (!res.ok) throw new Error("Failed to add");
-      if (!isCurrentProfileRequest(profileId, requestId)) return;
+      if (!isCurrentProfileMutation(profileId, profileGeneration)) return;
 
-      // Find the movie and add it to the list
-      const movie = availableMovies.find((m) => m.id === selectedMovieId);
-      if (movie) {
+      if (
+        movie &&
+        !moviesRef.current.some((item) => item.movie.id === movie.id)
+      ) {
         const newMovie: MovieItem = {
           movie,
-          order: movies.length + 1,
+          order: moviesRef.current.length + 1,
         };
-        onMoviesChange([...movies, newMovie]);
+        onMoviesChange([...moviesRef.current, newMovie]);
       }
       setSelectedMovieId("");
     } catch {
-      if (isCurrentProfileRequest(profileId, requestId))
+      if (isCurrentProfileMutation(profileId, profileGeneration))
         notify("動画の追加に失敗しました");
     } finally {
       if (mountedRef.current && addMutationIdRef.current === mutationId)
@@ -157,7 +168,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const handleRemoveMovie = async (movieId: string) => {
     if (!session) return;
     const profileId = selectedProfileId;
-    const requestId = requestIdRef.current;
+    const profileGeneration = profileGenerationRef.current;
     try {
       const res =
         entityType === "series"
@@ -175,11 +186,11 @@ export const MovieManager: FC<MovieManagerProps> = ({
             );
 
       if (!res.ok) throw new Error("Failed to remove");
-      if (!isCurrentProfileRequest(profileId, requestId)) return;
+      if (!isCurrentProfileMutation(profileId, profileGeneration)) return;
 
-      onMoviesChange(movies.filter((m) => m.movie.id !== movieId));
+      onMoviesChange(moviesRef.current.filter((m) => m.movie.id !== movieId));
     } catch {
-      if (isCurrentProfileRequest(profileId, requestId))
+      if (isCurrentProfileMutation(profileId, profileGeneration))
         notify("動画の削除に失敗しました");
     }
   };
