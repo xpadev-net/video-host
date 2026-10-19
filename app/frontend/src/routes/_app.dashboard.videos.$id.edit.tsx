@@ -246,7 +246,7 @@ function EditVideoPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || isResuming) return;
 
     setIsSubmitting(true);
     setError(null);
@@ -449,7 +449,7 @@ function EditVideoPage() {
             </button>
             <button
               type="submit"
-              disabled={!title.trim() || isSubmitting}
+              disabled={!title.trim() || isSubmitting || isResuming}
               className="submit-button"
             >
               {isSubmitting ? "保存中..." : "保存"}

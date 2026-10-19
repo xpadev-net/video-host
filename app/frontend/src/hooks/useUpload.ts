@@ -48,11 +48,13 @@ export const useUpload = (): UseUploadResult => {
   });
   const xhrRef = useRef<XMLHttpRequest | null>(null);
   const uploadedMovieIdRef = useRef<string | null>(null);
+  const uploadedFileRef = useRef<File | null>(null);
 
   const reset = useCallback(() => {
     xhrRef.current?.abort();
     xhrRef.current = null;
     uploadedMovieIdRef.current = null;
+    uploadedFileRef.current = null;
     setState({ phase: "idle", progress: 0, error: null });
   }, []);
 
@@ -119,11 +121,13 @@ export const useUpload = (): UseUploadResult => {
       // fresh URL instead of repeating /complete against the rejected object.
       if (res.status >= 400 && res.status < 500) {
         uploadedMovieIdRef.current = null;
+        uploadedFileRef.current = null;
       }
       throw new Error("アップロードの完了処理に失敗しました");
     }
     if (uploadedMovieIdRef.current === movieId) {
       uploadedMovieIdRef.current = null;
+      uploadedFileRef.current = null;
     }
     setState({ phase: "done", progress: 100, error: null });
   }, []);
@@ -170,6 +174,7 @@ export const useUpload = (): UseUploadResult => {
       try {
         await putFile(uploadUrl, file);
         uploadedMovieIdRef.current = movieId;
+        uploadedFileRef.current = file;
         await completeUpload(movieId);
         return true;
       } catch (error) {
@@ -186,7 +191,10 @@ export const useUpload = (): UseUploadResult => {
 
   const resume = useCallback(
     async (movieId: string, file: File): Promise<boolean> => {
-      if (uploadedMovieIdRef.current === movieId) {
+      if (
+        uploadedMovieIdRef.current === movieId &&
+        uploadedFileRef.current === file
+      ) {
         setState({ phase: "completing", progress: 100, error: null });
         try {
           await completeUpload(movieId);
