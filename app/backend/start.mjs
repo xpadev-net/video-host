@@ -54,6 +54,18 @@ try {
   if (sslAccept && !["strict", "accept_invalid_certs"].includes(sslAccept)) {
     throw new Error(`Unsupported MySQL sslaccept mode: ${sslAccept}`);
   }
+  if (
+    sslMode &&
+    !["disable", "require", "verify-ca", "verify-full"].includes(sslMode)
+  ) {
+    throw new Error(`Unsupported MySQL SSL mode: ${sslMode}`);
+  }
+  if (sslMode === "disable" && (sslCert || sslIdentity || sslAccept)) {
+    throw new Error("MySQL sslmode=disable conflicts with SSL certificate options");
+  }
+  const verifyCertificate =
+    sslAccept === "strict" ||
+    (!sslAccept && ["verify-ca", "verify-full"].includes(sslMode));
   const ssl =
     sslCert || sslIdentity || sslAccept || (sslMode && sslMode !== "disable")
       ? {
@@ -66,9 +78,7 @@ try {
           ...(databaseUrl.searchParams.has("sslpassword")
             ? { passphrase: databaseUrl.searchParams.get("sslpassword") }
             : {}),
-          rejectUnauthorized: sslAccept
-            ? sslAccept === "strict"
-            : sslMode !== "require",
+          rejectUnauthorized: verifyCertificate,
         }
       : undefined;
   const connection = await mysql.createConnection({
