@@ -225,7 +225,7 @@ model MovieVariant {
   movieId    String
   variantId  String
   contentUrl String      @db.Text
-  s3Key      String?     @unique @db.VarChar(512)
+  s3Key      String?     @db.VarChar(512)
   status     MovieStatus @default(READY)
   externalId String?     @unique @db.VarChar(512)
   createdAt  DateTime    @default(now())

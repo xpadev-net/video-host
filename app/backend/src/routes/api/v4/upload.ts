@@ -19,7 +19,11 @@ import { ok } from "@/utils/response/ok";
 
 const FilenameSchema = z.string().min(1).max(255);
 const UploadSizeSchema = z.number().int().positive().max(MAX_UPLOAD_BYTES);
-const VideoContentTypeSchema = z.string().regex(/^video\/[\w.+-]+$/);
+// Browsers report an empty File.type for containers they do not know; the
+// frontend sends application/octet-stream for those.
+const VideoContentTypeSchema = z
+  .string()
+  .regex(/^(video\/[\w.+-]+|application\/octet-stream)$/);
 
 const InitUploadSchema = z.object({
   filename: FilenameSchema,

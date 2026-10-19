@@ -154,33 +154,7 @@ describe("series movie association authorization", () => {
   });
 });
 
-describe("seriesId on movie create/update", () => {
-  it("rejects creating a movie in someone else's series", async () => {
-    database.series.findUnique.mockResolvedValue({ authorId: "bob" });
-    const res = await appFor(alice).request(
-      "/movies",
-      json("POST", {
-        title: "t",
-        s3Key: "uploads/alice/k.mp4",
-        seriesId: "s2",
-      }),
-    );
-    expect(res.status).toBe(401);
-  });
-
-  it("reports an unknown series as 404 instead of a 500", async () => {
-    database.series.findUnique.mockResolvedValue(null);
-    const res = await appFor(alice).request(
-      "/movies",
-      json("POST", {
-        title: "t",
-        s3Key: "uploads/alice/k.mp4",
-        seriesId: "nope",
-      }),
-    );
-    expect(res.status).toBe(404);
-  });
-
+describe("seriesId on movie update", () => {
   it("rejects moving a movie into someone else's series", async () => {
     database.movie.findUnique.mockResolvedValue({
       id: "m1",

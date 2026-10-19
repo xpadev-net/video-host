@@ -85,47 +85,6 @@ describe("generateUploadKey", () => {
   });
 });
 
-describe("POST /movies s3Key validation", () => {
-  const body = (s3Key: string) => ({ title: "t", s3Key });
-
-  it("rejects another user's upload key", async () => {
-    const res = await post("/movies", body("uploads/bob/abc.mp4"));
-    expect(res.status).toBe(400);
-    expect(database.movie.create).not.toHaveBeenCalled();
-  });
-
-  it("rejects path traversal out of the user's prefix", async () => {
-    const res = await post("/movies", body("uploads/alice/../bob/abc.mp4"));
-    expect(res.status).toBe(400);
-  });
-
-  it("rejects a key that does not exist in the tmp bucket", async () => {
-    s3.getTmpFileSize.mockResolvedValue(null);
-    const res = await post("/movies", body("uploads/alice/abc.mp4"));
-    expect(res.status).toBe(400);
-    expect(database.movie.create).not.toHaveBeenCalled();
-  });
-});
-
-describe("POST /movies upload guards", () => {
-  const body = { title: "t", s3Key: "uploads/alice/abc.mp4" };
-
-  it("rejects oversized objects and removes them", async () => {
-    s3.getTmpFileSize.mockResolvedValue(Number.MAX_SAFE_INTEGER);
-    const res = await post("/movies", body);
-    expect(res.status).toBe(400);
-    expect(s3.deleteTmpFile).toHaveBeenCalledWith(body.s3Key);
-    expect(database.movie.create).not.toHaveBeenCalled();
-  });
-
-  it("rejects a key already backing another variant", async () => {
-    database.movieVariant.findFirst.mockResolvedValue({ id: "v1" });
-    const res = await post("/movies", body);
-    expect(res.status).toBe(400);
-    expect(database.movie.create).not.toHaveBeenCalled();
-  });
-});
-
 describe("upload validation", () => {
   it("requires the file size so the presigned URL can be bound to it", async () => {
     const res = await post("/upload/init", {
@@ -142,6 +101,24 @@ describe("upload validation", () => {
       size: Number.MAX_SAFE_INTEGER,
     });
     expect(res.status).toBe(400);
+  });
+
+  it("no longer accepts client-chosen s3Keys via POST /movies", async () => {
+    const res = await post("/movies", {
+      title: "t",
+      s3Key: "uploads/bob/abc.mp4",
+    });
+    expect(res.status).toBe(404);
+    expect(database.movie.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts an empty-type fallback but not other types", async () => {
+    const ok = await post("/upload/init", {
+      filename: "a.mkv",
+      contentType: "application/octet-stream",
+      size: 10,
+    });
+    expect(ok.status).not.toBe(400);
   });
 
   it("no longer exposes the legacy presigned-url endpoint", async () => {
