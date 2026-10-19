@@ -324,6 +324,24 @@ const retryOrDeadLetter = async (
   return "failed";
 };
 
+// Was this failure produced by the abort itself? A permanent failure (bad
+// input, HTTP 4xx, ...) that merely coincides with SIGTERM must keep its own
+// classification instead of being handed back as if shutdown had caused it.
+const isAbortFailure = (error: unknown): boolean => {
+  if (typeof error === "string") return /aborted/i.test(error);
+  if (typeof error !== "object" || error === null) return false;
+  const { name, code, message } = error as {
+    name?: unknown;
+    code?: unknown;
+    message?: unknown;
+  };
+  return (
+    name === "AbortError" ||
+    code === "ABORT_ERR" ||
+    (typeof message === "string" && /aborted/i.test(message))
+  );
+};
+
 // A shutdown interrupted this job before its output was committed. Hand the
 // claim back to the main queue untouched: the job did nothing wrong, so it must
 // not consume a retry (a few deploys would otherwise exhaust a long job).
@@ -444,11 +462,13 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     }
 
     if (!result.success) {
-      // A timeout that fired before SIGTERM stays a timeout.
+      // A timeout that fired before SIGTERM stays a timeout, and a failure the
+      // abort did not cause keeps its own classification.
       if (
         jobShutdownAbort.signal.aborted &&
         !committedOutcome &&
-        !jobTimedOut
+        !jobTimedOut &&
+        isAbortFailure(result.error)
       ) {
         return await handBackOnShutdown(job);
       }
@@ -599,8 +619,13 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     if (jobRelinquished) {
       return "relinquished";
     }
-    // A timeout that fired before SIGTERM stays a timeout.
-    if (jobShutdownAbort.signal.aborted && !committedOutcome && !jobTimedOut) {
+    // Same rule for thrown errors: only an abort-caused one is the shutdown's.
+    if (
+      jobShutdownAbort.signal.aborted &&
+      !committedOutcome &&
+      !jobTimedOut &&
+      isAbortFailure(error)
+    ) {
       return await handBackOnShutdown(job);
     }
     if (committedOutcome) {
