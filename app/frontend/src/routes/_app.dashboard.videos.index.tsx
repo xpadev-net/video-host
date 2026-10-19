@@ -9,6 +9,7 @@ import { useConfirm, useNotify } from "@/components/Feedback/FeedbackProvider";
 import { useMyMovies } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
+import { time2str } from "@/libraries/time";
 import { visibility2str } from "@/utils/visibility2str";
 
 export const Route = createFileRoute("/_app/dashboard/videos/")({
@@ -161,8 +162,7 @@ function VideosPage() {
                     )}
                     {movie.variants?.[0]?.status === "READY" && (
                       <span className="video-duration">
-                        {Math.floor(movie.duration / 60)}:
-                        {(movie.duration % 60).toString().padStart(2, "0")}
+                        {time2str(movie.duration)}
                       </span>
                     )}
                   </div>

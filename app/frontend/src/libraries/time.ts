@@ -1,6 +1,6 @@
 const time2str = (time: number): string => {
-  time = Math.floor(time);
-  const sec = `00${(time % 60) % 60}`.slice(-2);
+  time = Number.isFinite(time) ? Math.max(0, Math.floor(time)) : 0;
+  const sec = `00${time % 60}`.slice(-2);
   const min = `00${Math.floor(time / 60) % 60}`.slice(-2);
   const hour = Math.floor(time / 3600);
 

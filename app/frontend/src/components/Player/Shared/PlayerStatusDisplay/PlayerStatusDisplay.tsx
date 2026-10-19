@@ -58,7 +58,7 @@ const PlayerStatusDisplay = () => {
   }, [playbackRate, show]);
 
   useEffect(() => {
-    if (previousVolume.current === undefined) {
+    if (previousVolume.current === null) {
       previousVolume.current = volume;
       return;
     }

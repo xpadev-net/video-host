@@ -14,12 +14,14 @@ import { Switch } from "@/components/Switch/Switch";
 
 type GenericPageProps = MenuProps & {
   config: SettingPageConfig;
+  isActive?: boolean;
 };
 
 const GenericPage: FC<GenericPageProps> = ({
   className,
   updateScale,
   config,
+  isActive = true,
 }) => {
   const setPlayerSetting = useSetAtom(PlayerSettingAtom);
   const state = useAtomValue(PlayerStateAtom);
@@ -170,6 +172,8 @@ const GenericPage: FC<GenericPageProps> = ({
     <div
       className={`flex flex-col py-2.5 w-fit min-w-[250px] ${className ?? ""}`}
       ref={ref}
+      aria-hidden={!isActive}
+      inert={!isActive}
     >
       {config.map((item, index) => renderItem(item, index))}
     </div>

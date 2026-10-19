@@ -61,11 +61,13 @@ const MediaSessionHandler: FC<Props> = ({ data }) => {
   );
 
   useEffect(() => {
-    if (!data) {
-      navigator.mediaSession.metadata = null;
+    if (!("mediaSession" in navigator)) return;
+    const session = navigator.mediaSession;
+    if (!data || typeof MediaMetadata === "undefined") {
+      session.metadata = null;
       return;
     }
-    navigator.mediaSession.metadata = new MediaMetadata({
+    session.metadata = new MediaMetadata({
       title: data.title,
       artist: data.series?.title,
       artwork: data.thumbnailUrl
@@ -73,32 +75,60 @@ const MediaSessionHandler: FC<Props> = ({ data }) => {
             {
               src: data.thumbnailUrl,
               sizes: "256x256",
-              type: "image/jpg",
+              type: "image/jpeg",
             },
           ]
         : [],
     });
     for (const key of Object.keys(mediaSessionHandler)) {
       const handler = mediaSessionHandler[key];
-      navigator.mediaSession.setActionHandler(
-        key as MediaSessionAction,
-        handler,
-      );
+      try {
+        session.setActionHandler(key as MediaSessionAction, handler);
+      } catch {
+        // Some browsers implement only a subset of Media Session actions.
+      }
     }
     return () => {
-      navigator.mediaSession.metadata = null;
+      session.metadata = null;
+      for (const key of Object.keys(mediaSessionHandler)) {
+        try {
+          session.setActionHandler(key as MediaSessionAction, null);
+        } catch {
+          // Ignore unsupported actions while cleaning up.
+        }
+      }
     };
   }, [data, mediaSessionHandler]);
 
   useEffect(() => {
     if (!videoRef) return;
+    if (!("mediaSession" in navigator)) return;
     const handler = () => {
-      if (!videoRef || Number.isNaN(videoRef.duration)) return;
-      navigator.mediaSession.setPositionState({
-        duration: videoRef.duration,
-        position: videoRef.currentTime,
-        playbackRate: videoRef.playbackRate,
-      });
+      const session = navigator.mediaSession;
+      const duration = videoRef.duration;
+      if (
+        !session.setPositionState ||
+        !Number.isFinite(duration) ||
+        duration <= 0
+      )
+        return;
+      const position = videoRef.currentTime;
+      const playbackRate = videoRef.playbackRate;
+      if (
+        !Number.isFinite(position) ||
+        !Number.isFinite(playbackRate) ||
+        playbackRate <= 0
+      )
+        return;
+      try {
+        session.setPositionState({
+          duration,
+          position: Math.max(0, Math.min(duration, position)),
+          playbackRate,
+        });
+      } catch {
+        // Invalid media state can be rejected by the browser.
+      }
     };
     videoRef.addEventListener("timeupdate", handler);
     return () => {
