@@ -38,6 +38,7 @@ const Setting = ({ className }: Props) => {
   const playerSetting = useAtomValue(PlayerSettingAtom);
   const wrapperRef = useAtomValue(WrapperRefAtom);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const previousOpen = useRef(false);
   const isMobile = useIsMobile();
   const settingDefinitions = useSettingDefinitions();
   useEffect(() => {
@@ -91,12 +92,65 @@ const Setting = ({ className }: Props) => {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLFieldSetElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      setState((pv) => ({ ...pv, isSetting: false }));
+      requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLElement>('[aria-controls="player-settings-menu"]')
+          ?.focus();
+      });
+      return;
+    }
+    if (e.key === "Tab" && scrollContainerRef.current) {
+      const focusable = Array.from(
+        scrollContainerRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => !element.closest('[aria-hidden="true"]'));
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (first && last && e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (last && !e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first?.focus();
+      }
+    }
     e.stopPropagation();
   };
+
+  useEffect(() => {
+    if (state.isSetting && !previousOpen.current) {
+      requestAnimationFrame(() => {
+        scrollContainerRef.current
+          ?.querySelector<HTMLElement>("button")
+          ?.focus();
+      });
+    }
+    previousOpen.current = state.isSetting;
+  }, [state.isSetting]);
+
+  useEffect(() => {
+    if (!state.isSetting || !playerSetting.length) return;
+    requestAnimationFrame(() => {
+      scrollContainerRef.current
+        ?.querySelector<HTMLElement>('[aria-hidden="false"] button')
+        ?.focus();
+    });
+  }, [playerSetting, state.isSetting]);
 
   return (
     <div
       ref={scrollContainerRef}
+      id="player-settings-menu"
+      role="dialog"
+      aria-label="プレイヤー設定"
+      aria-modal="true"
+      aria-hidden={!state.isSetting}
+      inert={!state.isSetting}
       className={cn(
         "overflow-y-scroll bg-black/80 rounded-[5px]",
         !state.isSetting && "opacity-0 select-none pointer-events-none",
@@ -129,11 +183,18 @@ const Setting = ({ className }: Props) => {
                 <GenericPage
                   key={key}
                   config={config}
+                  isActive={index === playerSetting.length - 1}
                   updateScale={updateScale}
                 />
               );
             }
-            return <GenericPage key={key} config={config} />;
+            return (
+              <GenericPage
+                key={key}
+                config={config}
+                isActive={index === playerSetting.length - 1}
+              />
+            );
           })}
         </div>
       </fieldset>

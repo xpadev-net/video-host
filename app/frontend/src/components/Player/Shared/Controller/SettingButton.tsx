@@ -12,8 +12,9 @@ const SettingButton = ({ className }: props) => {
   const setPlayerSetting = useSetAtom(PlayerSettingAtom);
   const toggleSettings = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    setMetadata((pv) => ({ ...pv, isSetting: !pv.isSetting }));
-    if (!metadata.isSetting) {
+    const isOpening = !metadata.isSetting;
+    setMetadata((pv) => ({ ...pv, isSetting: isOpening }));
+    if (isOpening) {
       setPlayerSetting(["main"]);
     }
   };
@@ -24,6 +25,9 @@ const SettingButton = ({ className }: props) => {
       onClick={toggleSettings}
       type="button"
       aria-label={`設定メニューを${metadata.isSetting ? "閉じる" : "開く"}`}
+      aria-haspopup="dialog"
+      aria-expanded={metadata.isSetting}
+      aria-controls="player-settings-menu"
     >
       <Settings />
     </button>

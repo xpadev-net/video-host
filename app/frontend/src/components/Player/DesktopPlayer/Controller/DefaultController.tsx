@@ -83,13 +83,13 @@ const DefaultController = ({ data, isHovering }: props) => {
       <div className="flex flex-row h-10 justify-between">
         <div className="flex flex-row items-center">
           <PrevNextButton
-            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6"
+            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6"
             type={"prev"}
             data={data}
           />
-          <PlayPauseButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
+          <PlayPauseButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6" />
           <PrevNextButton
-            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6"
+            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6"
             type={"next"}
             data={data}
           />
@@ -98,7 +98,7 @@ const DefaultController = ({ data, isHovering }: props) => {
             onClick={onVolumeClick}
             onMouseOver={onVolumeMouseOver}
             onFocus={onVolumeMouseOver}
-            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6"
+            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6"
             aria-label="音量を調整"
           >
             <VolumeIcon />
@@ -113,10 +113,10 @@ const DefaultController = ({ data, isHovering }: props) => {
           <TimeDisplay />
         </div>
         <div className="flex flex-row items-center">
-          <AutoPlayButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
-          <SettingButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
-          <TheatreButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
-          <FullscreenButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
+          <AutoPlayButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6" />
+          <SettingButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6" />
+          <TheatreButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6" />
+          <FullscreenButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6" />
         </div>
       </div>
       <Slider showTimePreview />
