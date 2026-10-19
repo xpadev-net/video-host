@@ -35,7 +35,7 @@ on:
       - ffmpeg-worker-v*
 
 concurrency:
-  group: release-${{ github.event.pull_request.number || github.ref }}
+  group: release-publication
   cancel-in-progress: false
 
 permissions:
@@ -122,11 +122,14 @@ jobs:
   prepare-release:
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
-      contains(github.event.pull_request.body, '<!-- video-host-release -->')) ||
+      contains(github.event.pull_request.body, '<!-- video-host-release -->') &&
+      github.event.pull_request.user.login == 'github-actions[bot]' &&
+      startsWith(github.event.pull_request.head.ref, 'release/versions-') &&
+      github.event.pull_request.head.repo.full_name == github.repository) ||
       github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: write
       contents: read
     outputs:
       backend: ${{ steps.release.outputs.backend }}
@@ -143,6 +146,13 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.merge_commit_sha || github.sha }}
           fetch-depth: 0
+
+      - name: Dispatch CI for recovery tag
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: gh workflow run ci.yaml --ref "$TAG_NAME"
 
       - name: Wait for passing CI on the release PR and merge commit
         if: github.event_name == 'pull_request'
@@ -168,6 +178,24 @@ jobs:
           }
           wait_for_ci "$PR_HEAD_SHA"
           wait_for_ci "$MERGE_SHA"
+
+      - name: Wait for passing CI on the recovery tag commit
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for ((attempt = 0; attempt < 60; attempt++)); do
+            run_id="$(gh run list --workflow ci.yaml --commit "$RELEASE_SHA" --json databaseId,status,conclusion --jq '[.[] | select(.status != "completed" or .conclusion == "success")][0].databaseId // empty')"
+            [ -n "$run_id" ] && break
+            sleep 5
+          done
+          if [ -z "${run_id:-}" ]; then
+            echo "No successful or active CI run found for recovery commit $RELEASE_SHA" >&2
+            exit 1
+          fi
+          gh run watch "$run_id" --exit-status
 
       - name: Determine selected images and release versions
         id: release
@@ -418,10 +446,17 @@ jobs:
           set -euo pipefail
           create_release() {
             local tag="$1"
+            local prefix="$2"
             if ! gh release view "$tag" >/dev/null 2>&1; then
-              gh release create "$tag" --target "$COMMIT_SHA" --generate-notes --title "$tag"
+              local previous_tag
+              previous_tag="$(gh release list --limit 100 --json tagName --jq ".[] | select(.tagName | startswith(\"$prefix-v\")) | .tagName" | head -n 1)"
+              if [ -n "$previous_tag" ]; then
+                gh release create "$tag" --target "$COMMIT_SHA" --generate-notes --notes-start-tag "$previous_tag" --title "$tag"
+              else
+                gh release create "$tag" --target "$COMMIT_SHA" --generate-notes --title "$tag"
+              fi
             fi
           }
-          [ "$BACKEND" != true ] || create_release "backend-$BACKEND_VERSION"
-          [ "$FRONTEND" != true ] || create_release "frontend-$FRONTEND_VERSION"
-          [ "$WORKER" != true ] || create_release "ffmpeg-worker-$WORKER_VERSION"
+          [ "$BACKEND" != true ] || create_release "backend-$BACKEND_VERSION" backend
+          [ "$FRONTEND" != true ] || create_release "frontend-$FRONTEND_VERSION" frontend
+          [ "$WORKER" != true ] || create_release "ffmpeg-worker-$WORKER_VERSION" ffmpeg-worker
