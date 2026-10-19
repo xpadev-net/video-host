@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { FFMPEG_THREADS, JOB_TIMEOUT_SECONDS, TEMP_DIR } from "./env";
 
@@ -133,10 +133,11 @@ const runFfprobe = (
       "ffprobe",
       ["-protocol_whitelist", "file,crypto", ...args],
       {
-        stdio: ["ignore", "pipe", "ignore"],
+        stdio: ["ignore", "pipe", "pipe"],
       },
     );
     let stdout = "";
+    let stderrTail = "";
     let outputBytes = 0;
     let forcedError: Error | null = null;
     let finished = false;
@@ -181,6 +182,11 @@ const runFfprobe = (
       }
       stdout += data.toString();
     });
+    ffprobe.stderr.on("data", (data: Buffer) => {
+      stderrTail = (stderrTail + data.toString()).slice(
+        -MAX_FFMPEG_STDERR_BYTES,
+      );
+    });
     ffprobe.on("error", (error) => finish(error));
     ffprobe.on("close", (code, childSignal) => {
       if (forcedError) {
@@ -190,7 +196,7 @@ const runFfprobe = (
       } else if (code !== 0) {
         finish(
           new Error(
-            `ffprobe exited with code ${code ?? "null"}${childSignal ? ` (${childSignal})` : ""}`,
+            `ffprobe exited with code ${code ?? "null"}${childSignal ? ` (${childSignal})` : ""}: ${stderrTail}`,
           ),
         );
       } else {
@@ -201,7 +207,7 @@ const runFfprobe = (
 
 export interface EncodeResult {
   success: boolean;
-  permanent?: boolean;
+  kind?: "transient" | "permanent" | "timeout";
   outputPath?: string;
   duration?: number;
   error?: string;
@@ -217,6 +223,11 @@ export type ProgressCallback = (progress: {
 if (!existsSync(TEMP_DIR)) {
   mkdirSync(TEMP_DIR, { recursive: true });
 }
+// emptyDir survives container restarts; remove abandoned files before accepting
+// work so a previous OOM/SIGKILL cannot permanently consume the scratch volume.
+for (const entry of readdirSync(TEMP_DIR)) {
+  rmSync(join(TEMP_DIR, entry), { recursive: true, force: true });
+}
 
 export const encodeVideo = async (
   inputPath: string,
@@ -228,6 +239,7 @@ export const encodeVideo = async (
   if (abortSignal?.aborted) {
     return {
       success: false,
+      kind: "timeout",
       error: "Encoding aborted before start (timeout during download)",
     };
   }
@@ -236,10 +248,17 @@ export const encodeVideo = async (
   try {
     inputMetadata = await probeMedia(inputPath, abortSignal);
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const permanent =
+      error instanceof PermanentMediaInputError ||
+      /Invalid data found|matches no streams|moov atom not found|EBML header parsing failed|End of file/i.test(
+        message,
+      );
+    const timeout = /timed out/i.test(message);
     return {
       success: false,
-      permanent: error instanceof PermanentMediaInputError,
-      error: `Failed to probe input: ${error instanceof Error ? error.message : String(error)}`,
+      kind: timeout ? "timeout" : permanent ? "permanent" : "transient",
+      error: `Failed to probe input: ${message}`,
     };
   }
   const { duration: inputDuration, videoMap, hdr } = inputMetadata;
@@ -418,16 +437,17 @@ export const encodeVideo = async (
 
     ffmpeg.on("close", (code, childSignal) => {
       if (timeoutTimer) clearTimeout(timeoutTimer);
-      // Check if aborted
+      if (timedOut) {
+        finish({ success: false, kind: "timeout", error: "FFmpeg timed out" });
+        return;
+      }
+      // Shutdown and other external cancellations are transient.
       if (abortSignal?.aborted) {
         finish({
           success: false,
-          error: "Encoding aborted due to timeout",
+          kind: "transient",
+          error: "Encoding aborted",
         });
-        return;
-      }
-      if (timedOut) {
-        finish({ success: false, error: "FFmpeg timed out" });
         return;
       }
 
@@ -444,11 +464,16 @@ export const encodeVideo = async (
             });
           });
       } else {
+        const permanent =
+          /Invalid data found|matches no streams|width not divisible by 2|Unknown decoder|Decoder .* not found|Unsupported codec/i.test(
+            stderrTail,
+          );
         const termination = childSignal
           ? `terminated by ${childSignal}${childSignal === "SIGKILL" ? " (possible memory limit/OOM kill)" : ""}`
           : `exited with code ${code ?? "null"}`;
         finish({
           success: false,
+          kind: permanent ? "permanent" : "transient",
           error: `FFmpeg ${termination}: ${stderrTail}`,
         });
       }

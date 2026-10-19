@@ -65,8 +65,34 @@ export const getRedisClient = async (): Promise<
 
 export const ENCODE_QUEUE_KEY = "video:encode:queue";
 export const RETRY_QUEUE_KEY = "video:encode:retry:queue"; // Sorted set (ZSET)
+export const DEAD_LETTER_QUEUE_KEY = "video:encode:dead"; // Sorted set (ZSET)
 export const MAX_RETRY_COUNT = 3;
-export const INITIAL_RETRY_DELAY_SECONDS = 10;
+export const INITIAL_RETRY_DELAY_SECONDS = 60;
+export const MAX_RETRY_DELAY_SECONDS = 15 * 60;
+
+export const addJobToDeadLetterQueue = async (
+  job: Partial<EncodeJob> | null,
+  reason: string,
+  stderrTail?: string,
+): Promise<void> => {
+  const client = await getRedisClient();
+  const entry = JSON.stringify({
+    job,
+    reason,
+    stderrTail,
+    failedAt: new Date().toISOString(),
+  });
+  await (client as RedisClientType).eval(
+    `redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
+     local count = redis.call('ZCARD', KEYS[1])
+     if count > 10000 then redis.call('ZREMRANGEBYRANK', KEYS[1], 0, count - 10001) end
+     return count`,
+    {
+      keys: [DEAD_LETTER_QUEUE_KEY],
+      arguments: [Date.now().toString(), entry],
+    },
+  );
+};
 
 // Progress tracking
 export const ENCODE_PROGRESS_PREFIX = "video:encode:progress:";
@@ -112,14 +138,18 @@ export const addJobToRetryQueue = async (
   const retryCount = (job.retryCount || 0) + 1;
 
   if (retryCount > MAX_RETRY_COUNT) {
-    console.error(
-      `Job exceeded max retry count (${MAX_RETRY_COUNT}): movieId=${job.movieId}`,
+    await addJobToDeadLetterQueue(
+      job,
+      `Exceeded maximum retry count (${MAX_RETRY_COUNT})`,
     );
-    return;
+    throw new Error(`Job exceeded max retry count (${MAX_RETRY_COUNT})`);
   }
 
-  // Calculate exponential backoff: 10 * 2^retryCount seconds
-  const delaySeconds = INITIAL_RETRY_DELAY_SECONDS * 2 ** (retryCount - 1);
+  // Exponential backoff starts at one minute and is capped at fifteen minutes.
+  const delaySeconds = Math.min(
+    MAX_RETRY_DELAY_SECONDS,
+    INITIAL_RETRY_DELAY_SECONDS * 2 ** (retryCount - 1),
+  );
   const retryAfter = Math.floor(Date.now() / 1000) + delaySeconds;
 
   const jobWithRetry: EncodeJob = {
@@ -154,6 +184,33 @@ export const addJobToRetryQueue = async (
   );
 };
 
+/** Defer for infrastructure pressure without consuming the job retry budget. */
+export const deferJobForInfrastructure = async (
+  job: EncodeJob,
+  processingMember: string,
+  delaySeconds = 60,
+): Promise<void> => {
+  const client = await getRedisClient();
+  const deferredJob = { ...job, retryAfter: undefined };
+  const retryAfter = Math.floor(Date.now() / 1000) + delaySeconds;
+  const moved = await (client as RedisClientType).eval(
+    `if not redis.call('ZSCORE', KEYS[2], ARGV[3]) then return 0 end
+     redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
+     redis.call('ZREM', KEYS[2], ARGV[3])
+     return 1`,
+    {
+      keys: [RETRY_QUEUE_KEY, PROCESSING_QUEUE_KEY],
+      arguments: [
+        retryAfter.toString(),
+        JSON.stringify(deferredJob),
+        processingMember,
+      ],
+    },
+  );
+  if (moved !== 1)
+    throw new Error("Deferred job could not atomically release its claim");
+};
+
 // Lua script for atomic retry queue processing
 // This script atomically:
 // 1. Gets ready jobs (score <= now) from retry queue
@@ -166,6 +223,7 @@ const PROCESS_RETRY_QUEUE_SCRIPT = `
   local now = tonumber(ARGV[1])
   local limit = tonumber(ARGV[2])
   local progressPrefix = ARGV[3]
+  local deadLetterQueueKey = KEYS[3]
   
   -- Get ready jobs (score <= now) from retry queue
   local readyJobs = redis.call('ZRANGEBYSCORE', retryQueueKey, 0, now, 'LIMIT', 0, limit)
@@ -181,6 +239,20 @@ const PROCESS_RETRY_QUEUE_SCRIPT = `
     -- Remove from retry queue (returns 1 if removed, 0 if not found)
     local removed = redis.call('ZREM', retryQueueKey, jobJson)
     if removed == 1 then
+      local ok, job = pcall(cjson.decode, jobJson)
+      local valid = ok and type(job) == 'table'
+        and type(job.movieId) == 'string' and string.len(job.movieId) > 0
+        and type(job.s3Key) == 'string' and string.len(job.s3Key) > 0
+        and type(job.userId) == 'string' and string.len(job.userId) > 0
+        and type(job.createdAt) == 'string'
+        and (job.retryCount == nil or (type(job.retryCount) == 'number' and job.retryCount >= 0 and job.retryCount == math.floor(job.retryCount)))
+        and (job.retryAfter == nil or (type(job.retryAfter) == 'number' and job.retryAfter >= 0))
+      if not valid then
+        local entry = cjson.encode({raw = jobJson, reason = 'Malformed retry job', failedAt = ARGV[4]})
+        redis.call('ZADD', deadLetterQueueKey, now, entry)
+        local deadCount = redis.call('ZCARD', deadLetterQueueKey)
+        if deadCount > 10000 then redis.call('ZREMRANGEBYRANK', deadLetterQueueKey, 0, deadCount - 10001) end
+      else
       -- Only add to main queue if we successfully removed it
       -- Backend jobs use LPUSH and workers take from the right. Keep ready
       -- retries behind existing work to preserve FIFO priority.
@@ -189,9 +261,7 @@ const PROCESS_RETRY_QUEUE_SCRIPT = `
       -- Publish "queued" in the same atomic step that exposes the job to
       -- consumers, so it can never overwrite a newer state written by a
       -- worker that already claimed the job.
-      local ok, job = pcall(cjson.decode, jobJson)
-      if ok and type(job) == 'table' and job.movieId then
-        redis.call('SET', progressPrefix .. job.movieId, '{"status":"queued"}', 'EX', 3600)
+      redis.call('SET', progressPrefix .. job.movieId, '{"status":"queued"}', 'EX', 3600)
       end
     end
   end
@@ -205,7 +275,7 @@ let processRetryQueueScriptSha: string | null = null;
 export const processRetryQueue = async (): Promise<number> => {
   const client = await getRedisClient();
   const now = Math.floor(Date.now() / 1000);
-  const limit = 10; // Process up to 10 jobs at a time
+  const limit = 100; // Drain larger retry backlogs per interval.
 
   return processRetryQueueWithClient(client as RedisClientType, now, limit);
 };
@@ -226,8 +296,13 @@ const processRetryQueueWithClient = async (
 
     // Execute the Lua script atomically
     const movedJobs = (await client.evalSha(processRetryQueueScriptSha, {
-      keys: [RETRY_QUEUE_KEY, ENCODE_QUEUE_KEY],
-      arguments: [now.toString(), limit.toString(), ENCODE_PROGRESS_PREFIX],
+      keys: [RETRY_QUEUE_KEY, ENCODE_QUEUE_KEY, DEAD_LETTER_QUEUE_KEY],
+      arguments: [
+        now.toString(),
+        limit.toString(),
+        ENCODE_PROGRESS_PREFIX,
+        new Date().toISOString(),
+      ],
     })) as string[];
 
     if (!movedJobs || movedJobs.length === 0) {
@@ -293,9 +368,19 @@ const CLAIM_NEXT_JOB_SCRIPT = `
   local jobJson = redis.call('RPOP', KEYS[1])
   if not jobJson then return false end
   local ok, job = pcall(cjson.decode, jobJson)
-  if not ok or type(job) ~= 'table' or not job.movieId or not job.s3Key then
-    redis.call('LPUSH', KEYS[1], jobJson)
-    return redis.error_reply('Malformed encode job')
+  local valid = ok and type(job) == 'table'
+    and type(job.movieId) == 'string' and string.len(job.movieId) > 0
+    and type(job.s3Key) == 'string' and string.len(job.s3Key) > 0
+    and type(job.userId) == 'string' and string.len(job.userId) > 0
+    and type(job.createdAt) == 'string'
+    and (job.retryCount == nil or (type(job.retryCount) == 'number' and job.retryCount >= 0 and job.retryCount == math.floor(job.retryCount)))
+    and (job.retryAfter == nil or (type(job.retryAfter) == 'number' and job.retryAfter >= 0))
+  if not valid then
+    local entry = cjson.encode({raw = jobJson, reason = 'Malformed encode job', failedAt = ARGV[3]})
+    redis.call('ZADD', KEYS[3], ARGV[2], entry)
+    local deadCount = redis.call('ZCARD', KEYS[3])
+    if deadCount > 10000 then redis.call('ZREMRANGEBYRANK', KEYS[3], 0, deadCount - 10001) end
+    return false
   end
   local claim = cjson.encode({ claimId = ARGV[1], job = job })
   redis.call('ZADD', KEYS[2], ARGV[2], claim)
@@ -311,13 +396,29 @@ export const claimNextEncodeJob = async (): Promise<
   const member = (await (client as RedisClientType).eval(
     CLAIM_NEXT_JOB_SCRIPT,
     {
-      keys: [ENCODE_QUEUE_KEY, PROCESSING_QUEUE_KEY],
-      arguments: [randomUUID(), Date.now().toString()],
+      keys: [ENCODE_QUEUE_KEY, PROCESSING_QUEUE_KEY, DEAD_LETTER_QUEUE_KEY],
+      arguments: [
+        randomUUID(),
+        Date.now().toString(),
+        new Date().toISOString(),
+      ],
     },
   )) as string | null;
   if (!member) return null;
-  const claim = JSON.parse(member) as ProcessingClaim;
-  return { ...claim, job: EncodeJobSchema.parse(claim.job), member };
+  let claim: ProcessingClaim;
+  try {
+    claim = JSON.parse(member) as ProcessingClaim;
+    claim.job = EncodeJobSchema.parse(claim.job);
+  } catch (error) {
+    await addJobToDeadLetterQueue(
+      null,
+      `Malformed claimed job: ${String(error)}`,
+      member,
+    );
+    await releaseProcessingJob(member);
+    return null;
+  }
+  return { ...claim, member };
 };
 
 // A job's recorded outcome once its input is deleted: unlike progress keys
