@@ -18,7 +18,8 @@ deployment secret store). Create the fixed names `backend-secrets`,
 keys listed in the `*-secrets.sample.yaml` files. Those sample files contain
 placeholders only and must never be applied. `stringData` accepts clear text;
 do not commit populated copies. The backend and VOD `vod-internal-secret` keys
-must have the same random value.
+must have the same random value. Use only letters, digits, hyphens, and
+underscores so the secret can be safely inserted into the Nginx configuration.
 
 MySQL, Redis, and an S3-compatible service are external dependencies and are
 not created by these manifests. Ensure their configured DNS names and ports

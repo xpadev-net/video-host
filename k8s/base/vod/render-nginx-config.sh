@@ -6,6 +6,12 @@ set -eu
 : "${BACKEND_MAPPING_UPSTREAM:?BACKEND_MAPPING_UPSTREAM is required}"
 : "${LISTEN_PORT:?LISTEN_PORT is required}"
 : "${S3_PROD_BUCKET:?S3_PROD_BUCKET is required}"
+case "$VOD_INTERNAL_SECRET" in
+  *[!A-Za-z0-9_-]*)
+    echo "VOD_INTERNAL_SECRET must use only letters, digits, hyphens, and underscores" >&2
+    exit 1
+    ;;
+esac
 
 DNS_RESOLVER="${DNS_RESOLVER:-$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf)}"
 if [ -z "$DNS_RESOLVER" ]; then
@@ -27,7 +33,7 @@ if [ -z "${S3_PROXY_SCHEME:-}" ] || [ -z "${S3_PROXY_HOST:-}" ]; then
   fi
 fi
 
-S3_USE_PATH_STYLE="${S3_FORCE_PATH_STYLE:-true}"
+S3_USE_PATH_STYLE="${S3_FORCE_PATH_STYLE:-false}"
 S3_BUCKET_HOSTABLE=true
 case "$S3_PROD_BUCKET" in
   [a-z0-9]*[a-z0-9]) ;;
