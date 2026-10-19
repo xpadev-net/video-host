@@ -5,7 +5,8 @@
   "license": "MIT",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
     "lint": "biome check .",
     "lint:fix": "biome check . --write",
     "format": "biome format . --write",
@@ -19,14 +20,12 @@
     "@opentelemetry/resources": "^2.12.0",
     "@opentelemetry/sdk-metrics": "^2.12.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
-    "@video-host/backend": "workspace:*",
     "dotenv": "^17.4.2",
     "hono": "^4.13.13",
     "redis": "^5.12.1"
   },
   "devDependencies": {
     "@types/node": "^22.12.0",
-    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }
