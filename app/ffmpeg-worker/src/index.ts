@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { statfs } from "node:fs/promises";
+import { statfs, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { sendCallback } from "./callback";
 import {
@@ -15,7 +16,8 @@ import {
   POLL_INTERVAL_MS,
   TEMP_DIR,
 } from "./env";
-import { getMeter, initOtelMetrics } from "./otel";
+import { log, withLogContext } from "./logger";
+import { initOtelMetrics, shutdownOtelMetrics } from "./otel";
 import {
   addJobToDeadLetterQueue,
   addJobToRetryQueue,
@@ -48,12 +50,19 @@ import {
 } from "./s3";
 
 const execFileAsync = promisify(execFile);
+const HEARTBEAT_FILE = join(TEMP_DIR, "healthy");
+const writeHeartbeat = () =>
+  writeFile(HEARTBEAT_FILE, `${Date.now()}\n`).catch((error) =>
+    log.error("Failed to update worker heartbeat", error),
+  );
+void writeHeartbeat();
+const heartbeatTimer = setInterval(() => void writeHeartbeat(), 15_000);
+heartbeatTimer.unref();
 
-console.log("FFmpeg Worker starting...");
-console.log(`Commit Hash: ${process.env.COMMIT_HASH || "unknown"}`);
+log.info("FFmpeg Worker starting...");
+log.info(`Commit Hash: ${process.env.COMMIT_HASH || "unknown"}`);
 
-const metricProvider = initOtelMetrics();
-const meter = getMeter();
+const meter = initOtelMetrics();
 
 const encodeJobs = meter.createCounter("video_host.encode.jobs", {
   description: "Encode jobs processed, by terminal result.",
@@ -66,6 +75,45 @@ const encodeJobDuration = meter.createHistogram(
     unit: "s",
   },
 );
+const encodeStageDuration = meter.createHistogram(
+  "video_host.encode.stage.duration",
+  { description: "Time spent in each encode stage.", unit: "s" },
+);
+const encodeInputBytes = meter.createHistogram("video_host.encode.input.size", {
+  description: "Input media size in bytes.",
+  unit: "By",
+});
+const ffmpegSpeed = meter.createHistogram("video_host.encode.speed", {
+  description: "FFmpeg encoding speed relative to realtime.",
+  unit: "x",
+});
+const callbackFailures = meter.createCounter(
+  "video_host.encode.callback.failures",
+  { description: "Failed backend callbacks.", unit: "{callback}" },
+);
+const reaperEvents = meter.createCounter("video_host.encode.reaper.events", {
+  description: "Processing claims recovered by the reaper.",
+  unit: "{claim}",
+});
+const diskSpace = meter.createObservableGauge("video_host.worker.disk.bytes", {
+  description: "Available and total scratch filesystem bytes.",
+  unit: "By",
+});
+
+const sendCallbackObserved = async (
+  payload: Parameters<typeof sendCallback>[0],
+): Promise<Awaited<ReturnType<typeof sendCallback>>> => {
+  try {
+    const result = await sendCallback(payload);
+    if (result === "rejected") {
+      callbackFailures.add(1, { status: payload.status, reason: "rejected" });
+    }
+    return result;
+  } catch (error) {
+    callbackFailures.add(1, { status: payload.status });
+    throw error;
+  }
+};
 const retryQueueMoved = meter.createCounter("video_host.encode.queue.moved", {
   description: "Jobs moved from the retry queue back to the main queue.",
   unit: "{job}",
@@ -77,13 +125,29 @@ meter
   })
   .addCallback(async (observableResult) => {
     try {
-      const { main, retry } = await getQueueDepths();
+      const { main, retry, processing } = await getQueueDepths();
       observableResult.observe(main, { queue: "main" });
       observableResult.observe(retry, { queue: "retry" });
+      observableResult.observe(processing, { queue: "processing" });
     } catch (err) {
-      console.error("Failed to observe encode queue depth:", err);
+      log.error("Failed to observe encode queue depth:", err);
     }
   });
+diskSpace.addCallback(async (observableResult) => {
+  try {
+    const disk = await getDiskSpace();
+    observableResult.observe(disk.availableBytes, {
+      resource: "scratch",
+      state: "available",
+    });
+    observableResult.observe(disk.totalBytes, {
+      resource: "scratch",
+      state: "total",
+    });
+  } catch (err) {
+    log.error("Failed to observe scratch disk space:", err);
+  }
+});
 
 let isShuttingDown = false;
 
@@ -131,7 +195,7 @@ const finalizeCommittedClaim = async (
     progress: 100,
     duration: completion.duration,
   });
-  const result = await sendCallback({
+  const result = await sendCallbackObserved({
     movieId: job.movieId,
     variantId: "original",
     status: "success",
@@ -142,13 +206,13 @@ const finalizeCommittedClaim = async (
   });
   if (result === "rejected") {
     await deleteFromProd(job.s3Key).catch((error) =>
-      console.error(
+      log.error(
         `Failed to remove rejected output: movieId=${job.movieId}`,
         error,
       ),
     );
     await setEncodeProgress(job.movieId, { status: "failed" });
-    await sendCallback({
+    await sendCallbackObserved({
       movieId: job.movieId,
       variantId: "original",
       status: "failed",
@@ -168,28 +232,37 @@ const runReaper = async (): Promise<void> => {
   }
 };
 
-const startLeaseHeartbeat = (member: string): void => {
+const startLeaseHeartbeat = (
+  member: string,
+  job: EncodeJob,
+  claimId: string,
+): void => {
   let inFlight = false;
   leaseHeartbeatTimer = setInterval(async () => {
     if (inFlight || activeJobClaim !== member || jobRelinquished) return;
     inFlight = true;
-    try {
-      const refreshed = await refreshProcessingJob(member);
-      if (!refreshed && activeJobClaim === member) {
-        console.error(
-          `Processing claim was lost: movieId=${activeJob?.movieId}`,
-        );
-        jobRelinquished = true;
-        activeJobAbortController?.abort(new Error("Processing claim lost"));
-      }
-    } catch (error) {
-      console.error(
-        `Failed to refresh processing lease: movieId=${activeJob?.movieId}`,
-        error,
-      );
-    } finally {
-      inFlight = false;
-    }
+    await withLogContext(
+      log.child({
+        movieId: job.movieId,
+        claimId,
+        retryCount: job.retryCount ?? 0,
+        s3Key: job.s3Key,
+      }),
+      async () => {
+        try {
+          const refreshed = await refreshProcessingJob(member);
+          if (!refreshed && activeJobClaim === member) {
+            log.error("Processing claim was lost");
+            jobRelinquished = true;
+            activeJobAbortController?.abort(new Error("Processing claim lost"));
+          }
+        } catch (error) {
+          log.error("Failed to refresh processing lease", error);
+        } finally {
+          inFlight = false;
+        }
+      },
+    );
   }, PROCESSING_JOB_HEARTBEAT_MS);
   leaseHeartbeatTimer.unref();
 };
@@ -212,7 +285,8 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
     try {
       claim = JSON.parse(member) as ProcessingClaim;
     } catch (err) {
-      console.error("Dropping malformed processing claim:", err);
+      log.error("Dropping malformed processing claim:", err);
+      reaperEvents.add(1, { action: "drop_malformed" });
       await releaseProcessingJob(member).catch(() => {});
       continue;
     }
@@ -234,11 +308,12 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
             contentUrl: getVodContentUrl(job.s3Key),
             duration: progress.duration,
           });
-          console.log(
+          reaperEvents.add(1, { action: "finalize" });
+          log.info(
             `Finalized completed job from stale claim: movieId=${job.movieId}`,
           );
         } catch (err) {
-          console.error(
+          log.error(
             `Failed to finalize completed stale claim: movieId=${job.movieId}`,
             err,
           );
@@ -249,10 +324,11 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
     if (completion) {
       try {
         await finalizeCommittedClaim(member, job, completion);
-        console.log(`Finalized job from stale claim: movieId=${job.movieId}`);
+        reaperEvents.add(1, { action: "finalize" });
+        log.info(`Finalized job from stale claim: movieId=${job.movieId}`);
       } catch (err) {
         // Leave the claim in place so a later reap retries it.
-        console.error(
+        log.error(
           `Failed to finalize stale processing claim: movieId=${job.movieId}`,
           err,
         );
@@ -262,10 +338,11 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
     try {
       const requeued = await requeueStaleProcessingJob(member);
       if (requeued) {
-        console.log(`Requeued job from stale claim: movieId=${job.movieId}`);
+        reaperEvents.add(1, { action: "requeue" });
+        log.info(`Requeued job from stale claim: movieId=${job.movieId}`);
       }
     } catch (err) {
-      console.error(
+      log.error(
         `Failed to requeue stale processing claim: movieId=${job.movieId}`,
         err,
       );
@@ -296,7 +373,7 @@ const markJobFailed = async (
 ): Promise<void> => {
   await addJobToDeadLetterQueue(job, reason, stderrTail);
   await setEncodeProgress(job.movieId, { status: "failed" });
-  await sendCallback({
+  await sendCallbackObserved({
     movieId: job.movieId,
     variantId: "original",
     status: "failed",
@@ -319,8 +396,29 @@ const retryOrDeadLetter = async (
   return "failed";
 };
 
+const measureStage = async <T>(
+  job: EncodeJob,
+  stage: "downloading" | "encoding" | "uploading" | "deleting",
+  callback: () => Promise<T>,
+): Promise<T> => {
+  await setEncodeProgress(job.movieId, {
+    status: "processing",
+    stage,
+    progress: stage === "downloading" ? 0 : undefined,
+  });
+  const startedAt = performance.now();
+  try {
+    return await callback();
+  } finally {
+    encodeStageDuration.record((performance.now() - startedAt) / 1000, {
+      stage,
+      retryCount: job.retryCount ?? 0,
+    });
+  }
+};
+
 const processJob = async (job: EncodeJob): Promise<JobResult> => {
-  console.log(`Processing job: movieId=${job.movieId}, s3Key=${job.s3Key}`);
+  log.info(`Processing job: movieId=${job.movieId}, s3Key=${job.s3Key}`);
 
   if (jobRelinquished) {
     return "relinquished";
@@ -357,7 +455,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
   }
   const timeoutId = setTimeout(() => {
     jobTimedOut = true;
-    console.error(
+    log.error(
       `Job timeout after ${JOB_TIMEOUT_SECONDS} seconds: movieId=${job.movieId}`,
     );
     abortController.abort();
@@ -365,6 +463,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 
   try {
     const objectSize = await getTmpObjectSize(job.s3Key);
+    encodeInputBytes.record(objectSize, { retryCount: job.retryCount ?? 0 });
     const requiredBytes =
       Math.ceil(objectSize * DISK_SPACE_MULTIPLIER) + DISK_SPACE_MARGIN_BYTES;
     const disk = await getDiskSpace();
@@ -376,7 +475,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       return "failed";
     }
     if (disk.availableBytes < requiredBytes) {
-      console.warn(
+      log.warn(
         `Deferring job for disk space: movieId=${job.movieId}, available=${disk.availableBytes}, required=${requiredBytes}`,
       );
       if (!activeJobClaim)
@@ -386,28 +485,34 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       return "retrying";
     }
 
-    // Download from tmp-bucket
-    console.log(`Downloading from tmp-bucket: ${job.s3Key}`);
-    await downloadFromTmp(job.s3Key, inputPath, abortController.signal);
+    log.info(`Downloading from tmp-bucket: ${job.s3Key}`);
+    await measureStage(job, "downloading", () =>
+      downloadFromTmp(job.s3Key, inputPath, abortController.signal),
+    );
 
     // Encode video with progress callback and abort signal
-    console.log(`Encoding video to: ${outputPath}`);
-    const result = await encodeVideo(
-      inputPath,
-      outputPath,
-      async (progress) => {
-        if (jobRelinquished) {
-          return;
-        }
-        // Update progress in Redis
-        await setEncodeProgress(job.movieId, {
-          status: "processing",
-          progress: progress.percent,
-          currentTime: progress.currentTime,
-          duration: progress.duration,
-        });
-      },
-      abortController.signal,
+    log.info(`Encoding video to: ${outputPath}`);
+    const result = await measureStage(job, "encoding", () =>
+      encodeVideo(
+        inputPath,
+        outputPath,
+        async (progress) => {
+          if (jobRelinquished) return;
+          if (progress.speed !== undefined) {
+            ffmpegSpeed.record(progress.speed, {
+              retryCount: job.retryCount ?? 0,
+            });
+          }
+          await setEncodeProgress(job.movieId, {
+            status: "processing",
+            progress: progress.percent,
+            currentTime: progress.currentTime,
+            duration: progress.duration,
+            stage: "encoding",
+          });
+        },
+        abortController.signal,
+      ),
     );
 
     if (!result.success && jobTimedOut) result.kind = "timeout";
@@ -417,7 +522,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     }
 
     if (!result.success) {
-      console.error(`Encoding failed: ${result.error}`);
+      log.error(`Encoding failed: ${result.error}`);
       if (/No space left on device|ENOSPC/i.test(result.error ?? "")) {
         if (!activeJobClaim)
           throw new Error("Cannot defer an unclaimed encode job");
@@ -441,7 +546,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
           activeJobClaim ?? undefined,
         );
       } catch (retryError) {
-        console.error(
+        log.error(
           `Failed to schedule retry: movieId=${job.movieId}`,
           retryError,
         );
@@ -454,43 +559,45 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       }
     }
 
-    // Upload to prod-bucket (same key structure)
-    console.log(`Uploading to prod-bucket: ${job.s3Key}`);
-    await uploadToProd(
-      job.s3Key,
-      outputPath,
-      "video/mp4",
-      abortController.signal,
-    );
-
     const thumbnailKey = `${job.s3Key}.jpg`;
     let uploadedThumbnailKey: string | undefined;
-    try {
-      await generateThumbnail(
-        outputPath,
-        thumbnailPath,
-        result.duration ?? 0,
-        abortController.signal,
-      );
+    await measureStage(job, "uploading", async () => {
+      log.info(`Uploading to prod-bucket: ${job.s3Key}`);
       await uploadToProd(
-        thumbnailKey,
-        thumbnailPath,
-        "image/jpeg",
+        job.s3Key,
+        outputPath,
+        "video/mp4",
         abortController.signal,
       );
-      uploadedThumbnailKey = thumbnailKey;
-    } catch (thumbnailError) {
-      if (abortController.signal.aborted) throw thumbnailError;
-      await deleteFromProd(thumbnailKey).catch(() => {});
-      console.warn(
-        `Thumbnail generation failed: movieId=${job.movieId}`,
-        thumbnailError,
-      );
-    }
 
-    // Delete from tmp-bucket
-    console.log(`Deleting from tmp-bucket: ${job.s3Key}`);
-    await deleteFromTmp(job.s3Key, abortController.signal);
+      try {
+        await generateThumbnail(
+          outputPath,
+          thumbnailPath,
+          result.duration ?? 0,
+          abortController.signal,
+        );
+        await uploadToProd(
+          thumbnailKey,
+          thumbnailPath,
+          "image/jpeg",
+          abortController.signal,
+        );
+        uploadedThumbnailKey = thumbnailKey;
+      } catch (thumbnailError) {
+        if (abortController.signal.aborted) throw thumbnailError;
+        await deleteFromProd(thumbnailKey).catch(() => {});
+        log.warn(
+          `Thumbnail generation failed: movieId=${job.movieId}`,
+          thumbnailError,
+        );
+      }
+    });
+
+    log.info(`Deleting from tmp-bucket: ${job.s3Key}`);
+    await measureStage(job, "deleting", () =>
+      deleteFromTmp(job.s3Key, abortController.signal),
+    );
 
     // Generate content URL for VOD streaming
     const contentUrl = getVodContentUrl(job.s3Key);
@@ -512,7 +619,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
           thumbnailKey: uploadedThumbnailKey,
         });
       } catch (claimError) {
-        console.error(
+        log.error(
           `Failed to mark processing claim committed: movieId=${job.movieId}`,
           claimError,
         );
@@ -531,7 +638,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     });
 
     // Send success callback
-    const callbackResult = await sendCallback({
+    const callbackResult = await sendCallbackObserved({
       movieId: job.movieId,
       variantId: "original",
       status: "success",
@@ -543,13 +650,13 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 
     if (callbackResult === "rejected") {
       await deleteFromProd(job.s3Key).catch((error) =>
-        console.error(
+        log.error(
           `Failed to remove rejected output: movieId=${job.movieId}`,
           error,
         ),
       );
       await setEncodeProgress(job.movieId, { status: "failed" });
-      await sendCallback({
+      await sendCallbackObserved({
         movieId: job.movieId,
         variantId: "original",
         status: "failed",
@@ -558,7 +665,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       return "failed";
     }
 
-    console.log(`Job completed successfully: movieId=${job.movieId}`);
+    log.info(`Job completed successfully: movieId=${job.movieId}`);
     return "completed";
   } catch (error) {
     if (jobRelinquished) {
@@ -572,16 +679,14 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       jobRelinquished = true;
       const requeued = await requeueProcessingJob(activeJobClaim, job);
       if (!requeued) {
-        console.warn(
-          `Shutdown claim already handed off: movieId=${job.movieId}`,
-        );
+        log.warn(`Shutdown claim already handed off: movieId=${job.movieId}`);
       }
       return "relinquished";
     }
     if (committedOutcome) {
       // Input is already deleted — an encode retry would fail to download
       // it. Finalize as success instead of re-encoding.
-      console.error(
+      log.error(
         `Job failed after commit, finalizing as completed: movieId=${job.movieId}`,
         error,
       );
@@ -591,7 +696,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
           progress: 100,
           duration: committedOutcome.duration,
         });
-        const callbackResult = await sendCallback({
+        const callbackResult = await sendCallbackObserved({
           movieId: job.movieId,
           variantId: "original",
           status: "success",
@@ -603,7 +708,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         if (callbackResult === "rejected") {
           await deleteFromProd(job.s3Key).catch(() => {});
           await setEncodeProgress(job.movieId, { status: "failed" });
-          await sendCallback({
+          await sendCallbackObserved({
             movieId: job.movieId,
             variantId: "original",
             status: "failed",
@@ -613,7 +718,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         }
         return "completed";
       } catch (finalizeError) {
-        console.error(
+        log.error(
           `Failed to finalize committed job: movieId=${job.movieId}`,
           finalizeError,
         );
@@ -627,7 +732,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
               committedOutcome,
             );
           } catch (claimError) {
-            console.error(
+            log.error(
               `Failed to persist committed claim: movieId=${job.movieId}`,
               claimError,
             );
@@ -636,7 +741,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         return "error";
       }
     }
-    console.error(`Job failed: movieId=${job.movieId}`, error);
+    log.error(`Job failed: movieId=${job.movieId}`, error);
     const errorCode =
       typeof error === "object" && error !== null && "code" in error
         ? String(error.code)
@@ -668,10 +773,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         retryable,
       );
     } catch (retryError) {
-      console.error(
-        `Failed to schedule retry: movieId=${job.movieId}`,
-        retryError,
-      );
+      log.error(`Failed to schedule retry: movieId=${job.movieId}`, retryError);
       await markJobFailed(
         job,
         `Retry scheduling failed: ${String(retryError)}`,
@@ -699,12 +801,12 @@ const pollForJobs = async (): Promise<void> => {
           retryQueueMoved.add(moved);
         }
       } catch (error) {
-        console.error("Error processing retry queue:", error);
+        log.error("Error processing retry queue:", error);
       }
       try {
         await runReaper();
       } catch (error) {
-        console.error("Error reaping stale processing jobs:", error);
+        log.error("Error reaping stale processing jobs:", error);
       }
     } else {
       clearInterval(retryQueueInterval);
@@ -718,14 +820,14 @@ const pollForJobs = async (): Promise<void> => {
       retryQueueMoved.add(moved);
     }
   } catch (error) {
-    console.error("Error processing retry queue at startup:", error);
+    log.error("Error processing retry queue at startup:", error);
   }
 
   // Recover claims left behind by workers that died mid-job.
   try {
     await runReaper();
   } catch (error) {
-    console.error("Error reaping stale processing jobs at startup:", error);
+    log.error("Error reaping stale processing jobs at startup:", error);
   }
 
   while (!isShuttingDown) {
@@ -733,7 +835,7 @@ const pollForJobs = async (): Promise<void> => {
       const disk = await getDiskSpace();
       const minimumAvailableBytes = MIN_DISK_SPACE_GB * 1024 * 1024 * 1024;
       if (disk.availableBytes < minimumAvailableBytes) {
-        console.warn(
+        log.warn(
           `Pausing queue polling for low disk space: available=${disk.availableBytes}, minimum=${minimumAvailableBytes}`,
         );
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
@@ -747,40 +849,48 @@ const pollForJobs = async (): Promise<void> => {
 
       const job = claim.job;
       const jobStartedAt = performance.now();
+      let jobPath = "encode";
+      const jobLogger = log.child({
+        movieId: job.movieId,
+        claimId: claim.claimId,
+        retryCount: job.retryCount ?? 0,
+        s3Key: job.s3Key,
+      });
       activeJob = job;
       activeJobClaim = claim.member;
       activeJobCommitted = false;
       jobRelinquished = false;
-      startLeaseHeartbeat(claim.member);
+      startLeaseHeartbeat(claim.member, job, claim.claimId);
 
       let result: JobResult = "error";
       try {
-        // The same input may already have a committed output. Finish its
-        // callback instead of encoding a potentially deleted temp object.
-        const priorCompletion = await getJobCompletion(
-          job.movieId,
-          job.s3Key,
-        ).catch(() => null);
-        if (priorCompletion) {
-          activeJobCommitted = true;
-          await finalizeCommittedClaim(claim.member, job, priorCompletion);
-          result = "completed";
-        } else {
-          result = await processJob(job);
-        }
+        result = await withLogContext(jobLogger, async () => {
+          // The same input may already have a committed output. Finish its
+          // callback instead of encoding a potentially deleted temp object.
+          const priorCompletion = await getJobCompletion(
+            job.movieId,
+            job.s3Key,
+          ).catch(() => null);
+          if (priorCompletion) {
+            jobPath = "prior_completion";
+            activeJobCommitted = true;
+            await finalizeCommittedClaim(claim.member, job, priorCompletion);
+            return "completed";
+          }
+          return processJob(job);
+        });
       } catch (error) {
-        console.error(
-          `Job processing threw unexpectedly: movieId=${job.movieId}`,
-          error,
-        );
-        try {
-          await markJobFailed(job, `Unexpected worker error: ${String(error)}`);
-        } catch (notifyError) {
-          console.error(
-            `Failed to report job failure: movieId=${job.movieId}`,
-            notifyError,
-          );
-        }
+        await withLogContext(jobLogger, async () => {
+          log.error("Job processing threw unexpectedly", error);
+          try {
+            await markJobFailed(
+              job,
+              `Unexpected worker error: ${String(error)}`,
+            );
+          } catch (notifyError) {
+            log.error("Failed to report job failure", notifyError);
+          }
+        });
         result = "error";
       } finally {
         stopLeaseHeartbeat();
@@ -797,9 +907,8 @@ const pollForJobs = async (): Promise<void> => {
               await releaseProcessingJob(claim.member);
             }
           } catch (releaseError) {
-            console.error(
-              `Failed to release processing claim: movieId=${job.movieId}`,
-              releaseError,
+            withLogContext(jobLogger, () =>
+              log.error("Failed to release processing claim", releaseError),
             );
           }
         }
@@ -811,9 +920,11 @@ const pollForJobs = async (): Promise<void> => {
       encodeJobs.add(1, { result });
       encodeJobDuration.record((performance.now() - jobStartedAt) / 1000, {
         result,
+        path: jobPath,
+        retryCount: job.retryCount ?? 0,
       });
     } catch (error) {
-      console.error("Error polling for jobs:", error);
+      log.error("Error polling for jobs:", error);
       // On error, wait a bit before retrying to avoid tight error loop
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
@@ -826,8 +937,9 @@ const shutdown = async (): Promise<void> => {
   if (isShuttingDown) {
     return;
   }
-  console.log("Shutting down...");
+  log.info("Shutting down...");
   isShuttingDown = true;
+  clearInterval(heartbeatTimer);
   // Wait for the in-flight job (if any) so its result metrics, progress
   // updates and callbacks are sent before the provider is shut down.
   await Promise.race([
@@ -838,7 +950,7 @@ const shutdown = async (): Promise<void> => {
   // puts it back on the retry queue. Requeueing while it still runs would
   // let a second worker process the same job concurrently.
   if (activeJob) {
-    console.warn(
+    log.warn(
       `Aborting in-flight job on shutdown: movieId=${activeJob.movieId}`,
     );
     jobShutdownAbort.abort();
@@ -851,7 +963,7 @@ const shutdown = async (): Promise<void> => {
   // uncommitted job back to the main queue; committed claims go to the reaper
   // so their already-uploaded output is finalized instead of re-encoded.
   if (activeJob) {
-    console.warn(
+    log.warn(
       `Relinquishing in-flight job on shutdown: movieId=${activeJob.movieId}`,
     );
     jobRelinquished = true;
@@ -864,16 +976,16 @@ const shutdown = async (): Promise<void> => {
           await requeueProcessingJob(activeJobClaim, activeJob);
         }
       } catch (err) {
-        console.error(
+        log.error(
           `Failed to hand off processing claim: movieId=${activeJob.movieId}`,
           err,
         );
       }
     }
   }
-  await metricProvider
-    ?.shutdown()
-    .catch((err) => console.error("OTel metrics shutdown failed:", err));
+  await shutdownOtelMetrics().catch((err) =>
+    log.error("OTel metrics shutdown failed:", err),
+  );
   await closeRedis();
   process.exit(0);
 };
@@ -887,13 +999,13 @@ const verifyMediaTools = async (): Promise<void> => {
     const { stdout } = await execFileAsync(binary, ["-version"], {
       timeout: 5_000,
     });
-    console.log(`${binary}: ${stdout.split("\n", 1)[0]}`);
+    log.info(`${binary}: ${stdout.split("\n", 1)[0]}`);
   }
 };
 
 const pollPromise = verifyMediaTools()
   .then(() => pollForJobs())
   .catch((error) => {
-    console.error("Fatal error:", error);
+    log.error("Fatal error:", error);
     process.exit(1);
   });

@@ -24,7 +24,10 @@ The root `.env.example` is a combined reference for environment managers that in
 | `BACKEND_BASE_URL`, `CALLBACK_SECRET` | Backend base URL (including any deployment path prefix) and shared machine secret for completion callbacks |
 | `VOD_BASE_URL` | Browser-reachable public VOD origin, without a trailing `/vod` path |
 | `POLL_INTERVAL_MS`, `TEMP_DIR`, `MIN_DISK_SPACE_GB`, `JOB_TIMEOUT_SECONDS`, `FFMPEG_THREADS` | Queue polling and local encoding resource limits |
+| `LOG_LEVEL` | Structured worker log threshold; defaults to `info` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_SERVICE_NAME` | Optional OpenTelemetry metrics export configuration |
+
+Worker logs are JSON with service/version fields. Claimed job logs also include `movieId`, `claimId`, `retryCount`, and `s3Key`. The worker exposes queue and scratch disk gauges, job/stage duration histograms, input size and FFmpeg speed histograms, callback failure counters, and reaper recovery counters when metrics export is configured.
 
 See the backend README for callback security and the root README for the local service topology.
 

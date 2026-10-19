@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { FFMPEG_THREADS, JOB_TIMEOUT_SECONDS, TEMP_DIR } from "./env";
+import { log } from "./logger";
 
 const PROBE_TIMEOUT_MS = 30_000;
 const PROCESS_KILL_GRACE_MS = 5_000;
@@ -217,6 +218,7 @@ export type ProgressCallback = (progress: {
   currentTime: number;
   duration: number;
   percent: number;
+  speed?: number;
 }) => void | Promise<void>;
 
 // Ensure temp directory exists
@@ -346,7 +348,7 @@ export const encodeVideo = async (
       outputPath,
     );
 
-    console.log(`Starting encode: ffmpeg ${ffmpegArgs.join(" ")}`);
+    log.info(`Starting encode: ffmpeg ${ffmpegArgs.join(" ")}`);
 
     const ffmpeg = spawn("ffmpeg", ffmpegArgs, {
       stdio: ["ignore", "ignore", "pipe"],
@@ -365,12 +367,12 @@ export const encodeVideo = async (
       resolve(result);
     };
     const onAbort = () => {
-      console.log("Encoding aborted due to timeout or cancellation");
+      log.info("Encoding aborted due to timeout or cancellation");
       if (ffmpeg.exitCode !== null || ffmpeg.signalCode !== null) return;
       ffmpeg.kill("SIGTERM");
       killTimer = setTimeout(() => {
         if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
-          console.log("Force killing FFmpeg process (SIGTERM ignored)");
+          log.info("Force killing FFmpeg process (SIGTERM ignored)");
           ffmpeg.kill("SIGKILL");
         }
       }, PROCESS_KILL_GRACE_MS);
@@ -399,6 +401,12 @@ export const encodeVideo = async (
         const progressLine = progressLines
           .reverse()
           .find((candidate) => candidate.startsWith("out_time_us="));
+        const speedLine = progressLines.find((candidate) =>
+          candidate.startsWith("speed="),
+        );
+        const speed = speedLine
+          ? Number.parseFloat(speedLine.slice("speed=".length))
+          : Number.NaN;
         const outTimeUs = progressLine
           ? Number.parseInt(progressLine.slice("out_time_us=".length), 10)
           : Number.NaN;
@@ -422,10 +430,11 @@ export const encodeVideo = async (
                   currentTime: Math.round(currentTime),
                   duration: Math.round(inputDuration),
                   percent,
+                  ...(Number.isFinite(speed) ? { speed } : {}),
                 }),
               )
               .catch((error) => {
-                console.warn("Failed to report encoding progress:", error);
+                log.warn("Failed to report encoding progress:", error);
               })
               .finally(() => {
                 progressCallbackInFlight = false;
@@ -620,7 +629,7 @@ export const cleanup = (paths: string[]): void => {
         rmSync(path, { force: true });
       }
     } catch (e) {
-      console.error(`Failed to cleanup ${path}:`, e);
+      log.error(`Failed to cleanup ${path}:`, e);
     }
   }
 };
