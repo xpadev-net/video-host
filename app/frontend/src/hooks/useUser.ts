@@ -1,5 +1,7 @@
 import type { FilteredUser } from "@video-host/backend";
+import { useAtomValue } from "jotai";
 import useSWR from "swr";
+import { selectedProfileIdAtom } from "@/atoms/SelectedAccount";
 import { useStickySWR } from "@/hooks/useStickySWR";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
@@ -10,7 +12,7 @@ type UserNotFoundResponse = {
   message: string;
 };
 
-const fetcher = async (key: string) => {
+const fetcher = async ([key]: readonly [string, string | null]) => {
   const res =
     key === "me"
       ? await client.api.v4.users.me.$get()
@@ -27,7 +29,14 @@ const fetcher = async (key: string) => {
   return response;
 };
 
-export const useUser = (query?: string) => useStickySWR(query, fetcher, {});
+export const useUser = (query?: string) => {
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
+  return useStickySWR(
+    query ? ([query, selectedProfileId] as const) : null,
+    fetcher,
+    {},
+  );
+};
 
 export const useSelf = () => {
   const { data: session, isPending } = authClient.useSession();

@@ -1,24 +1,35 @@
 import { useEffect, useRef } from "react";
 import useSWR, { type SWRConfiguration } from "swr";
 
+const serializeKey = (key: unknown) => {
+  if (typeof key === "string") return key;
+  try {
+    return JSON.stringify(key);
+  } catch {
+    return undefined;
+  }
+};
+
 const useStickyResult = <T>(
   value: T | null | undefined,
   isEnabled: boolean,
-  key: unknown,
+  keyId: string | undefined,
 ): T | undefined => {
-  const val = useRef<{ key: unknown; value: T } | undefined>(undefined);
+  const val = useRef<{ keyId: string | undefined; value: T } | undefined>(
+    undefined,
+  );
   useEffect(() => {
     if (!isEnabled) {
       val.current = undefined;
     } else if (value !== null && value !== undefined) {
-      val.current = { key, value };
+      val.current = { keyId, value };
     }
-  }, [isEnabled, key, value]);
+  }, [isEnabled, keyId, value]);
 
   if (!isEnabled) return undefined;
   if (value !== null && value !== undefined) return value;
   const stickyValue = val.current;
-  if (stickyValue && stickyValue.key === key) return stickyValue.value;
+  if (stickyValue && stickyValue.keyId === keyId) return stickyValue.value;
   return undefined;
 };
 
@@ -36,8 +47,9 @@ export const useStickySWR = <T, U, V extends SWRConfiguration>(
   }
   const swr = useSWR<T, U, V>(key, fetcher, config);
   const isEnabled = Boolean(key);
+  const keyId = serializeKey(key);
   return {
     ...swr,
-    data: useStickyResult(swr.data, isEnabled, key) as T,
+    data: useStickyResult(swr.data, isEnabled, keyId) as T,
   };
 };

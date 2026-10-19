@@ -1,7 +1,10 @@
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { type FC, useCallback, useEffect, useState } from "react";
-import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
 import { useNotify } from "@/components/Feedback/FeedbackProvider";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
@@ -29,6 +32,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const { data: authSession } = authClient.useSession();
   const session = authSession?.user.id;
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   const notify = useNotify();
   const [availableMovies, setAvailableMovies] = useState<Movie[]>([]);
   const [selectedMovieId, setSelectedMovieId] = useState<string>("");
@@ -37,41 +41,49 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   // Fetch available movies for selection
-  const fetchAvailableMovies = useCallback(async () => {
-    if (!session) return;
-    setIsLoadingMovies(true);
-    try {
-      const res = await client.api.v4.movies.$get({
-        query: {
-          limit: "100",
-          author: selectedAccountId || undefined,
-          mine: selectedAccountId ? undefined : "true",
-        },
-      });
+  const fetchAvailableMovies = useCallback(
+    async (profileId: string | null) => {
+      if (!session) return;
+      setIsLoadingMovies(true);
+      try {
+        const res = await client.api.v4.movies.$get(
+          {
+            query: {
+              limit: "100",
+              author: selectedAccountId || undefined,
+              mine: selectedAccountId ? undefined : "true",
+            },
+          },
+          {
+            headers: profileId ? { "X-Profile-Id": profileId } : {},
+          },
+        );
 
-      if (!res.ok) throw new Error("Failed to fetch");
-      const json = await res.json();
-      const allMovies = json.data.items;
-      // Filter out movies already in the list
-      const movieIds = new Set(movies.map((m) => m.movie.id));
-      setAvailableMovies(
-        allMovies
-          .filter((m) => !movieIds.has(m.id))
-          .map((m) => ({
-            ...m,
-            thumbnailUrl: m.thumbnailUrl ?? undefined,
-          })),
-      );
-    } catch (error) {
-      console.error("Failed to fetch movies", error);
-    } finally {
-      setIsLoadingMovies(false);
-    }
-  }, [session, selectedAccountId, movies]);
+        if (!res.ok) throw new Error("Failed to fetch");
+        const json = await res.json();
+        const allMovies = json.data.items;
+        // Filter out movies already in the list
+        const movieIds = new Set(movies.map((m) => m.movie.id));
+        setAvailableMovies(
+          allMovies
+            .filter((m) => !movieIds.has(m.id))
+            .map((m) => ({
+              ...m,
+              thumbnailUrl: m.thumbnailUrl ?? undefined,
+            })),
+        );
+      } catch (error) {
+        console.error("Failed to fetch movies", error);
+      } finally {
+        setIsLoadingMovies(false);
+      }
+    },
+    [session, selectedAccountId, movies],
+  );
 
   useEffect(() => {
-    fetchAvailableMovies();
-  }, [fetchAvailableMovies]);
+    void fetchAvailableMovies(selectedProfileId);
+  }, [fetchAvailableMovies, selectedProfileId]);
 
   const handleAddMovie = async () => {
     if (!selectedMovieId || !session) return;
