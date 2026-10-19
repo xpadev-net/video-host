@@ -1,12 +1,12 @@
+import { createReadStream, createWriteStream } from "node:fs";
+import type { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import {
   DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import { createReadStream, createWriteStream } from "fs";
-import type { Readable } from "stream";
-import { pipeline } from "stream/promises";
 import {
   S3_ACCESS_KEY_ID,
   S3_ENDPOINT,
@@ -139,6 +139,14 @@ export const uploadToProd = async (
 export const deleteFromTmp = async (s3Key: string): Promise<void> => {
   const command = new DeleteObjectCommand({
     Bucket: S3_TMP_BUCKET,
+    Key: s3Key,
+  });
+  await s3Client.send(command);
+};
+
+export const deleteFromProd = async (s3Key: string): Promise<void> => {
+  const command = new DeleteObjectCommand({
+    Bucket: S3_PROD_BUCKET,
     Key: s3Key,
   });
   await s3Client.send(command);

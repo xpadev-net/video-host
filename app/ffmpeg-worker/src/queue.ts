@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import {
   createClient,
   createSentinel,
@@ -76,7 +76,7 @@ export const getEncodeJobBlocking = async (
   // Use BRPOP with timeout for blocking pop
   // brPop takes key and timeout as separate arguments
   const result = await client.brPop(ENCODE_QUEUE_KEY, timeoutSeconds);
-  if (!result || !result.element) return null;
+  if (!result?.element) return null;
   return JSON.parse(result.element) as EncodeJob;
 };
 
@@ -456,11 +456,13 @@ export const getQueueDepths = async (): Promise<{
 };
 
 export const closeRedis = async (): Promise<void> => {
-  if (redisClient) {
-    await (
-      (redisClient as RedisClientType).quit ||
-      (redisClient as RedisSentinelType).close
-    )?.();
-    redisClient = null;
+  const client = redisClient;
+  redisClient = null;
+  if (!client) return;
+
+  if ("quit" in client && typeof client.quit === "function") {
+    await client.quit();
+  } else if ("close" in client && typeof client.close === "function") {
+    await client.close();
   }
 };

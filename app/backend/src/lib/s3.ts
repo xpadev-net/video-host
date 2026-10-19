@@ -1,17 +1,14 @@
 import { randomUUID } from "node:crypto";
 import {
-  CreateBucketCommand,
   DeleteObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
-  PutBucketCorsCommand,
   PutObjectCommand,
   S3Client,
   S3ServiceException,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import {
-  CORS_ORIGIN,
   S3_ACCESS_KEY_ID,
   S3_ENDPOINT,
   S3_FORCE_PATH_STYLE,
@@ -44,71 +41,25 @@ if (S3_FORCE_PATH_STYLE) {
 
 export const s3Client = new S3Client(s3Config);
 
-// Check if bucket exists
-const bucketExists = async (bucket: string): Promise<boolean> => {
+// Buckets and their policies are provisioned by infrastructure. The API only
+// verifies that its configured buckets are reachable.
+const requireBucket = async (bucket: string): Promise<void> => {
   try {
     await s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-// Create bucket if it doesn't exist
-const createBucketIfNotExists = async (bucket: string): Promise<void> => {
-  if (await bucketExists(bucket)) {
-    console.log(`Bucket ${bucket} already exists`);
-    return;
-  }
-
-  try {
-    await s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
-    console.log(`Bucket ${bucket} created`);
   } catch (error) {
-    console.error(`Failed to create bucket ${bucket}:`, error);
+    throw new Error(`Required S3 bucket "${bucket}" is unavailable`, {
+      cause: error,
+    });
   }
 };
 
-// Configure CORS for bucket
-const configureBucketCors = async (bucket: string): Promise<void> => {
-  try {
-    const corsRules = {
-      CORSRules: [
-        {
-          AllowedHeaders: ["*"],
-          AllowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD"],
-          AllowedOrigins: CORS_ORIGIN.length > 0 ? CORS_ORIGIN : ["*"],
-          ExposeHeaders: ["ETag", "Content-Length", "Content-Type"],
-          MaxAgeSeconds: 3600,
-        },
-      ],
-    };
-
-    await s3Client.send(
-      new PutBucketCorsCommand({
-        Bucket: bucket,
-        CORSConfiguration: corsRules,
-      }),
-    );
-    console.log(`CORS configured for bucket ${bucket}`);
-  } catch (error) {
-    console.error(`Failed to configure CORS for bucket ${bucket}:`, error);
-  }
-};
-
-// Initialize S3 buckets on startup
+// Verify infrastructure-provisioned buckets on startup.
 export const initializeS3Buckets = async (): Promise<void> => {
-  console.log("Initializing S3 buckets...");
-
-  // Create buckets
-  await createBucketIfNotExists(S3_TMP_BUCKET);
-  await createBucketIfNotExists(S3_PROD_BUCKET);
-
-  // Configure CORS
-  await configureBucketCors(S3_TMP_BUCKET);
-  await configureBucketCors(S3_PROD_BUCKET);
-
-  console.log("S3 bucket initialization complete");
+  await Promise.all([
+    requireBucket(S3_TMP_BUCKET),
+    requireBucket(S3_PROD_BUCKET),
+  ]);
+  console.log("Required S3 buckets are available");
 };
 
 // Key prefix every upload of this user lives under; POST /movies relies on it

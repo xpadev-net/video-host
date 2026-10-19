@@ -47,7 +47,9 @@ export const callbackRoute = app.post(
       where: { id: movieId },
       select: { id: true },
     });
-    if (!movie) badRequest("Movie not found");
+    if (!movie) {
+      throw new HTTPException(410, { message: "Movie was deleted" });
+    }
     if (!variantId || !s3Key) {
       badRequest("variantId and s3Key are required");
     }
@@ -58,7 +60,9 @@ export const callbackRoute = app.post(
         select: { id: true },
       });
 
-      if (!targetVariant) badRequest("No matching variant found");
+      if (!targetVariant) {
+        throw new HTTPException(410, { message: "Movie was deleted" });
+      }
 
       // Only the job that still owns this processing key may change state.
       const updated = await tx.movieVariant.updateMany({

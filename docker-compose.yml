@@ -60,6 +60,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?Set S3_SECRET_ACCESS_KEY in the root .env file}
       AWS_DEFAULT_REGION: ${S3_REGION:-ap-northeast-1}
       S3_ENDPOINT_URL: http://object-storage:8333
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
     volumes:
       - ./scripts/object-storage-init.sh:/scripts/object-storage-init.sh:ro
     depends_on:
