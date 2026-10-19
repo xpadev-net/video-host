@@ -36,11 +36,12 @@ vi.mock("better-auth/adapters/prisma", async () => {
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: {
-      upsert: vi.fn(async ({ where, create }) => {
-        const prior = fixture.profiles.get(where.authUserId);
-        if (prior) return prior;
-        const profile = { id: `domain-${where.authUserId}`, ...create };
-        fixture.profiles.set(where.authUserId, profile);
+      findUnique: vi.fn(
+        async ({ where }) => fixture.profiles.get(where.authUserId) ?? null,
+      ),
+      create: vi.fn(async ({ data }) => {
+        const profile = { id: `domain-${data.authUserId}`, ...data };
+        fixture.profiles.set(data.authUserId, profile);
         return profile;
       }),
     },
@@ -314,7 +315,7 @@ describe("real Better Auth HTTP handler", () => {
   });
   it("can recover when profile provisioning fails during the first signup", async () => {
     const { prisma } = await import("../lib/prisma.js");
-    vi.mocked(prisma.user.upsert).mockRejectedValueOnce(
+    vi.mocked(prisma.user.create).mockRejectedValueOnce(
       new Error("Simulated first-signup profile failure"),
     );
     const failed = await call("/sign-up/email", credentials);
@@ -332,7 +333,7 @@ describe("real Better Auth HTTP handler", () => {
     fixture.db.AuthSession.splice(0);
     fixture.profiles.clear();
     const { prisma } = await import("../lib/prisma.js");
-    vi.mocked(prisma.user.upsert).mockRejectedValueOnce(
+    vi.mocked(prisma.user.create).mockRejectedValueOnce(
       new Error("Simulated profile database failure"),
     );
     const failed = await call("/sign-in/email", credentials);

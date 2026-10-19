@@ -10,6 +10,8 @@ const production = (changes: Record<string, string | undefined> = {}) => ({
   FRONTEND_URL: "https://video.example.com",
   AUTH_TRUSTED_PROXY_CIDRS: "10.0.0.2/32, 2001:db8:100::/48",
   CALLBACK_SECRET: "synthetic-callback-secret",
+  S3_ACCESS_KEY_ID: "synthetic-access-key",
+  S3_SECRET_ACCESS_KEY: "synthetic-secret-key",
   VOD_INTERNAL_SECRET: "synthetic-vod-secret-0123456789abcdef",
   ...changes,
 });
@@ -70,6 +72,13 @@ describe("authentication environment", () => {
     for (const line of frontendExample.split(/\r?\n/)) {
       const match = line.match(/^(API_UPSTREAM_URL|VITE_[A-Z0-9_]+)=(.*)$/);
       if (match) expect(rootValues.get(match[1])).toBe(match[2]);
+    }
+  });
+  it("requires S3 credentials in production", () => {
+    for (const key of ["S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"]) {
+      expect(EnvSchema.safeParse(production({ [key]: "" })).success).toBe(
+        false,
+      );
     }
   });
   it("rejects a short VOD secret in production", () => {
