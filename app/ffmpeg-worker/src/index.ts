@@ -691,7 +691,50 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     if (!activeJobClaim) {
       throw new Error("Cannot commit an unclaimed encode job");
     }
-    activeJobClaim = await commitProcessingJob(activeJobClaim, job, completion);
+    let committedMember: string | null = null;
+    let commitError: unknown;
+    for (let attempt = 0; attempt < 3 && !committedMember; attempt++) {
+      try {
+        committedMember = await commitProcessingJob(
+          activeJobClaim,
+          job,
+          completion,
+        );
+      } catch (error) {
+        commitError = error;
+        if (attempt < 2) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 100 * 2 ** attempt),
+          );
+        }
+      }
+    }
+    if (!committedMember) {
+      // A lost Redis reply may hide a successful write. Reconcile the durable
+      // completion key before deciding whether this claim can be handed off.
+      const persistedCompletion = await getJobCompletion(
+        job.movieId,
+        job.s3Key,
+      ).catch(() => null);
+      if (persistedCompletion) {
+        committedMember = activeJobClaim;
+        completion.contentUrl = persistedCompletion.contentUrl;
+        completion.duration = persistedCompletion.duration;
+        completion.thumbnailKey = persistedCompletion.thumbnailKey;
+      }
+    }
+    if (!committedMember) {
+      // Keep the processing claim for the reaper. It will finalize a write
+      // whose reply was lost, or requeue the untouched source if Redis never
+      // persisted the completion. This is not a media failure or retry.
+      jobRelinquished = true;
+      log.error(
+        `Could not persist encode completion; leaving claim for reaper: movieId=${job.movieId}`,
+        commitError,
+      );
+      return "relinquished";
+    }
+    activeJobClaim = committedMember;
     committedOutcome = completion;
     activeJobCommitted = true;
 
