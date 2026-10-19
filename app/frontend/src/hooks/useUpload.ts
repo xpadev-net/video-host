@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { authClient } from "@/lib/auth-client";
 import { client, getSelectedProfileId } from "@/lib/client";
 
 export type UploadPhase =
@@ -42,6 +43,8 @@ const contentTypeOf = (file: File): string =>
   file.type || "application/octet-stream";
 
 export const useUpload = (): UseUploadResult => {
+  const { data: authSession } = authClient.useSession();
+  const sessionUserId = authSession?.user.id;
   const [state, setState] = useState<UploadState>({
     phase: "idle",
     progress: 0,
@@ -49,10 +52,24 @@ export const useUpload = (): UseUploadResult => {
   });
   const xhrRef = useRef<XMLHttpRequest | null>(null);
   const profileByMovieIdRef = useRef(new Map<string, string | null>());
+  const sessionByMovieIdRef = useRef(new Map<string, string>());
+  const sessionUserIdRef = useRef(sessionUserId);
+
+  useLayoutEffect(() => {
+    if (sessionUserIdRef.current === sessionUserId) return;
+    sessionUserIdRef.current = sessionUserId;
+    xhrRef.current?.abort();
+    xhrRef.current = null;
+    profileByMovieIdRef.current.clear();
+    sessionByMovieIdRef.current.clear();
+    setState({ phase: "idle", progress: 0, error: null });
+  }, [sessionUserId]);
 
   const reset = useCallback(() => {
     xhrRef.current?.abort();
     xhrRef.current = null;
+    profileByMovieIdRef.current.clear();
+    sessionByMovieIdRef.current.clear();
     setState({ phase: "idle", progress: 0, error: null });
   }, []);
 
@@ -106,6 +123,10 @@ export const useUpload = (): UseUploadResult => {
   );
 
   const completeUpload = useCallback(async (movieId: string): Promise<void> => {
+    const sessionId = sessionByMovieIdRef.current.get(movieId);
+    if (!sessionId || sessionUserIdRef.current !== sessionId) {
+      throw new DOMException("Upload session changed", "AbortError");
+    }
     setState((prev) => ({ ...prev, phase: "completing", progress: 100 }));
     const res = await client.api.v4.upload[":movieId"].complete.$post(
       { param: { movieId } },
@@ -126,6 +147,8 @@ export const useUpload = (): UseUploadResult => {
       file: File,
       options?: { asUserId?: string },
     ): Promise<InitUploadResult | null> => {
+      const sessionId = sessionUserIdRef.current;
+      if (!sessionId) return null;
       setState({ phase: "creating", progress: 0, error: null });
       const profileId = getSelectedProfileId();
       try {
@@ -144,7 +167,9 @@ export const useUpload = (): UseUploadResult => {
           throw new Error("Failed to create upload");
         }
         const json = await res.json();
+        if (sessionUserIdRef.current !== sessionId) return null;
         profileByMovieIdRef.current.set(json.data.movie.id, profileId);
+        sessionByMovieIdRef.current.set(json.data.movie.id, sessionId);
         return {
           movieId: json.data.movie.id,
           title: json.data.movie.title,
@@ -152,7 +177,8 @@ export const useUpload = (): UseUploadResult => {
           profileId,
         };
       } catch (error) {
-        fail(error, "動画の作成に失敗しました");
+        if (sessionUserIdRef.current === sessionId)
+          fail(error, "動画の作成に失敗しました");
         return null;
       }
     },
@@ -165,12 +191,16 @@ export const useUpload = (): UseUploadResult => {
       uploadUrl: string,
       file: File,
     ): Promise<boolean> => {
+      const sessionId = sessionByMovieIdRef.current.get(movieId);
+      if (!sessionId || sessionUserIdRef.current !== sessionId) return false;
       setState((prev) => ({ ...prev, phase: "uploading", error: null }));
       try {
         await putFile(uploadUrl, file);
+        if (sessionUserIdRef.current !== sessionId) return false;
         await completeUpload(movieId);
         return true;
       } catch (error) {
+        if (sessionUserIdRef.current !== sessionId) return false;
         if (isAbortError(error)) {
           setState({ phase: "idle", progress: 0, error: null });
           return false;
@@ -185,10 +215,16 @@ export const useUpload = (): UseUploadResult => {
   const resume = useCallback(
     async (movieId: string, file: File): Promise<boolean> => {
       setState({ phase: "creating", progress: 0, error: null });
+      const currentSessionId = sessionUserIdRef.current;
+      if (!currentSessionId) return false;
+      const sessionId =
+        sessionByMovieIdRef.current.get(movieId) ?? currentSessionId;
+      if (sessionId !== currentSessionId) return false;
       const profileId = profileByMovieIdRef.current.has(movieId)
         ? (profileByMovieIdRef.current.get(movieId) ?? null)
         : getSelectedProfileId();
       profileByMovieIdRef.current.set(movieId, profileId);
+      sessionByMovieIdRef.current.set(movieId, sessionId);
       try {
         const res = await client.api.v4.upload[":movieId"].url.$post(
           {
@@ -205,8 +241,10 @@ export const useUpload = (): UseUploadResult => {
           throw new Error("Failed to get upload URL");
         }
         const json = await res.json();
+        if (sessionUserIdRef.current !== sessionId) return false;
         return await upload(movieId, json.data.uploadUrl, file);
       } catch (error) {
+        if (sessionUserIdRef.current !== sessionId) return false;
         if (isAbortError(error)) {
           setState({ phase: "idle", progress: 0, error: null });
           return false;

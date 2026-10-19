@@ -2,13 +2,20 @@ import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
 import type { FilteredUser, Visibility } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { Film } from "lucide-react";
-import { type ChangeEvent, type FormEvent, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { useConfirm } from "@/components/Feedback/FeedbackProvider";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { useUpload } from "@/hooks/useUpload";
 import { useSelf } from "@/hooks/useUser";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
 export const Route = createFileRoute("/_app/dashboard/videos/new")({
@@ -20,6 +27,8 @@ function NewVideoPage() {
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const confirm = useConfirm();
   const { data: user, isLoading: isUserLoading } = useSelf();
+  const { data: authSession } = authClient.useSession();
+  const sessionUserId = authSession?.user.id;
   const {
     init,
     upload,
@@ -49,6 +58,29 @@ function NewVideoPage() {
   const movieIdRef = useRef<string | null>(null);
   movieIdRef.current = movieId;
   const movieProfileIdRef = useRef<string | null>(null);
+  const movieSessionUserIdRef = useRef<string | null>(null);
+  const currentSessionUserIdRef = useRef(sessionUserId);
+
+  useLayoutEffect(() => {
+    if (currentSessionUserIdRef.current === sessionUserId) return;
+    currentSessionUserIdRef.current = sessionUserId;
+    cancel();
+    resetUpload();
+    movieIdRef.current = null;
+    movieProfileIdRef.current = null;
+    movieSessionUserIdRef.current = null;
+    saveQueueRef.current = Promise.resolve();
+    setFile(null);
+    setMovieId(null);
+    setTitle("");
+    setDescription("");
+    setVisibility("PUBLIC");
+    setViewers([]);
+    setIsSaving(false);
+    setSaved(false);
+    setSavePending(false);
+    setError(null);
+  }, [sessionUserId, cancel, resetUpload]);
 
   const isBusy =
     uploadState.phase === "creating" ||
@@ -75,8 +107,14 @@ function NewVideoPage() {
 
   const doSaveMetadata = async (): Promise<boolean> => {
     const id = movieIdRef.current;
+    const sessionId = movieSessionUserIdRef.current;
     const current = metadataRef.current;
     if (!id || !current.title.trim()) return false;
+    if (!sessionId || sessionId !== currentSessionUserIdRef.current) {
+      throw new Error(
+        "ログイン状態が変わりました。アップロードをやり直してください",
+      );
+    }
     const res = await client.api.v4.movies[":movie"].$patch(
       {
         param: { movie: id },
@@ -92,6 +130,7 @@ function NewVideoPage() {
     if (!res.ok) {
       throw new Error("Failed to update");
     }
+    if (currentSessionUserIdRef.current !== sessionId) return false;
     setSaved(true);
     return true;
   };
@@ -111,11 +150,13 @@ function NewVideoPage() {
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
+    const startingSessionId = currentSessionUserIdRef.current;
+    if (!selectedFile || !startingSessionId) return;
 
     setFile(selectedFile);
     setMovieId(null);
     movieProfileIdRef.current = null;
+    movieSessionUserIdRef.current = null;
     setSaved(false);
     setError(null);
     resetUpload();
@@ -128,9 +169,11 @@ function NewVideoPage() {
     if (!result) {
       return; // uploadState.error is shown below
     }
+    if (currentSessionUserIdRef.current !== startingSessionId) return;
 
     setMovieId(result.movieId);
     movieProfileIdRef.current = result.profileId;
+    movieSessionUserIdRef.current = startingSessionId;
     setTitle(result.title);
 
     // Upload in the background; when it lands, persist the metadata the user
@@ -139,7 +182,11 @@ function NewVideoPage() {
     // page and the movie would stay PRIVATE.
     void upload(result.movieId, result.uploadUrl, selectedFile).then(
       (succeeded) => {
-        if (succeeded) {
+        if (
+          succeeded &&
+          currentSessionUserIdRef.current === startingSessionId &&
+          movieSessionUserIdRef.current === startingSessionId
+        ) {
           setSavePending(true);
           void saveMetadata()
             .catch(() => {
@@ -156,20 +203,24 @@ function NewVideoPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!movieId || !title.trim()) return;
+    const sessionId = currentSessionUserIdRef.current;
 
     setIsSaving(true);
     setError(null);
     try {
       await saveMetadata();
     } catch (err) {
+      if (currentSessionUserIdRef.current !== sessionId) return;
       setError(err instanceof Error ? err.message : "保存に失敗しました");
     } finally {
-      setIsSaving(false);
+      if (currentSessionUserIdRef.current === sessionId) setIsSaving(false);
     }
   };
 
   const handleRetryUpload = async () => {
     if (!file) return;
+    const sessionId = currentSessionUserIdRef.current;
+    if (!sessionId || movieSessionUserIdRef.current !== sessionId) return;
     setError(null);
     const succeeded = movieId
       ? await resume(movieId, file)
@@ -183,7 +234,11 @@ function NewVideoPage() {
           setTitle(result.title);
           return upload(result.movieId, result.uploadUrl, file);
         })();
-    if (succeeded) {
+    if (
+      succeeded &&
+      currentSessionUserIdRef.current === sessionId &&
+      movieSessionUserIdRef.current === sessionId
+    ) {
       setSavePending(true);
       void saveMetadata()
         .catch(() => {
@@ -200,8 +255,14 @@ function NewVideoPage() {
     // encode; deleting the movie here would race that completion, so cancel
     // is only offered while bytes are still in flight.
     if (uploadState.phase !== "uploading") return;
+    const sessionId = currentSessionUserIdRef.current;
     cancel();
-    if (movieId) {
+    if (
+      movieId &&
+      sessionId &&
+      movieSessionUserIdRef.current === sessionId &&
+      currentSessionUserIdRef.current === sessionId
+    ) {
       // Discard the record created for this upload; a leftover UPLOADING
       // movie would sit in the dashboard forever otherwise.
       await client.api.v4.movies[":movie"]
@@ -214,6 +275,7 @@ function NewVideoPage() {
     setFile(null);
     setMovieId(null);
     movieProfileIdRef.current = null;
+    movieSessionUserIdRef.current = null;
     setTitle("");
     setDescription("");
     resetUpload();
