@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useAtomValue } from "jotai";
+import { useEffect, useRef, useState } from "react";
+import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { PaginationControls } from "@/components/Dashboard/PaginationControls";
 import { useConfirm, useNotify } from "@/components/Feedback/FeedbackProvider";
@@ -15,11 +17,20 @@ export const Route = createFileRoute("/_app/dashboard/playlists/")({
 
 function PlaylistsPage() {
   const { data: user, isLoading: isUserLoading } = useSelf();
+  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const [page, setPage] = useState(1);
   const { data: playlistsData, mutate } = useMyPlaylists(page);
   const confirm = useConfirm();
   const notify = useNotify();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const previousAccountId = useRef(selectedAccountId);
+
+  useEffect(() => {
+    if (previousAccountId.current !== selectedAccountId) {
+      previousAccountId.current = selectedAccountId;
+      setPage(1);
+    }
+  }, [selectedAccountId]);
 
   const handleDelete = async (id: string) => {
     if (

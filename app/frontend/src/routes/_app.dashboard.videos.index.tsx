@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useAtomValue } from "jotai";
 import { Film } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { PaginationControls } from "@/components/Dashboard/PaginationControls";
 import { useConfirm, useNotify } from "@/components/Feedback/FeedbackProvider";
@@ -16,11 +18,20 @@ export const Route = createFileRoute("/_app/dashboard/videos/")({
 
 function VideosPage() {
   const { data: user, isLoading: isUserLoading } = useSelf();
+  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const [page, setPage] = useState(1);
   const { data: moviesData, mutate } = useMyMovies(page);
   const confirm = useConfirm();
   const notify = useNotify();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const previousAccountId = useRef(selectedAccountId);
+
+  useEffect(() => {
+    if (previousAccountId.current !== selectedAccountId) {
+      previousAccountId.current = selectedAccountId;
+      setPage(1);
+    }
+  }, [selectedAccountId]);
 
   const handleDelete = async (id: string) => {
     if (
