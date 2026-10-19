@@ -130,6 +130,12 @@ function EditVideoPage() {
 
       eventSource.listen({
         onMessage: (event) => {
+          // The server closes the stream with "end" when there is nothing
+          // to report; abort so the client does not reconnect forever.
+          if (event.event === "end") {
+            controller?.abort();
+            return;
+          }
           try {
             const data = JSON.parse(event.data) as EncodeProgress;
             setEncodeProgress(data);
