@@ -34,6 +34,10 @@ on:
       - frontend-v*
       - ffmpeg-worker-v*
 
+concurrency:
+  group: release-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
