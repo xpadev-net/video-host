@@ -22,9 +22,11 @@ const database = vi.hoisted(() => ({
   $transaction: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: database }));
-vi.mock("@/lib/s3", () => ({
+vi.mock("@/lib/s3", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/s3")>()),
   deleteProdFile: vi.fn(),
   deleteTmpFile: vi.fn(),
+  tmpFileExists: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("@/lib/redis", () => ({
   addEncodeJob: vi.fn(),
@@ -156,7 +158,11 @@ describe("seriesId on movie create/update", () => {
     database.series.findUnique.mockResolvedValue({ authorId: "bob" });
     const res = await appFor(alice).request(
       "/movies",
-      json("POST", { title: "t", s3Key: "k", seriesId: "s2" }),
+      json("POST", {
+        title: "t",
+        s3Key: "uploads/alice/k.mp4",
+        seriesId: "s2",
+      }),
     );
     expect(res.status).toBe(401);
   });
@@ -165,7 +171,11 @@ describe("seriesId on movie create/update", () => {
     database.series.findUnique.mockResolvedValue(null);
     const res = await appFor(alice).request(
       "/movies",
-      json("POST", { title: "t", s3Key: "k", seriesId: "nope" }),
+      json("POST", {
+        title: "t",
+        s3Key: "uploads/alice/k.mp4",
+        seriesId: "nope",
+      }),
     );
     expect(res.status).toBe(404);
   });

@@ -8,6 +8,7 @@ import { filterMovie } from "@/lib/filter";
 import { formatMovie } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import { addEncodeJob, setEncodeProgress } from "@/lib/redis";
+import { tmpFileExists, uploadKeyPrefix } from "@/lib/s3";
 import { movieRoute } from "@/routes/api/v4/movies/[movie]";
 import {
   buildMovieAccessWhere,
@@ -128,6 +129,16 @@ export const moviesRoute = app
 
     // Handle asUserId for admin proxy
     const authorId = await resolveAuthorId(user, data.asUserId);
+
+    // The key must come from this author's own upload and actually exist, so
+    // nobody can encode another user's tmp object as their own movie.
+    if (
+      !data.s3Key.startsWith(uploadKeyPrefix(authorId)) ||
+      data.s3Key.includes("..") ||
+      !(await tmpFileExists(data.s3Key))
+    ) {
+      badRequest("Invalid s3Key");
+    }
 
     if (data.seriesId) {
       await assertCanManageSeries(user, data.seriesId);
