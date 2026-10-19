@@ -64,6 +64,7 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
+          package-manager-cache: false
 
       - name: Create version bump branch and pull request
         env:
@@ -199,7 +200,7 @@ jobs:
             PACKAGE="${entry%%:*}"
             FILE="${entry#*:}"
             if printf '%s\n' "$CHANGED" | grep -Fxq "$FILE"; then
-              VERSION="$(node -p "'v' + require('./$FILE').version")"
+              VERSION="v$(node -p "require('./$FILE').version")"
               TAG="$PACKAGE-$VERSION"
               if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
                 echo "Release tag already exists: $TAG" >&2
@@ -259,7 +260,7 @@ jobs:
             NODE_VERSION=${{ steps.node-image.outputs.version }}
             COMMIT_HASH=${{ needs.prepare-release.outputs.commit_sha }}
           cache-from: type=gha,scope=release-backend
-          cache-to: type=gha,scope=release-backend,mode=max
+          cache-to: type=gha,scope=release-backend,mode=min
           sbom: true
           provenance: mode=max
 
@@ -317,7 +318,7 @@ jobs:
             NODE_VERSION=${{ steps.node-image.outputs.version }}
             COMMIT_HASH=${{ needs.prepare-release.outputs.commit_sha }}
           cache-from: type=gha,scope=release-frontend
-          cache-to: type=gha,scope=release-frontend,mode=max
+          cache-to: type=gha,scope=release-frontend,mode=min
           sbom: true
           provenance: mode=max
 
@@ -375,7 +376,7 @@ jobs:
             NODE_VERSION=${{ steps.node-image.outputs.version }}
             COMMIT_HASH=${{ needs.prepare-release.outputs.commit_sha }}
           cache-from: type=gha,scope=release-ffmpeg-worker
-          cache-to: type=gha,scope=release-ffmpeg-worker,mode=max
+          cache-to: type=gha,scope=release-ffmpeg-worker,mode=min
           sbom: true
           provenance: mode=max
 
