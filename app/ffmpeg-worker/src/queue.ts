@@ -128,6 +128,20 @@ export const getEncodeProgress = async (
   }
 };
 
+// Tmp inputs whose delete failed after the output was safely committed. A set
+// (not a queue) so repeated failures for one key collapse into one entry.
+const TMP_CLEANUP_KEY = "video:encode:tmp-cleanup";
+
+export const addTmpCleanup = async (s3Key: string): Promise<void> => {
+  const client = await getRedisClient();
+  await client.sAdd(TMP_CLEANUP_KEY, s3Key);
+};
+
+export const takeTmpCleanups = async (count: number): Promise<string[]> => {
+  const client = await getRedisClient();
+  return client.sPopCount(TMP_CLEANUP_KEY, count);
+};
+
 const REQUEUE_INTERRUPTED_JOB_SCRIPT = `
   if ARGV[1] ~= '' then
     -- This worker was running the job. A completion record means its output

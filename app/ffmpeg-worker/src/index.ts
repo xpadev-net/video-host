@@ -11,6 +11,7 @@ import {
 import { getMeter, initOtelMetrics } from "./otel";
 import {
   addJobToRetryQueue,
+  addTmpCleanup,
   claimProcessingJob,
   closeRedis,
   commitProcessingJob,
@@ -28,6 +29,7 @@ import {
   requeueInterruptedJob,
   requeueStaleProcessingJob,
   setEncodeProgress,
+  takeTmpCleanups,
 } from "./queue";
 import { deleteFromTmp, downloadFromTmp, uploadToProd } from "./s3";
 
@@ -108,6 +110,35 @@ const PROCESSING_JOB_LEASE_MS = JOB_TIMEOUT_SECONDS * 1000 + 15 * 60 * 1000;
 // Reaper: recover claims whose owner died mid-job. Committed claims carry
 // their outcome (input already deleted, so re-encoding is impossible) and
 // are finalized via progress + callback; others are requeued atomically.
+// Best-effort delete with a couple of quick retries for transient S3 errors.
+const deleteTmpInput = async (s3Key: string): Promise<boolean> => {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await deleteFromTmp(s3Key);
+      return true;
+    } catch (error) {
+      console.error(
+        `Failed to delete tmp input (attempt ${attempt}/3): ${s3Key}`,
+        error,
+      );
+      if (attempt < 3) await sleep(attempt * 500);
+    }
+  }
+  return false;
+};
+
+// Retry deletions that failed earlier; entries that still fail go back.
+const retryPendingTmpCleanups = async (): Promise<void> => {
+  for (const s3Key of await takeTmpCleanups(10)) {
+    try {
+      await deleteFromTmp(s3Key);
+    } catch (error) {
+      console.error(`Tmp cleanup still failing, will retry: ${s3Key}`, error);
+      await addTmpCleanup(s3Key).catch(() => {});
+    }
+  }
+};
+
 const reapStaleProcessingJobs = async (): Promise<void> => {
   const staleMembers = await getStaleProcessingJobs(
     Date.now() - PROCESSING_JOB_LEASE_MS,
@@ -526,12 +557,13 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     // Delete from tmp-bucket. The outcome is already recorded, so a failure
     // only leaves an orphaned input behind.
     console.log(`Deleting from tmp-bucket: ${job.s3Key}`);
-    try {
-      await deleteFromTmp(job.s3Key);
-    } catch (deleteError) {
-      console.error(
-        `Failed to delete tmp input (left orphaned): movieId=${job.movieId}`,
-        deleteError,
+    if (!(await deleteTmpInput(job.s3Key))) {
+      // Keep the cleanup retryable instead of forgetting the object.
+      await addTmpCleanup(job.s3Key).catch((error) =>
+        console.error(
+          `Failed to record tmp cleanup, input left orphaned: movieId=${job.movieId}`,
+          error,
+        ),
       );
     }
 
@@ -687,6 +719,11 @@ const pollForJobs = async (): Promise<void> => {
         await reapStaleProcessingJobs();
       } catch (error) {
         console.error("Error reaping stale processing jobs:", error);
+      }
+      try {
+        await retryPendingTmpCleanups();
+      } catch (error) {
+        console.error("Error retrying tmp cleanups:", error);
       }
     } else {
       clearInterval(retryQueueInterval);
