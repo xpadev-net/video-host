@@ -327,7 +327,8 @@ const retryOrDeadLetter = async (
 // Was this failure produced by the abort itself? A permanent failure (bad
 // input, HTTP 4xx, ...) that merely coincides with SIGTERM must keep its own
 // classification instead of being handed back as if shutdown had caused it.
-const isAbortFailure = (error: unknown): boolean => {
+const isAbortFailure = (error: unknown, signal: AbortSignal): boolean => {
+  if (!signal.aborted) return false;
   if (typeof error === "string") return /aborted/i.test(error);
   if (typeof error !== "object" || error === null) return false;
   const { name, code, message } = error as {
@@ -391,9 +392,14 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
   // Create abort controller for timeout management
   const abortController = new AbortController();
   let jobTimedOut = false;
+  let shutdownAbortRequested = false;
   activeJobAbortController = abortController;
-  const onShutdownAbort = () => abortController.abort();
+  const onShutdownAbort = () => {
+    shutdownAbortRequested = true;
+    abortController.abort();
+  };
   if (jobShutdownAbort.signal.aborted) {
+    shutdownAbortRequested = true;
     abortController.abort();
   } else {
     jobShutdownAbort.signal.addEventListener("abort", onShutdownAbort, {
@@ -454,6 +460,9 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       },
       abortController.signal,
     );
+    // Snapshot the shutdown request when encoding settles. A later SIGTERM
+    // must not replace a permanent encoder result with a shutdown hand-back.
+    const shutdownRequestedWhenEncodingSettled = shutdownAbortRequested;
 
     if (!result.success && jobTimedOut) result.kind = "timeout";
 
@@ -465,10 +474,10 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       // A timeout that fired before SIGTERM stays a timeout, and a failure the
       // abort did not cause keeps its own classification.
       if (
-        jobShutdownAbort.signal.aborted &&
+        shutdownRequestedWhenEncodingSettled &&
         !committedOutcome &&
         !jobTimedOut &&
-        isAbortFailure(result.error)
+        isAbortFailure(result.error, abortController.signal)
       ) {
         return await handBackOnShutdown(job);
       }
@@ -543,36 +552,27 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       );
     }
 
-    // Delete from tmp-bucket
-    console.log(`Deleting from tmp-bucket: ${job.s3Key}`);
-    await deleteFromTmp(job.s3Key, abortController.signal);
-
-    // Generate content URL for VOD streaming
+    // Persist the completion before deleting the source. If shutdown or a
+    // worker crash happens while object storage is processing the delete, the
+    // reaper can finalize the uploaded output instead of requeueing a job whose
+    // input may already be gone.
     const contentUrl = getVodContentUrl(job.s3Key);
-
-    // The input is gone: if this worker dies now the job can no longer be
-    // re-encoded, so mark the claim with its outcome for the reaper. A
-    // failure here must not send the job down the retry path.
-    committedOutcome = {
+    const completion = {
       contentUrl,
       duration: result.duration,
       thumbnailKey: uploadedThumbnailKey,
     };
-    activeJobCommitted = true;
-    if (activeJobClaim) {
-      try {
-        activeJobClaim = await commitProcessingJob(activeJobClaim, job, {
-          contentUrl,
-          duration: result.duration,
-          thumbnailKey: uploadedThumbnailKey,
-        });
-      } catch (claimError) {
-        console.error(
-          `Failed to mark processing claim committed: movieId=${job.movieId}`,
-          claimError,
-        );
-      }
+    if (!activeJobClaim) {
+      throw new Error("Cannot commit an unclaimed encode job");
     }
+    activeJobClaim = await commitProcessingJob(activeJobClaim, job, completion);
+    committedOutcome = completion;
+    activeJobCommitted = true;
+
+    // The durable completion record now protects a source deletion whose
+    // result may be uncertain during a shutdown or network failure.
+    console.log(`Deleting from tmp-bucket: ${job.s3Key}`);
+    await deleteFromTmp(job.s3Key, abortController.signal);
 
     if (jobRelinquished) {
       return "relinquished";
@@ -621,10 +621,10 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     }
     // Same rule for thrown errors: only an abort-caused one is the shutdown's.
     if (
-      jobShutdownAbort.signal.aborted &&
+      shutdownAbortRequested &&
       !committedOutcome &&
       !jobTimedOut &&
-      isAbortFailure(error)
+      isAbortFailure(error, abortController.signal)
     ) {
       return await handBackOnShutdown(job);
     }
