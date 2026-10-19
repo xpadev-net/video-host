@@ -23,8 +23,8 @@ jobs:
         with:
           version: v1.32.0
 
-      - name: Render and validate production Kubernetes manifests
-        run: kubectl apply --dry-run=client --validate=false -k k8s/overlays/prod
+      - name: Render production Kubernetes manifests
+        run: kubectl kustomize k8s/overlays/prod > /dev/null
 
   # Replaying migrations against a temporary MySQL shadow DB catches schema drift.
   schema-drift:
