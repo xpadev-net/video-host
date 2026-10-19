@@ -4,20 +4,27 @@ import { useStickySWR } from "@/hooks/useStickySWR";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
-const fetcher = async (key?: string) => {
-  if (!key)
-    return {
-      status: "error",
-      code: 404,
-      message: "not found",
-    };
+type UserNotFoundResponse = {
+  status: "error";
+  code: 404;
+  message: string;
+};
 
+const fetcher = async (key: string) => {
   const res =
     key === "me"
       ? await client.api.v4.users.me.$get()
       : await client.api.v4.users[":user"].$get({ param: { user: key } });
 
-  return await res.json();
+  if (!res.ok) {
+    if ((res.status as number) !== 404) {
+      throw new Error("Failed to fetch user");
+    }
+    return (await res.json()) as unknown as UserNotFoundResponse;
+  }
+
+  const response = await res.json();
+  return response;
 };
 
 export const useUser = (query?: string) => useStickySWR(query, fetcher, {});

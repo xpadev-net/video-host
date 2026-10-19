@@ -2,17 +2,15 @@ import { useStickySWR } from "@/hooks/useStickySWR";
 
 import { client } from "@/lib/client";
 
-const fetcher = async (key?: string) => {
-  if (!key)
-    return Promise.resolve({
-      status: "error" as const,
-      code: 404,
-      message: "not found",
-    });
+const fetcher = async (key: string) => {
   const res = await client.api.v4.movies[":movie"].$get({
     param: { movie: key },
   });
-  return await res.json();
+  const response = await res.json();
+  if (!res.ok && (res.status as number) !== 404) {
+    throw new Error("Failed to fetch movie");
+  }
+  return response;
 };
 
 export const useMovie = (query?: string) => {
