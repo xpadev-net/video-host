@@ -25,8 +25,4 @@ export const HttpUrlSchema = z
   .max(2048)
   .refine((value) => /^https?:\/\//i.test(value), "Expected an http(s) URL");
 
-export const AvatarUrlSchema = z
-  .string()
-  .url()
-  .max(MAX_NAME_LENGTH)
-  .refine((value) => /^https?:\/\//i.test(value), "Expected an http(s) URL");
+export const AvatarUrlSchema = HttpUrlSchema;

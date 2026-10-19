@@ -22,7 +22,10 @@ import { ok } from "@/utils/response/ok";
 
 const QuerySchema = paginationQuerySchema().extend({
   query: z.string().optional(),
-  suggest: z.string().optional(),
+  suggest: z
+    .string()
+    .optional()
+    .transform((value) => value !== undefined),
   author: z.string().optional(),
   mine: z
     .enum(["true", "false"])

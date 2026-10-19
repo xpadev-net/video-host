@@ -26,7 +26,10 @@ const QuerySchema = paginationQuerySchema().extend({
     .enum(["true", "false"])
     .optional()
     .transform((value) => value === "true"),
-  suggest: z.string().optional(),
+  suggest: z
+    .string()
+    .optional()
+    .transform((value) => value !== undefined),
   query: z.string().optional(),
 });
 

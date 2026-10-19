@@ -51,44 +51,46 @@ export const profilesRoute = app
     });
     if (!account?.profile) unauthorized("Profile not provisioned");
 
-    let profile: Awaited<ReturnType<typeof prisma.user.create>>;
-    try {
-      profile = await prisma.$transaction(
-        async (tx) => {
-          const additionalProfileCount = await tx.authProfile.count({
-            where: { authUserId },
-          });
-          if (additionalProfileCount >= MAX_ADDITIONAL_PROFILES) {
-            badRequest(
-              `An account can have at most ${MAX_ADDITIONAL_PROFILES} additional profiles`,
-            );
-          }
-          const created = await tx.user.create({
-            data: {
-              name,
-              username,
-              kind: "HUMAN",
-              role: account.profile?.role ?? "USER",
-            },
-          });
-          await tx.authProfile.create({
-            data: { authUserId, profileId: created.id },
-          });
-          return created;
-        },
-        { isolationLevel: "Serializable" },
-      );
-    } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "code" in error &&
-        error.code === "P2002"
-      ) {
-        badRequest("Username already exists");
+    let profile: Awaited<ReturnType<typeof prisma.user.create>> | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        profile = await prisma.$transaction(
+          async (tx) => {
+            const additionalProfileCount = await tx.authProfile.count({
+              where: { authUserId },
+            });
+            if (additionalProfileCount >= MAX_ADDITIONAL_PROFILES) {
+              badRequest(
+                `An account can have at most ${MAX_ADDITIONAL_PROFILES} additional profiles`,
+              );
+            }
+            const created = await tx.user.create({
+              data: {
+                name,
+                username,
+                kind: "HUMAN",
+                role: account.profile?.role ?? "USER",
+              },
+            });
+            await tx.authProfile.create({
+              data: { authUserId, profileId: created.id },
+            });
+            return created;
+          },
+          { isolationLevel: "Serializable" },
+        );
+        break;
+      } catch (error) {
+        const code =
+          error && typeof error === "object" && "code" in error
+            ? error.code
+            : undefined;
+        if (code === "P2002") badRequest("Username already exists");
+        if (code !== "P2034" || attempt === 2) throw error;
       }
-      throw error;
     }
+    if (!profile)
+      throw new Error("Profile creation transaction did not finish");
     return ok(c, { ...filterUser(profile), isDefault: false });
   });
 
