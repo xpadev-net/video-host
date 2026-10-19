@@ -176,7 +176,11 @@ export function PlayerSurface({
           isHovering={!isAfk}
         />
       ) : (
-        <DesktopController data={data} isHovering={!isInactive} />
+        <DesktopController
+          data={data}
+          isPipMode={isPipMode}
+          isHovering={!isInactive}
+        />
       )}
       {!isPipMode && <KeyboardHandler data={data} />}
       <MediaSessionHandler data={data} />

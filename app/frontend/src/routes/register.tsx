@@ -35,6 +35,7 @@ function RegisterRoute() {
   const [signupCode, setSignupCode] = useState("");
   const { authConfig, isLoading: isAuthConfigLoading } = useAuthConfig();
   const [sessionLoading, setSessionLoading] = useState(true);
+  const [sessionError, setSessionError] = useState(false);
   const requireSignupCode = authConfig?.requireSignupCode ?? RequireSignupCode;
   const passwordAuthEnabled = authConfig?.passwordAuthEnabled ?? false;
 
@@ -52,7 +53,7 @@ function RegisterRoute() {
           return;
         }
       } catch {
-        // The shared auth config hook reports configuration fetch failures.
+        if (!cancelled) setSessionError(true);
       } finally {
         if (!cancelled) setSessionLoading(false);
       }
@@ -106,6 +107,16 @@ function RegisterRoute() {
         <div className="flex justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
+      </AuthLayout>
+    );
+  }
+  if (sessionError) {
+    return (
+      <AuthLayout
+        title="新規登録"
+        description="ログイン状態を確認できませんでした"
+      >
+        <p role="alert">ページを再読み込みしてください。</p>
       </AuthLayout>
     );
   }
