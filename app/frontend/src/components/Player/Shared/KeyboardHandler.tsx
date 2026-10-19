@@ -43,8 +43,12 @@ const KeyboardHandler: FC<Props> = ({ data }) => {
     () => () => {
       if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
       if (playPauseTimerRef.current) clearTimeout(playPauseTimerRef.current);
+      // The timers were the only thing resetting these global indicators, so
+      // reset them too or a later player would show a stale one.
+      setSeekNotification(null);
+      setPlayPauseNotification(null);
     },
-    [],
+    [setSeekNotification, setPlayPauseNotification],
   );
 
   useEffect(() => {

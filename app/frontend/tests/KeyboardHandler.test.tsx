@@ -187,9 +187,15 @@ describe("KeyboardHandler", () => {
     expect(store.get(PlayerPlayPauseNotificationAtom)).not.toBeNull();
   });
 
-  it("clears pending notification timers on unmount", () => {
+  it("clears pending notification timers and the indicators on unmount", () => {
     key(document.body, "ArrowRight");
+    key(document.body, "KeyK");
+    expect(store.get(PlayerSeekNotificationAtom)).not.toBeNull();
+    expect(store.get(PlayerPlayPauseNotificationAtom)).not.toBeNull();
     cleanup();
     expect(vi.getTimerCount()).toBe(0);
+    // Not left behind for the next player to show.
+    expect(store.get(PlayerSeekNotificationAtom)).toBeNull();
+    expect(store.get(PlayerPlayPauseNotificationAtom)).toBeNull();
   });
 });

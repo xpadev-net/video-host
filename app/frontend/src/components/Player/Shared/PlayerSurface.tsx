@@ -69,8 +69,8 @@ export function PlayerSurface({
     >
       {/* A div, not a <button>: the video and overlays inside would otherwise be
           nested in an interactive element. It has no native Space/Enter
-          activation, so the keyboard handler and onKeyDown below are the only
-          paths and a key press can never toggle twice. */}
+          activation, so onKeyDown below is the only path and a key press can
+          never toggle twice. */}
       {/* biome-ignore lint/a11y/useSemanticElements: the surface wraps a <video>, which a <button> may not contain */}
       <div
         data-player-surface
@@ -79,8 +79,14 @@ export function PlayerSurface({
         className="relative block h-auto w-full overflow-hidden bg-black"
         onClick={isMobile ? toggleControls : togglePlayback}
         onKeyDown={(e) => {
-          if (e.target !== e.currentTarget || e.key !== "Enter") return;
+          // What a native button does on Enter and Space: run the click
+          // action. Handled here (and kept from the window-level shortcuts)
+          // so it also works in PiP, where there is no KeyboardHandler, and
+          // behaves the same as a click on mobile.
+          if (e.target !== e.currentTarget) return;
+          if (e.key !== "Enter" && e.code !== "Space") return;
           e.preventDefault();
+          e.stopPropagation();
           if (isMobile) toggleControls();
           else togglePlayback();
         }}
