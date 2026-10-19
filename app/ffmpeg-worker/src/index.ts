@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { statfs } from "node:fs/promises";
 import { promisify } from "node:util";
 import { sendCallback } from "./callback";
 import {
@@ -16,10 +17,12 @@ import {
 } from "./env";
 import { getMeter, initOtelMetrics } from "./otel";
 import {
+  addJobToDeadLetterQueue,
   addJobToRetryQueue,
   claimNextEncodeJob,
   closeRedis,
   commitProcessingJob,
+  deferJobForInfrastructure,
   type EncodeJob,
   expireProcessingJob,
   finishProcessingJob,
@@ -27,6 +30,7 @@ import {
   getJobCompletion,
   getQueueDepths,
   getStaleProcessingJobs,
+  MAX_RETRY_COUNT,
   type ProcessingClaim,
   processRetryQueue,
   refreshProcessingJob,
@@ -39,6 +43,7 @@ import {
   deleteFromProd,
   deleteFromTmp,
   downloadFromTmp,
+  getTmpObjectSize,
   uploadToProd,
 } from "./s3";
 
@@ -108,6 +113,8 @@ const jobShutdownAbort = new AbortController();
 // mid-job (SIGKILL, crash) — live jobs are bounded by the job timeout.
 const PROCESSING_JOB_LEASE_MS = 5 * 60 * 1000;
 const PROCESSING_JOB_HEARTBEAT_MS = 30 * 1000;
+const DISK_SPACE_MARGIN_BYTES = 512 * 1024 * 1024;
+const DISK_SPACE_MULTIPLIER = 2.5;
 let reaperInFlight = false;
 
 const finalizeCommittedClaim = async (
@@ -266,55 +273,15 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
   }
 };
 
-const checkDiskSpace = async (): Promise<boolean> => {
-  try {
-    // Use df command to check available disk space
-    // df -BG outputs in GB, -B1 outputs in bytes (more reliable)
-    // Use execFile with args array to prevent shell injection
-    const { stdout } = await execFileAsync("df", ["-B1", TEMP_DIR]);
-    const lines = stdout.trim().split("\n");
-    if (lines.length < 2) {
-      console.warn(
-        "Could not parse df output, assuming disk space is available",
-      );
-      return true;
-    }
-
-    // Parse the output: Filesystem 1K-blocks Used Available Use% Mounted on
-    // or: Filesystem 1B-blocks Used Available Use% Mounted on
-    const parts = lines[1].trim().split(/\s+/);
-    if (parts.length < 4) {
-      console.warn(
-        "Could not parse df output, assuming disk space is available",
-      );
-      return true;
-    }
-
-    // Available space in bytes (3rd column when using -B1)
-    const availableBytes = parseInt(parts[3], 10);
-    if (Number.isNaN(availableBytes)) {
-      console.warn(
-        "Could not parse available disk space, assuming disk space is available",
-      );
-      return true;
-    }
-
-    const availableGB = availableBytes / (1024 * 1024 * 1024);
-    const hasEnoughSpace = availableGB >= MIN_DISK_SPACE_GB;
-
-    if (!hasEnoughSpace) {
-      console.warn(
-        `Insufficient disk space: ${availableGB.toFixed(2)}GB available, ${MIN_DISK_SPACE_GB}GB required`,
-      );
-    }
-
-    return hasEnoughSpace;
-  } catch (error) {
-    console.error("Error checking disk space:", error);
-    // On error, assume disk space is available to avoid blocking jobs
-    // This is a fail-open approach
-    return true;
-  }
+const getDiskSpace = async (): Promise<{
+  availableBytes: number;
+  totalBytes: number;
+}> => {
+  const space = await statfs(TEMP_DIR);
+  return {
+    availableBytes: Number(space.bavail) * Number(space.bsize),
+    totalBytes: Number(space.blocks) * Number(space.bsize),
+  };
 };
 
 // "error" marks unexpected processJob rejections (no confirmed terminal
@@ -322,56 +289,38 @@ const checkDiskSpace = async (): Promise<boolean> => {
 // job whose ownership was transferred to the queue during shutdown.
 type JobResult = "completed" | "failed" | "retrying" | "error" | "relinquished";
 
+const markJobFailed = async (
+  job: EncodeJob,
+  reason: string,
+  stderrTail?: string,
+): Promise<void> => {
+  await addJobToDeadLetterQueue(job, reason, stderrTail);
+  await setEncodeProgress(job.movieId, { status: "failed" });
+  await sendCallback({
+    movieId: job.movieId,
+    variantId: "original",
+    status: "failed",
+    s3Key: job.s3Key,
+  });
+};
+
+const retryOrDeadLetter = async (
+  job: EncodeJob,
+  reason: string,
+  processingMember?: string,
+  retryable = true,
+): Promise<JobResult> => {
+  if (retryable && (job.retryCount ?? 0) < MAX_RETRY_COUNT) {
+    await addJobToRetryQueue(job, processingMember);
+    await setEncodeProgress(job.movieId, { status: "retrying" });
+    return "retrying";
+  }
+  await markJobFailed(job, reason);
+  return "failed";
+};
+
 const processJob = async (job: EncodeJob): Promise<JobResult> => {
   console.log(`Processing job: movieId=${job.movieId}, s3Key=${job.s3Key}`);
-
-  // Check disk space before processing
-  const hasEnoughSpace = await checkDiskSpace();
-  if (jobRelinquished) {
-    return "relinquished";
-  }
-  if (!hasEnoughSpace) {
-    console.error(
-      `Insufficient disk space for job: movieId=${job.movieId}, scheduling retry`,
-    );
-    // Schedule retry for later
-    const retryCount = job.retryCount || 0;
-    if (retryCount < 3) {
-      try {
-        await addJobToRetryQueue(job, activeJobClaim ?? undefined);
-        await setEncodeProgress(job.movieId, {
-          status: "retrying",
-        });
-        return "retrying";
-      } catch (retryError) {
-        console.error(
-          `Failed to schedule retry: movieId=${job.movieId}`,
-          retryError,
-        );
-        // Fall through to mark as failed
-        await setEncodeProgress(job.movieId, {
-          status: "failed",
-        });
-        await sendCallback({
-          movieId: job.movieId,
-          variantId: "original",
-          status: "failed",
-          s3Key: job.s3Key,
-        });
-      }
-    } else {
-      await setEncodeProgress(job.movieId, {
-        status: "failed",
-      });
-      await sendCallback({
-        movieId: job.movieId,
-        variantId: "original",
-        status: "failed",
-        s3Key: job.s3Key,
-      });
-    }
-    return "failed";
-  }
 
   if (jobRelinquished) {
     return "relinquished";
@@ -396,6 +345,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 
   // Create abort controller for timeout management
   const abortController = new AbortController();
+  let jobTimedOut = false;
   activeJobAbortController = abortController;
   const onShutdownAbort = () => abortController.abort();
   if (jobShutdownAbort.signal.aborted) {
@@ -406,6 +356,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     });
   }
   const timeoutId = setTimeout(() => {
+    jobTimedOut = true;
     console.error(
       `Job timeout after ${JOB_TIMEOUT_SECONDS} seconds: movieId=${job.movieId}`,
     );
@@ -413,6 +364,28 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
   }, JOB_TIMEOUT_SECONDS * 1000);
 
   try {
+    const objectSize = await getTmpObjectSize(job.s3Key);
+    const requiredBytes =
+      Math.ceil(objectSize * DISK_SPACE_MULTIPLIER) + DISK_SPACE_MARGIN_BYTES;
+    const disk = await getDiskSpace();
+    if (requiredBytes > disk.totalBytes) {
+      await markJobFailed(
+        job,
+        `Input is too large for worker scratch storage (${objectSize} bytes; required ${requiredBytes}, capacity ${disk.totalBytes})`,
+      );
+      return "failed";
+    }
+    if (disk.availableBytes < requiredBytes) {
+      console.warn(
+        `Deferring job for disk space: movieId=${job.movieId}, available=${disk.availableBytes}, required=${requiredBytes}`,
+      );
+      if (!activeJobClaim)
+        throw new Error("Cannot defer an unclaimed encode job");
+      await deferJobForInfrastructure(job, activeJobClaim);
+      await setEncodeProgress(job.movieId, { status: "retrying" });
+      return "retrying";
+    }
+
     // Download from tmp-bucket
     console.log(`Downloading from tmp-bucket: ${job.s3Key}`);
     await downloadFromTmp(job.s3Key, inputPath, abortController.signal);
@@ -437,51 +410,48 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       abortController.signal,
     );
 
+    if (!result.success && jobTimedOut) result.kind = "timeout";
+
     if (jobRelinquished) {
       return "relinquished";
     }
 
     if (!result.success) {
       console.error(`Encoding failed: ${result.error}`);
-      if (result.permanent) {
-        await setEncodeProgress(job.movieId, { status: "failed" });
-        await sendCallback({
-          movieId: job.movieId,
-          variantId: "original",
-          status: "failed",
-          s3Key: job.s3Key,
-        });
+      if (/No space left on device|ENOSPC/i.test(result.error ?? "")) {
+        if (!activeJobClaim)
+          throw new Error("Cannot defer an unclaimed encode job");
+        await deferJobForInfrastructure(job, activeJobClaim);
+        await setEncodeProgress(job.movieId, { status: "retrying" });
+        return "retrying";
+      }
+      const retryable = result.kind === "transient";
+      if (!retryable) {
+        await markJobFailed(
+          job,
+          `${result.kind ?? "permanent"}: ${result.error ?? "Encoding failed"}`,
+          result.error,
+        );
         return "failed";
       }
-      // Try to retry the job
-      const retryCount = job.retryCount || 0;
-      if (retryCount < 3) {
-        console.log(
-          `Scheduling retry for job: movieId=${job.movieId}, retryCount=${retryCount + 1}`,
+      try {
+        return await retryOrDeadLetter(
+          job,
+          result.error ?? "Transient encoding failure",
+          activeJobClaim ?? undefined,
         );
-        try {
-          await addJobToRetryQueue(job, activeJobClaim ?? undefined);
-          await setEncodeProgress(job.movieId, {
-            status: "retrying",
-          });
-          return "retrying";
-        } catch (retryError) {
-          console.error(
-            `Failed to schedule retry: movieId=${job.movieId}`,
-            retryError,
-          );
-          // Fall through to mark as failed
-        }
+      } catch (retryError) {
+        console.error(
+          `Failed to schedule retry: movieId=${job.movieId}`,
+          retryError,
+        );
+        await markJobFailed(
+          job,
+          `Retry scheduling failed: ${String(retryError)}`,
+          result.error,
+        );
+        return "failed";
       }
-      // Max retries exceeded or retry scheduling failed
-      await setEncodeProgress(job.movieId, { status: "failed" });
-      await sendCallback({
-        movieId: job.movieId,
-        variantId: "original",
-        status: "failed",
-        s3Key: job.s3Key,
-      });
-      return "failed";
     }
 
     // Upload to prod-bucket (same key structure)
@@ -520,7 +490,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 
     // Delete from tmp-bucket
     console.log(`Deleting from tmp-bucket: ${job.s3Key}`);
-    await deleteFromTmp(job.s3Key);
+    await deleteFromTmp(job.s3Key, abortController.signal);
 
     // Generate content URL for VOD streaming
     const contentUrl = getVodContentUrl(job.s3Key);
@@ -667,50 +637,47 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       }
     }
     console.error(`Job failed: movieId=${job.movieId}`, error);
-    // Try to retry the job
-    const retryCount = job.retryCount || 0;
-    if (retryCount < 3) {
-      console.log(
-        `Scheduling retry for job: movieId=${job.movieId}, retryCount=${retryCount + 1}`,
-      );
-      try {
-        await addJobToRetryQueue(job, activeJobClaim ?? undefined);
-        await setEncodeProgress(job.movieId, {
-          status: "retrying",
-        });
-        return "retrying";
-      } catch (retryError) {
-        console.error(
-          `Failed to schedule retry for job: movieId=${job.movieId}`,
-          retryError,
-        );
-        // If retry scheduling fails, mark as failed
-        try {
-          await setEncodeProgress(job.movieId, { status: "failed" });
-          await sendCallback({
-            movieId: job.movieId,
-            variantId: "original",
-            status: "failed",
-            s3Key: job.s3Key,
-          });
-        } catch (finalError) {
-          console.error(
-            `Failed to mark job as failed: movieId=${job.movieId}`,
-            finalError,
-          );
-        }
-      }
-    } else {
-      // Max retries exceeded
-      await setEncodeProgress(job.movieId, { status: "failed" });
-      await sendCallback({
-        movieId: job.movieId,
-        variantId: "original",
-        status: "failed",
-        s3Key: job.s3Key,
-      });
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error
+        ? String(error.code)
+        : "";
+    if (errorCode === "ENOSPC") {
+      if (!activeJobClaim)
+        throw new Error("Cannot defer an unclaimed encode job");
+      await deferJobForInfrastructure(job, activeJobClaim);
+      await setEncodeProgress(job.movieId, { status: "retrying" });
+      return "retrying";
     }
-    return "failed";
+    const httpStatus =
+      typeof error === "object" && error !== null && "$metadata" in error
+        ? Number(
+            (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+              ?.httpStatusCode,
+          )
+        : undefined;
+    const timedOut =
+      abortController.signal.aborted && !jobShutdownAbort.signal.aborted;
+    const retryable =
+      !timedOut &&
+      ![400, 401, 403, 404, 405, 410, 413, 415].includes(httpStatus ?? -1);
+    try {
+      return await retryOrDeadLetter(
+        job,
+        timedOut ? `Job timed out: ${String(error)}` : String(error),
+        activeJobClaim ?? undefined,
+        retryable,
+      );
+    } catch (retryError) {
+      console.error(
+        `Failed to schedule retry: movieId=${job.movieId}`,
+        retryError,
+      );
+      await markJobFailed(
+        job,
+        `Retry scheduling failed: ${String(retryError)}`,
+      );
+      return "failed";
+    }
   } finally {
     // Clear timeout if job completed before timeout
     clearTimeout(timeoutId);
@@ -763,6 +730,15 @@ const pollForJobs = async (): Promise<void> => {
 
   while (!isShuttingDown) {
     try {
+      const disk = await getDiskSpace();
+      const minimumAvailableBytes = MIN_DISK_SPACE_GB * 1024 * 1024 * 1024;
+      if (disk.availableBytes < minimumAvailableBytes) {
+        console.warn(
+          `Pausing queue polling for low disk space: available=${disk.availableBytes}, minimum=${minimumAvailableBytes}`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        continue;
+      }
       const claim = await claimNextEncodeJob();
       if (!claim) {
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
@@ -798,13 +774,7 @@ const pollForJobs = async (): Promise<void> => {
           error,
         );
         try {
-          await setEncodeProgress(job.movieId, { status: "failed" });
-          await sendCallback({
-            movieId: job.movieId,
-            variantId: "original",
-            status: "failed",
-            s3Key: job.s3Key,
-          });
+          await markJobFailed(job, `Unexpected worker error: ${String(error)}`);
         } catch (notifyError) {
           console.error(
             `Failed to report job failure: movieId=${job.movieId}`,
