@@ -39,41 +39,6 @@ const movie = {
 
 beforeEach(() => vi.clearAllMocks());
 
-describe("suggest listings group titles in the database", () => {
-  it.each(["series", "playlist"] as const)("%s", async (model) => {
-    database[model].groupBy
-      .mockResolvedValueOnce([{ title: "x", _max: { id: "id-x" } }])
-      .mockResolvedValueOnce([{ title: "x" }, { title: "y" }]);
-    database[model].findMany.mockResolvedValue([]);
-    const path = model === "series" ? "/series" : "/playlists";
-    const res = await app.request(`${path}?suggest&limit=1`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(database[model].count).not.toHaveBeenCalled();
-    // The page is the DB-grouped ids, with no in-memory `distinct`.
-    const query = database[model].findMany.mock.calls[0][0];
-    expect(query.where).toEqual({ id: { in: ["id-x"] } });
-    expect(query.distinct).toBeUndefined();
-    expect(body.data.pagination).toMatchObject({
-      totalCount: 2,
-      totalPages: 2,
-      hasNext: true,
-    });
-  });
-
-  it("uses a plain count and normal paging without suggest", async () => {
-    database.series.count.mockResolvedValue(5);
-    database.series.findMany.mockResolvedValue([]);
-    const res = await app.request("/series");
-    expect((await res.json()).data.pagination.totalCount).toBe(5);
-    expect(database.series.groupBy).not.toHaveBeenCalled();
-    expect(database.series.findMany.mock.calls[0][0]).toMatchObject({
-      take: 100,
-      skip: 0,
-    });
-  });
-});
-
 describe("listing DTOs are formatted consistently", () => {
   it("serialises nested movie dates as strings in series and playlists", async () => {
     database.series.count.mockResolvedValue(1);

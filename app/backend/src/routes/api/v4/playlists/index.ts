@@ -60,26 +60,10 @@ export const playlistsRoute = app
       where.authorId = user.role === "ADMIN" && author ? author : user.id;
     }
 
-    // Suggestions show one entry per title. Grouping happens in the database
-    // (so title equivalence follows the column collation) and drives both the
-    // total and the page; Prisma's `distinct` dedupes in memory after paging.
-    const titleGroups = suggest
-      ? await prisma.playlist.groupBy({
-          by: ["title"],
-          where,
-          _max: { id: true, updatedAt: true },
-          orderBy: { _max: { updatedAt: "desc" } },
-          take: limit,
-          skip: (page - 1) * limit,
-        })
-      : null;
-    const totalCount = suggest
-      ? (await prisma.playlist.groupBy({ by: ["title"], where })).length
-      : await prisma.playlist.count({ where });
-    const pageIds = (titleGroups ?? []).flatMap((g) => g._max.id ?? []);
+    const totalCount = await prisma.playlist.count({ where });
 
     const playlists = await prisma.playlist.findMany({
-      where: titleGroups ? { id: { in: pageIds } } : where,
+      where,
       include: suggest
         ? {
             author: true,
@@ -100,8 +84,10 @@ export const playlistsRoute = app
             },
             author: true,
           },
+      distinct: suggest ? ["title"] : undefined,
       orderBy: { updatedAt: "desc" },
-      ...(titleGroups ? {} : { take: limit, skip: (page - 1) * limit }),
+      take: limit,
+      skip: (page - 1) * limit,
     });
 
     const totalPages = Math.ceil(totalCount / limit);
