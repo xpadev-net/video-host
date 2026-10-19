@@ -35,16 +35,20 @@ spec:
                 S3_PROXY_SCHEME="${S3_ENDPOINT%%://*}"
                 S3_PROXY_HOST="${S3_ENDPOINT#*://}"
                 S3_PROXY_HOST="${S3_PROXY_HOST%%/*}"
-                if [ "$S3_FORCE_PATH_STYLE" != "true" ]; then
-                  S3_PROXY_HOST="${S3_PROD_BUCKET}.${S3_PROXY_HOST}"
-                fi
               else
                 S3_PROXY_SCHEME=https
-                if [ "$S3_FORCE_PATH_STYLE" = "true" ]; then
-                  S3_PROXY_HOST="s3.${S3_REGION}.amazonaws.com"
-                else
-                  S3_PROXY_HOST="${S3_PROD_BUCKET}.s3.${S3_REGION}.amazonaws.com"
-                fi
+                S3_PROXY_HOST="s3.${S3_REGION}.amazonaws.com"
+              fi
+              S3_USE_PATH_STYLE="$S3_FORCE_PATH_STYLE"
+              case "$S3_PROD_BUCKET" in
+                *.*)
+                  if [ "$S3_PROXY_SCHEME" = "https" ]; then
+                    S3_USE_PATH_STYLE=true
+                  fi
+                  ;;
+              esac
+              if [ "$S3_USE_PATH_STYLE" != "true" ]; then
+                S3_PROXY_HOST="${S3_PROD_BUCKET}.${S3_PROXY_HOST}"
               fi
               export S3_PROXY_SCHEME S3_PROXY_HOST
               envsubst '${VOD_INTERNAL_SECRET} ${S3_PROXY_SCHEME} ${S3_PROXY_HOST} ${DNS_RESOLVER}' < /etc/nginx/template/nginx.conf > /etc/nginx/rendered/nginx.conf
@@ -70,6 +74,7 @@ spec:
                 configMapKeyRef:
                   name: backend-config
                   key: s3-force-path-style
+                  optional: true
             - name: S3_PROD_BUCKET
               valueFrom:
                 configMapKeyRef:
