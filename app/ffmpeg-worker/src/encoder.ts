@@ -14,7 +14,7 @@ export type ProgressCallback = (progress: {
   currentTime: number;
   duration: number;
   percent: number;
-}) => void;
+}) => void | Promise<void>;
 
 // Ensure temp directory exists
 if (!existsSync(TEMP_DIR)) {
@@ -240,6 +240,9 @@ export const encodeVideo = async (
     }
 
     let stderr = "";
+    let lastProgressAt = 0;
+    let lastProgressPercent = -1;
+    let progressCallbackInFlight = false;
     ffmpeg.stderr.on("data", (data) => {
       const line = data.toString();
       stderr += line;
@@ -252,11 +255,29 @@ export const encodeVideo = async (
             100,
             Math.round((currentTime / inputDuration) * 100),
           );
-          onProgress({
-            currentTime: Math.round(currentTime),
-            duration: Math.round(inputDuration),
-            percent,
-          });
+          const now = Date.now();
+          if (
+            !progressCallbackInFlight &&
+            (percent > lastProgressPercent || now - lastProgressAt >= 1000)
+          ) {
+            lastProgressAt = now;
+            lastProgressPercent = percent;
+            progressCallbackInFlight = true;
+            void Promise.resolve()
+              .then(() =>
+                onProgress({
+                  currentTime: Math.round(currentTime),
+                  duration: Math.round(inputDuration),
+                  percent,
+                }),
+              )
+              .catch((error) => {
+                console.warn("Failed to report encoding progress:", error);
+              })
+              .finally(() => {
+                progressCallbackInFlight = false;
+              });
+          }
         }
       }
     });
