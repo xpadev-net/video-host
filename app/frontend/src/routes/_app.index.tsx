@@ -9,11 +9,7 @@ import { elementIsVisibleInViewport } from "@/libraries/elementIsVisibleInViewpo
 
 export const Route = createFileRoute("/_app/")({
   head: () => ({
-    meta: [
-      { title: SiteName },
-      { name: "description", content: "Japanese home media server frontend" },
-    ],
-    links: [{ rel: "icon", href: "/favicon.ico" }],
+    meta: [{ title: SiteName }],
   }),
   component: IndexRoute,
 });

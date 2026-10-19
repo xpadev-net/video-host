@@ -18,7 +18,12 @@ function SeriesRoute() {
 
   useEffect(() => {
     if (data?.status === "ok") {
-      document.title = `${data.data.title} - ${SiteName}`;
+      const previousTitle = document.title;
+      const title = `${data.data.title} - ${SiteName}`;
+      document.title = title;
+      return () => {
+        if (document.title === title) document.title = previousTitle;
+      };
     }
   }, [data]);
 

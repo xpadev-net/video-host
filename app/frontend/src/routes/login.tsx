@@ -7,6 +7,7 @@ import { SiteName } from "@/contexts/env";
 import { getSafeCallback, useAuth } from "@/hooks/useAuth";
 import { authClient } from "@/lib/auth-client";
 import { type AuthConfig, getAuthConfig } from "@/service/getAuthConfig";
+import { getAuthErrorMessage } from "@/utils/authErrorMessage";
 
 type LoginSearch = { callback?: string; error?: string };
 
@@ -93,7 +94,7 @@ function LoginRoute() {
     try {
       const { error } = await authClient.signIn.email({ email, password });
       if (error)
-        handleAuthError("メールアドレスまたはパスワードが正しくありません");
+        handleAuthError(getAuthErrorMessage(error, "ログインに失敗しました"));
       else await handleAuthSuccess();
     } catch {
       handleAuthError("ネットワークエラーが発生しました");
