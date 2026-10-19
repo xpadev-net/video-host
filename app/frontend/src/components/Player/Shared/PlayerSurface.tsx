@@ -67,10 +67,23 @@ export function PlayerSurface({
       ref={wrapperRef}
       id={id}
     >
-      <button
-        className="relative block h-auto w-full overflow-hidden border-0 bg-black p-0"
+      {/* A div, not a <button>: the video and overlays inside would otherwise be
+          nested in an interactive element. It has no native Space/Enter
+          activation, so the keyboard handler and onKeyDown below are the only
+          paths and a key press can never toggle twice. */}
+      {/* biome-ignore lint/a11y/useSemanticElements: the surface wraps a <video>, which a <button> may not contain */}
+      <div
+        data-player-surface
+        role="button"
+        tabIndex={0}
+        className="relative block h-auto w-full overflow-hidden bg-black"
         onClick={isMobile ? toggleControls : togglePlayback}
-        type="button"
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget || e.key !== "Enter") return;
+          e.preventDefault();
+          if (isMobile) toggleControls();
+          else togglePlayback();
+        }}
         aria-label={
           isMobile
             ? "Show or hide video controls"
@@ -124,9 +137,9 @@ export function PlayerSurface({
           />
           <PlayerStatusDisplay />
         </div>
-      </button>
-      {/* Outside the <button>: its descendants are flattened for assistive
-          technology, so an alert inside it would not be announced. */}
+      </div>
+      {/* Outside the role="button" surface: its descendants are presentational
+          for assistive technology, so an alert inside it would not be announced. */}
       {state.error && (
         <div
           role="alert"
