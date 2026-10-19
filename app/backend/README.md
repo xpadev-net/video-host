@@ -80,3 +80,7 @@ Auth sessions are stored in MySQL, cookie caching is disabled, and logout revoke
     pnpm build
 
 Deterministic handler/unit tests are not a substitute for real MySQL, external IdP, or production ingress tests. The migration guide lists the required deployment checks.
+
+## Middleware order
+
+Authentication runs before `trimTrailingSlash`, deliberately: anonymous requests for a trailing-slash variant of a protected path get 401 rather than a redirect, so the redirect cannot be used to discover which routes exist. Only the exact `/api/v4/auth/config/` alias is public.

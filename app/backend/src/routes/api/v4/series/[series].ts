@@ -131,7 +131,7 @@ export const seriesDetailRoute = app
       return ok(c, filteredSeries);
     }
 
-    return ok(c, filterSeries(series));
+    return ok(c, formatSeries(filterSeries(series)));
   })
   .patch("/:series", zValidator("json", SeriesPatchSchema), async (c) => {
     const user = c.get("user");
@@ -180,7 +180,7 @@ export const seriesDetailRoute = app
         },
       },
     });
-    return ok(c, filterSeries(series));
+    return ok(c, formatSeries(filterSeries(series)));
   })
   .delete("/:series", async (c) => {
     const user = c.get("user");
@@ -366,7 +366,7 @@ export const seriesDetailRoute = app
       notFound("Series not found");
     }
 
-    return ok(c, filterSeries(updatedSeries));
+    return ok(c, formatSeries(filterSeries(updatedSeries)));
   })
   .delete("/:series/movies/:movie", async (c) => {
     const user = c.get("user");
@@ -468,7 +468,7 @@ export const seriesDetailRoute = app
         notFound("Series not found");
       }
 
-      return ok(c, filterSeries(updatedSeries));
+      return ok(c, formatSeries(filterSeries(updatedSeries)));
     },
   );
 

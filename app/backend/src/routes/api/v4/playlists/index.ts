@@ -4,11 +4,12 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import {
-  type FilteredPlaylist,
+  type FormattedPlaylist,
   type PaginatedResponse,
   ZBasicVisibility,
 } from "@/@types/models";
 import { filterPlaylist } from "@/lib/filter";
+import { formatPlaylist } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import {
   buildMovieAccessWhere,
@@ -59,7 +60,11 @@ export const playlistsRoute = app
       where.authorId = user.role === "ADMIN" && author ? author : user.id;
     }
 
-    const totalCount = await prisma.playlist.count({ where });
+    // `distinct` collapses rows by title, so the total has to count titles too
+    // or the paging metadata drifts from what the page query returns.
+    const totalCount = suggest
+      ? (await prisma.playlist.groupBy({ by: ["title"], where })).length
+      : await prisma.playlist.count({ where });
 
     const playlists = await prisma.playlist.findMany({
       where,
@@ -93,8 +98,8 @@ export const playlistsRoute = app
     const hasNext = page < totalPages;
     const hasPrev = page > 1;
 
-    const response: PaginatedResponse<FilteredPlaylist> = {
-      items: playlists.map(filterPlaylist),
+    const response: PaginatedResponse<FormattedPlaylist> = {
+      items: playlists.map((p) => formatPlaylist(filterPlaylist(p))),
       pagination: {
         page,
         limit,
@@ -140,7 +145,7 @@ export const playlistsRoute = app
       },
     });
 
-    return ok(c, filterPlaylist(playlist));
+    return ok(c, formatPlaylist(filterPlaylist(playlist)));
   })
   .route("/", playlistDetailRoute);
 

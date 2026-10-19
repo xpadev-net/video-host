@@ -1,14 +1,15 @@
 import { zValidator } from "@hono/zod-validator";
-import type { Prisma } from "@prisma/client"; // Fix: Prisma import
+import type { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import {
-  type FilteredSeries,
+  type FormattedSeries,
   type PaginatedResponse,
   ZBasicVisibility,
 } from "@/@types/models";
 import { filterSeries } from "@/lib/filter";
+import { formatSeries } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import { seriesDetailRoute } from "@/routes/api/v4/series/[series]";
 import {
@@ -59,7 +60,11 @@ export const seriesRoute = app
     }
 
     // Get total count for pagination metadata
-    const totalCount = await prisma.series.count({ where });
+    // `distinct` collapses rows by title, so the total has to count titles too
+    // or the paging metadata drifts from what the page query returns.
+    const totalCount = suggest
+      ? (await prisma.series.groupBy({ by: ["title"], where })).length
+      : await prisma.series.count({ where });
 
     const series = await prisma.series.findMany({
       include: suggest
@@ -98,8 +103,8 @@ export const seriesRoute = app
     const hasNext = page < totalPages;
     const hasPrev = page > 1;
 
-    const response: PaginatedResponse<FilteredSeries> = {
-      items: series.map(filterSeries),
+    const response: PaginatedResponse<FormattedSeries> = {
+      items: series.map((s) => formatSeries(filterSeries(s))),
       pagination: {
         page,
         limit,
@@ -139,7 +144,7 @@ export const seriesRoute = app
         },
       },
     });
-    return ok(c, filterSeries(series));
+    return ok(c, formatSeries(filterSeries(series)));
   })
   .route("/", seriesDetailRoute);
 

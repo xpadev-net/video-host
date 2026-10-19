@@ -201,10 +201,12 @@ export const movieRoute = app
     });
     return ok(
       c,
-      filterMovie({
-        ...movie,
-        viewers: movie.viewers.map((viewer) => viewer.user),
-      }),
+      formatMovie(
+        filterMovie({
+          ...movie,
+          viewers: movie.viewers.map((viewer) => viewer.user),
+        }),
+      ),
     );
   })
   .delete("/:movie", async (c) => {

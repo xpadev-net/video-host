@@ -68,16 +68,8 @@ export const addEncodeJob = async (job: EncodeJob): Promise<void> => {
   await client.lPush(ENCODE_QUEUE_KEY, JSON.stringify(job));
 };
 
-export const getEncodeJob = async (): Promise<EncodeJob | null> => {
-  const client = await getRedisClient();
-  const result = await client.rPop(ENCODE_QUEUE_KEY);
-  if (!result) return null;
-  return JSON.parse(result) as EncodeJob;
-};
-
 // Progress tracking
 export const ENCODE_PROGRESS_PREFIX = "video:encode:progress:";
-export const ENCODE_PROCESSING_KEY = "video:encode:processing";
 
 export interface EncodeProgress {
   status: "queued" | "processing" | "retrying" | "completed" | "failed";
