@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { useStickySWR } from "../src/hooks/useStickySWR";
 
 describe("useStickySWR", () => {
-  it("keeps the last successful result while the next key loads", async () => {
+  it("keeps results while loading and clears them when the key is disabled", async () => {
     const cache = new Map();
     const wrapper = ({ children }: { children: ReactNode }) => (
       <SWRConfig
@@ -31,7 +31,14 @@ describe("useStickySWR", () => {
 
     await waitFor(() => expect(result.current.data).toBe("/second"));
 
+    rerender({ key: "" });
+    expect(result.current.data).toBeUndefined();
+
+    rerender({ key: "/third" });
+    expect(result.current.data).toBeUndefined();
+    await waitFor(() => expect(result.current.data).toBe("/third"));
+
     rerender({ key: null });
-    expect(result.current.data).toBe("/second");
+    expect(result.current.data).toBeUndefined();
   });
 });

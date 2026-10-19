@@ -78,7 +78,7 @@ VITE_REQUIRE_SIGNUP_CODE
 
 `VITE_API_ENDPOINT` is optional; leave it empty to use the same-origin API proxy. Set server-only `API_UPSTREAM_URL` to the backend origin (`http://127.0.0.1:3001` locally, `http://backend:3000` in the container). Never expose that upstream or auth secrets as VITE_ values. The Vite/Nitro proxy forwards only `/api/auth/*` and `/api/v4/*`, preserves cookies/Origin/streaming responses, and does not follow redirects. Container builds embed placeholder values from `docker/.env.placeholder`; `docker/env-replacer.sh` replaces those placeholders in `.output/public` and `.output/server` at startup so client assets and server-rendered HTML use the deployment's runtime values.
 
-Server runtime settings also include `HOST` (default `0.0.0.0`) and `PORT` (default `3000`). Optional metrics export uses standard `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` and `OTEL_SERVICE_NAME` variables.
+Server runtime settings also include `HOST` (default `0.0.0.0`) and `PORT` (default `3000`). Vite binds to loopback by default; set `DEV_SERVER_HOST=0.0.0.0` only when remote or container development needs network access, and only on a trusted network. Optional metrics export uses standard `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` and `OTEL_SERVICE_NAME` variables.
 
 ## Implementation notes
 

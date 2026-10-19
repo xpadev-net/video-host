@@ -2,7 +2,7 @@
 rule_schema_version: 2
 suite_id: "rules-20260831-tanstack-start"
 rule_file: "common"
-last_updated: "2026-10-01"
+last_updated: "2026-10-19"
 ---
 
 # Common Repository Rules
@@ -15,7 +15,7 @@ last_updated: "2026-10-01"
 
 - Build backend declarations before frontend typecheck or build: `pnpm -F @video-host/backend build`.
 - For frontend TypeScript or CSS changes, run `pnpm -F @video-host/frontend lint`, `pnpm -F @video-host/frontend typecheck`, and `pnpm -F @video-host/frontend build`.
-- For workspace integration, run `pnpm -F @video-host/backend test`, `pnpm -F @video-host/frontend test`, `pnpm lint`, `pnpm typecheck`, and `pnpm build`.
+- For workspace integration, run `pnpm -F @video-host/backend test`, `pnpm -F @video-host/frontend test:all` after building with `app/frontend/docker/.env.placeholder`, `pnpm lint`, `pnpm typecheck`, and `pnpm build`.
 - For frontend container changes, build and start the image, then verify `GET /api/healthz` on port 3000.
 - CI and release changes use `.github/workflows/ci.yaml` as the validation contract: package lint/format/typechecks, Prisma migration drift, frontend/backend builds and tests, production Kustomize schema validation, and non-publishing multi-platform Docker builds.
 - Keep Node versions aligned through `.nvmrc`; Docker build workflows derive the full Debian image tag from that version.
