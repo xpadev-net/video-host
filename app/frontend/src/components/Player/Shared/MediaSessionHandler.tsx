@@ -3,6 +3,7 @@ import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { type FC, useEffect, useMemo } from "react";
 import { VideoRefAtom } from "@/atoms/Player";
+import { SEEK_SECONDS } from "@/components/Player/constants";
 import { findNext, findPrev } from "@/components/Player/utils/findPrevNext";
 
 type Props = {
@@ -22,20 +23,20 @@ const MediaSessionHandler: FC<Props> = ({ data }) => {
     () => ({
       seekbackward: () => {
         if (!videoRef) return;
-        const time = videoRef.currentTime - 5;
+        const time = videoRef.currentTime - SEEK_SECONDS;
         if (time < 0) {
           videoRef.currentTime = 0;
         } else {
-          videoRef.currentTime -= 5;
+          videoRef.currentTime -= SEEK_SECONDS;
         }
       },
       seekforward: () => {
         if (!videoRef) return;
-        const time = videoRef.currentTime + 5;
+        const time = videoRef.currentTime + SEEK_SECONDS;
         if (time > videoRef.duration) {
           videoRef.currentTime = videoRef.duration;
         } else {
-          videoRef.currentTime += 5;
+          videoRef.currentTime += SEEK_SECONDS;
         }
       },
       nexttrack: next

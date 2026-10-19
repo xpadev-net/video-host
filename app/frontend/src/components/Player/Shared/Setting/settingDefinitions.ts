@@ -16,8 +16,9 @@ import {
   VideoRefAtom,
   WrapperRefAtom,
 } from "@/atoms/Player";
+import { PLAYBACK_RATES } from "@/components/Player/constants";
 
-const suggestedRate = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 4];
+const suggestedRate = PLAYBACK_RATES;
 
 // ヘルパー関数: 型安全なSelectionItemを作成
 const createSelectionItem = <T>(

@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { type FC, useEffect } from "react";
+import { type FC, useEffect, useRef } from "react";
 import {
   PlayerConfigAtom,
   PlayerPlaybackRateAtom,
@@ -10,9 +10,12 @@ import {
   PlayerStateAtom,
   VideoRefAtom,
 } from "@/atoms/Player";
+import { PLAYBACK_RATES, SEEK_SECONDS } from "@/components/Player/constants";
 import { findNext, findPrev } from "@/components/Player/utils/findPrevNext";
+import { shouldIgnoreShortcut } from "@/components/Player/utils/shortcuts";
 
-const rates = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 4];
+// How long the seek / play-pause indicators stay on screen.
+const NOTIFICATION_MS = 100;
 
 type Props = {
   data: FormattedMovie;
@@ -22,22 +25,48 @@ const KeyboardHandler: FC<Props> = ({ data }) => {
   const videoRef = useAtomValue(VideoRefAtom);
   const [_playerConfig, setPlayerConfig] = useAtom(PlayerConfigAtom);
   const setPlaybackRate = useSetAtom(PlayerPlaybackRateAtom);
-  const setVideoMetadata = useSetAtom(PlayerStateAtom);
+  const [playerState, setVideoMetadata] = useAtom(PlayerStateAtom);
   const setSeekNotification = useSetAtom(PlayerSeekNotificationAtom);
   const setPlayPauseNotification = useSetAtom(PlayerPlayPauseNotificationAtom);
   const navigate = useNavigate();
 
+  // Read by the key handler without re-registering it on every state change.
+  const isFullscreenRef = useRef(playerState.isFullscreen);
+  isFullscreenRef.current = playerState.isFullscreen;
+
+  // One timer per indicator: a new notification replaces the pending clear of
+  // the previous one instead of being wiped by it, and nothing fires after
+  // unmount.
+  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playPauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+      if (playPauseTimerRef.current) clearTimeout(playPauseTimerRef.current);
+      // The timers were the only thing resetting these global indicators, so
+      // reset them too or a later player would show a stale one.
+      setSeekNotification(null);
+      setPlayPauseNotification(null);
+    },
+    [setSeekNotification, setPlayPauseNotification],
+  );
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!videoRef || !data) return false;
+      if (shouldIgnoreShortcut(e)) return false;
       if (e.code === "ArrowRight" || e.code === "ArrowLeft") {
         e.preventDefault();
-        const seekSeconds = 5;
+        const seekSeconds = SEEK_SECONDS;
         const direction = e.code === "ArrowRight" ? "forward" : "backward";
         videoRef.currentTime +=
           seekSeconds * (direction === "forward" ? 1 : -1);
         setSeekNotification({ direction, seconds: seekSeconds });
-        setTimeout(() => setSeekNotification(null), 100);
+        if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+        seekTimerRef.current = setTimeout(
+          () => setSeekNotification(null),
+          NOTIFICATION_MS,
+        );
         return true;
       }
       if (e.code === "ArrowUp" || e.code === "ArrowDown") {
@@ -49,10 +78,11 @@ const KeyboardHandler: FC<Props> = ({ data }) => {
       if ((e.code === "Period" || e.code === "Comma") && e.shiftKey) {
         e.preventDefault();
         setPlaybackRate((prev) => {
-          const key = rates.indexOf(prev) + (e.code === "Period" ? 1 : -1);
-          if (!rates[key]) return prev;
-          videoRef.playbackRate = rates[key];
-          return rates[key];
+          const key =
+            PLAYBACK_RATES.indexOf(prev) + (e.code === "Period" ? 1 : -1);
+          if (!PLAYBACK_RATES[key]) return prev;
+          videoRef.playbackRate = PLAYBACK_RATES[key];
+          return PLAYBACK_RATES[key];
         });
         return true;
       }
@@ -61,7 +91,11 @@ const KeyboardHandler: FC<Props> = ({ data }) => {
         const action = videoRef.paused ? "play" : "pause";
         void (videoRef.paused ? videoRef.play() : videoRef.pause());
         setPlayPauseNotification({ action });
-        setTimeout(() => setPlayPauseNotification(null), 100);
+        if (playPauseTimerRef.current) clearTimeout(playPauseTimerRef.current);
+        playPauseTimerRef.current = setTimeout(
+          () => setPlayPauseNotification(null),
+          NOTIFICATION_MS,
+        );
         return true;
       }
       if ((e.code === "KeyN" || e.code === "KeyP") && e.shiftKey) {
@@ -76,6 +110,9 @@ const KeyboardHandler: FC<Props> = ({ data }) => {
         setPlayerConfig((prev) => ({ ...prev, isTheatre: !prev.isTheatre }));
         return true;
       }
+      // Escape only belongs to the player while it is fullscreen; otherwise
+      // leave it to menus, dialogs and the browser.
+      if (e.code === "Escape" && !isFullscreenRef.current) return false;
       if (e.code === "KeyF" || e.code === "Escape") {
         e.preventDefault();
         setVideoMetadata((prev) => ({
