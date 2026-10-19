@@ -63,8 +63,10 @@ pnpm build
 
 Kubernetes manifests are under `k8s/`. The production overlay expects externally managed MySQL, Redis, S3-compatible storage, and an Ingress. Set the production values in `k8s/overlays/prod/kustomization.yaml` and replace every `CHANGE_ME` secret; the files in `k8s/base/config` are reference samples and are not consumed by the production overlay. Never apply sample credentials to a live deployment. Render the overlay with `kubectl kustomize k8s/overlays/prod` before deployment. Authentication cutover, database backup requirements, OIDC configuration, and proxy trust are documented in [the Better Auth migration and deployment guide](docs/better-auth-migration.md). Release images are built by the GitHub Actions release workflow; see [CONTRIBUTING.md](CONTRIBUTING.md) before changing release configuration.
 
-To publish a release, use **Actions → Release → Run workflow**. Choose the version bump (`patch`, `minor`, or `major`) and select which of the backend, frontend, and worker to release. Review the resulting workflow runs and image tags before deploying them.
+To prepare a release, use **Actions → Release → Run workflow**. Choose the version bump (`patch`, `minor`, or `major`) and select the packages to release. The workflow opens a version-bump PR and dispatches CI for that branch. Review and merge the PR to build multi-architecture images tagged with the package version and commit SHA, publish SBOMs and signed provenance attestations, and create GitHub Releases with generated notes. Kubernetes uses version tags; the workflow does not publish or deploy mutable `latest` tags. Manually pushed `backend-v*`, `frontend-v*`, and `ffmpeg-worker-v*` tags remain supported for recovery.
 
 ## Security
+
+Dependabot groups weekly npm and GitHub Actions updates. Renovate groups the `.nvmrc` and Docker Node base versions so runtime upgrades stay aligned.
 
 Please report suspected vulnerabilities privately. See [SECURITY.md](SECURITY.md) for the reporting process.

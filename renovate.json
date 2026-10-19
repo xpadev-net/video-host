@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "schedule:weekly"],
+  "enabledManagers": ["nvm", "custom.regex"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^app\\/[^/]+\\/Dockerfile$/"],
+      "matchStrings": [
+        "ARG NODE_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)-bookworm-slim"
+      ],
+      "depNameTemplate": "node",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "node"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchPackageNames": ["node"],
+      "groupName": "Node runtime"
+    }
+  ]
+}

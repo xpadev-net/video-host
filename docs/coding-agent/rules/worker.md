@@ -24,7 +24,7 @@ last_updated: "2026-10-01"
 | Frontend dependencies/config | frozen install, backend build, frontend typecheck, build, test:proxy and test:runtime-env | Confirm generated route-tree handling. |
 | Routes/navigation/player | frontend checks, frontend test, backend auth tests plus browser probe | Verify dynamic params, auth callback, and player continuity. |
 | Docker/env/start | image build, container start, runtime env replacement, health request | Confirm port 3000 and `/api/healthz`. |
-| CI/release | workflow review plus representative local commands | CI format checks must not mutate files. |
+| CI/release | workflow review plus representative local commands | CI format checks must not mutate files. Release builds wait for CI on both the version-bump PR and merge commit, then publish immutable version/SHA image tags with SBOM and signed provenance. |
 
 ## Mechanical Gate Candidates
 

@@ -20,4 +20,4 @@ Use the pull request template. Explain the problem, summarize the implementation
 
 ## Releases
 
-Releases are managed through the repository's GitHub Actions release workflow. Follow its version selection and review the produced artifacts before deployment. Do not manually change package versions or publish tags outside the workflow.
+Releases are managed through the repository's GitHub Actions release workflow. Run it to open a package version-bump PR, then review its dispatched CI run and merge the PR to publish multi-architecture images with immutable version/SHA tags, SBOMs, signed provenance attestations, and GitHub Release notes. Kubernetes deploys version tags from the production overlay. If recovery requires a manually pushed component version tag, that tag triggers the same publication workflow. Do not publish mutable `latest` image tags.
