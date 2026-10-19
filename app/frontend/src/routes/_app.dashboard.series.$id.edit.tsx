@@ -2,7 +2,10 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { BasicVisibility, FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { selectedProfileIdAtom } from "@/atoms/SelectedAccount";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { MovieManager } from "@/components/Dashboard/MovieManager";
 import { authClient } from "@/lib/auth-client";
@@ -24,8 +27,20 @@ function EditSeriesPage() {
   const { data: authSession, isPending: sessionPending } =
     authClient.useSession();
   const session = authSession?.user.id;
+  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   const fetchGenerationRef = useRef(0);
+  const selectionGenerationRef = useRef(0);
+  const submissionIdRef = useRef(0);
+  const previousSelectionRef = useRef({ selectedAccountId, selectedProfileId });
+  const currentSelectionRef = useRef({ selectedAccountId, selectedProfileId });
+  if (
+    currentSelectionRef.current.selectedAccountId !== selectedAccountId ||
+    currentSelectionRef.current.selectedProfileId !== selectedProfileId
+  ) {
+    currentSelectionRef.current = { selectedAccountId, selectedProfileId };
+    selectionGenerationRef.current += 1;
+  }
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -35,6 +50,17 @@ function EditSeriesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (
+      previousSelectionRef.current.selectedAccountId === selectedAccountId &&
+      previousSelectionRef.current.selectedProfileId === selectedProfileId
+    )
+      return;
+    previousSelectionRef.current = { selectedAccountId, selectedProfileId };
+    setIsSubmitting(false);
+    setError(null);
+  }, [selectedAccountId, selectedProfileId]);
 
   useEffect(() => {
     const generation = ++fetchGenerationRef.current;
@@ -92,23 +118,31 @@ function EditSeriesPage() {
 
     setIsSubmitting(true);
     setError(null);
+    const selectionGeneration = selectionGenerationRef.current;
+    const submissionId = ++submissionIdRef.current;
 
     try {
-      const res = await client.api.v4.series[":series"].$patch({
-        param: { series: id },
-        json: {
-          title: title.trim(),
-          description: description.trim(),
-          visibility,
+      const res = await client.api.v4.series[":series"].$patch(
+        {
+          param: { series: id },
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+          },
         },
-      });
+        { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+      );
 
       if (!res.ok) throw new Error("Failed to update");
 
-      await navigate({ to: "/dashboard/series" });
+      if (selectionGenerationRef.current === selectionGeneration)
+        await navigate({ to: "/dashboard/series" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "更新に失敗しました");
-      setIsSubmitting(false);
+      if (selectionGenerationRef.current === selectionGeneration)
+        setError(err instanceof Error ? err.message : "更新に失敗しました");
+    } finally {
+      if (submissionIdRef.current === submissionId) setIsSubmitting(false);
     }
   };
 

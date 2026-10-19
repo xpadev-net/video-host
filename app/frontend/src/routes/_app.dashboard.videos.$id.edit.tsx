@@ -13,7 +13,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { selectedProfileIdAtom } from "@/atoms/SelectedAccount";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { ApiEndpoint } from "@/contexts/env";
@@ -40,6 +43,7 @@ function EditVideoPage() {
   const { data: authSession, isPending: sessionPending } =
     authClient.useSession();
   const session = authSession?.user.id;
+  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const selectedProfileId = useAtomValue(selectedProfileIdAtom);
 
   const [movie, setMovie] = useState<FormattedMovie | null>(null);
@@ -57,6 +61,28 @@ function EditVideoPage() {
   const { resume, state: uploadState } = useUpload();
   const resumeFileInputRef = useRef<HTMLInputElement>(null);
   const fetchGenerationRef = useRef(0);
+  const selectionGenerationRef = useRef(0);
+  const submissionIdRef = useRef(0);
+  const previousSelectionRef = useRef({ selectedAccountId, selectedProfileId });
+  const currentSelectionRef = useRef({ selectedAccountId, selectedProfileId });
+  if (
+    currentSelectionRef.current.selectedAccountId !== selectedAccountId ||
+    currentSelectionRef.current.selectedProfileId !== selectedProfileId
+  ) {
+    currentSelectionRef.current = { selectedAccountId, selectedProfileId };
+    selectionGenerationRef.current += 1;
+  }
+
+  useEffect(() => {
+    if (
+      previousSelectionRef.current.selectedAccountId === selectedAccountId &&
+      previousSelectionRef.current.selectedProfileId === selectedProfileId
+    )
+      return;
+    previousSelectionRef.current = { selectedAccountId, selectedProfileId };
+    setIsSubmitting(false);
+    setError(null);
+  }, [selectedAccountId, selectedProfileId]);
 
   const fetchMovie = useCallback(async () => {
     const generation = ++fetchGenerationRef.current;
@@ -220,26 +246,34 @@ function EditVideoPage() {
 
     setIsSubmitting(true);
     setError(null);
+    const selectionGeneration = selectionGenerationRef.current;
+    const submissionId = ++submissionIdRef.current;
 
     try {
-      const res = await client.api.v4.movies[":movie"].$patch({
-        param: { movie: id },
-        json: {
-          title: title.trim(),
-          description: description.trim(),
-          visibility,
-          viewerIds: viewers.map((viewer) => viewer.id),
+      const res = await client.api.v4.movies[":movie"].$patch(
+        {
+          param: { movie: id },
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+            viewerIds: viewers.map((viewer) => viewer.id),
+          },
         },
-      });
+        { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+      );
 
       if (!res.ok) {
         throw new Error("Failed to update");
       }
 
-      await navigate({ to: "/dashboard/videos" });
+      if (selectionGenerationRef.current === selectionGeneration)
+        await navigate({ to: "/dashboard/videos" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "更新に失敗しました");
-      setIsSubmitting(false);
+      if (selectionGenerationRef.current === selectionGeneration)
+        setError(err instanceof Error ? err.message : "更新に失敗しました");
+    } finally {
+      if (submissionIdRef.current === submissionId) setIsSubmitting(false);
     }
   };
 
