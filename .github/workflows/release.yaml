@@ -154,28 +154,26 @@ jobs:
           set -euo pipefail
           wait_for_ci() {
             local sha="$1"
-            local event="$2"
             local run_id=""
             for ((attempt = 0; attempt < 60; attempt++)); do
-              run_id="$(gh run list --workflow ci.yaml --commit "$sha" --event "$event" --json databaseId --jq '.[0].databaseId // empty')"
+              run_id="$(gh run list --workflow ci.yaml --commit "$sha" --json databaseId,status,conclusion --jq '[.[] | select(.status != "completed" or .conclusion == "success")][0].databaseId // empty')"
               [ -n "$run_id" ] && break
               sleep 5
             done
             if [ -z "$run_id" ]; then
-              echo "No CI run found for $event commit $sha" >&2
+              echo "No successful or active CI run found for commit $sha" >&2
               return 1
             fi
             gh run watch "$run_id" --exit-status
           }
-          wait_for_ci "$PR_HEAD_SHA" workflow_dispatch
-          wait_for_ci "$MERGE_SHA" push
+          wait_for_ci "$PR_HEAD_SHA"
+          wait_for_ci "$MERGE_SHA"
 
       - name: Determine selected images and release versions
         id: release
         env:
           EVENT_NAME: ${{ github.event_name }}
           TAG_NAME: ${{ github.ref_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           set -euo pipefail
@@ -195,7 +193,7 @@ jobs:
             exit 0
           fi
 
-          CHANGED="$(git diff --name-only "$BASE_SHA" "$MERGE_SHA")"
+          CHANGED="$(git diff --name-only "$MERGE_SHA^1" "$MERGE_SHA")"
           for entry in 'backend:app/backend/package.json' 'frontend:app/frontend/package.json' 'worker:app/ffmpeg-worker/package.json'; do
             PACKAGE="${entry%%:*}"
             FILE="${entry#*:}"
@@ -402,6 +400,7 @@ jobs:
       - name: Create GitHub Releases with generated notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           COMMIT_SHA: ${{ needs.prepare-release.outputs.commit_sha }}
           BACKEND: ${{ needs.prepare-release.outputs.backend }}
           BACKEND_VERSION: ${{ needs.prepare-release.outputs.backend_version }}
