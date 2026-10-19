@@ -75,12 +75,14 @@ function NewVideoPage() {
   // in flight; once it lands, the encode keeps running server-side and leaving
   // is safe. beforeunload only covers real navigation, so client-side route
   // changes need their own confirm gate.
-  const needsLeaveGuard = isBusy || savePending;
+  const needsLeaveGuard = isBusy || savePending || cancelDeletePending;
   useBlocker({
     shouldBlockFn: async () =>
       !(await confirm({
         title: "アップロード中です",
-        description: "このページを離れると進行中のアップロードが中断されます。",
+        description: cancelDeletePending
+          ? "アップロード記録の削除が完了するまでページを離れないでください。"
+          : "このページを離れると進行中のアップロードが中断されます。",
         confirmLabel: "ページを離れる",
         destructive: true,
       })),
@@ -271,7 +273,9 @@ function NewVideoPage() {
       const res = await client.api.v4.movies[":movie"].$delete({
         param: { movie: id },
       });
-      if (!res.ok) throw new Error("Failed to delete canceled upload");
+      if (!res.ok && Number(res.status) !== 404) {
+        throw new Error("Failed to delete canceled upload");
+      }
       clearCanceledUpload();
     } catch {
       setCancelDeleteFailed(true);
