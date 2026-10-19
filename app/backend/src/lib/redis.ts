@@ -108,16 +108,45 @@ export const getEncodeProgress = async (
   return JSON.parse(result) as EncodeProgress;
 };
 
-export const getQueuePosition = async (movieId: string): Promise<number> => {
+const QUEUE_SNAPSHOT_TTL_MS = 2000;
+let queueSnapshot: {
+  expiresAt: number;
+  positions: Promise<Map<string, number>>;
+} | null = null;
+
+const loadQueuePositions = async (): Promise<Map<string, number>> => {
   const client = await getRedisClient();
   const queue = await client.lRange(ENCODE_QUEUE_KEY, 0, -1);
+  const positions = new Map<string, number>();
   for (let i = 0; i < queue.length; i++) {
-    const job = JSON.parse(queue[i]) as EncodeJob;
-    if (job.movieId === movieId) {
-      return queue.length - i; // Position from end (1 = next to process)
+    try {
+      const job = JSON.parse(queue[i]) as EncodeJob;
+      // Position from end (1 = next to process)
+      if (!positions.has(job.movieId)) {
+        positions.set(job.movieId, queue.length - i);
+      }
+    } catch {
+      // Skip malformed entries
     }
   }
-  return -1; // Not in queue
+  return positions;
+};
+
+// The whole queue is scanned at most once per TTL and shared by every SSE
+// connection, so the cost no longer scales with connections x queue length.
+export const getQueuePosition = async (movieId: string): Promise<number> => {
+  const now = Date.now();
+  if (!queueSnapshot || queueSnapshot.expiresAt <= now) {
+    const positions = loadQueuePositions();
+    const snapshot = { expiresAt: now + QUEUE_SNAPSHOT_TTL_MS, positions };
+    queueSnapshot = snapshot;
+    // Do not cache failures
+    positions.catch(() => {
+      if (queueSnapshot === snapshot) queueSnapshot = null;
+    });
+  }
+  const positions = await queueSnapshot.positions;
+  return positions.get(movieId) ?? -1; // -1: not in queue
 };
 
 export const closeRedis = async (): Promise<void> => {

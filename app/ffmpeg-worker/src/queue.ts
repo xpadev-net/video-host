@@ -171,6 +171,7 @@ const PROCESS_RETRY_QUEUE_SCRIPT = `
   local mainQueueKey = KEYS[2]
   local now = tonumber(ARGV[1])
   local limit = tonumber(ARGV[2])
+  local progressPrefix = ARGV[3]
   
   -- Get ready jobs (score <= now) from retry queue
   local readyJobs = redis.call('ZRANGEBYSCORE', retryQueueKey, 0, now, 'LIMIT', 0, limit)
@@ -189,6 +190,13 @@ const PROCESS_RETRY_QUEUE_SCRIPT = `
       -- Only add to main queue if we successfully removed it
       redis.call('RPUSH', mainQueueKey, jobJson)
       table.insert(movedJobs, jobJson)
+      -- Publish "queued" in the same atomic step that exposes the job to
+      -- consumers, so it can never overwrite a newer state written by a
+      -- worker that already claimed the job.
+      local ok, job = pcall(cjson.decode, jobJson)
+      if ok and type(job) == 'table' and job.movieId then
+        redis.call('SET', progressPrefix .. job.movieId, '{"status":"queued"}', 'EX', 3600)
+      end
     end
   end
   
@@ -238,7 +246,7 @@ const processRetryQueueWithClient = async (
     // Execute the Lua script atomically
     const movedJobs = (await client.evalSha(processRetryQueueScriptSha, {
       keys: [RETRY_QUEUE_KEY, ENCODE_QUEUE_KEY],
-      arguments: [now.toString(), limit.toString()],
+      arguments: [now.toString(), limit.toString(), ENCODE_PROGRESS_PREFIX],
     })) as string[];
 
     if (!movedJobs || movedJobs.length === 0) {
