@@ -2,7 +2,8 @@ import type { ComponentType } from "react";
 
 export type PlayerConfig = {
   windowFullscreen: boolean;
-  autoPlay: boolean;
+  // Continue with the next movie when this one ends.
+  autoPlayNext: boolean;
   isTheatre: boolean;
 };
 

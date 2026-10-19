@@ -2,7 +2,11 @@ import { act, cleanup, render } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import { createRef, type RefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PlayerStateAtom } from "@/atoms/Player";
+import {
+  PlayerMutedAtom,
+  PlayerStateAtom,
+  PlayerVolumeAtom,
+} from "@/atoms/Player";
 
 const hlsMock = vi.hoisted(() => {
   type Handler = (event: string, data: unknown) => void;
@@ -264,6 +268,31 @@ describe("Video", () => {
     }
     expect(hls.destroy).toHaveBeenCalled();
     expect(store.get(PlayerStateAtom).error).toBeTruthy();
+  });
+
+  it("keeps the stored volume when the video is muted", () => {
+    const { videoRef } = renderVideo(movieWith(url("1.a")));
+    const video = videoRef.current;
+    if (!video) throw new Error("no video element");
+    video.volume = 0.6;
+    act(() => {
+      video.dispatchEvent(new Event("volumechange"));
+    });
+    expect(store.get(PlayerVolumeAtom)).toBeCloseTo(0.6);
+
+    video.muted = true;
+    act(() => {
+      video.dispatchEvent(new Event("volumechange"));
+    });
+    // Muting flips the flag only; the 60% survives (it used to become 0).
+    expect(store.get(PlayerMutedAtom)).toBe(true);
+    expect(store.get(PlayerVolumeAtom)).toBeCloseTo(0.6);
+  });
+
+  it("applies the stored mute flag to the element", () => {
+    store.set(PlayerMutedAtom, true);
+    const { videoRef } = renderVideo(movieWith(url("1.a")));
+    expect(videoRef.current?.muted).toBe(true);
   });
 
   it("ignores non-fatal errors", () => {

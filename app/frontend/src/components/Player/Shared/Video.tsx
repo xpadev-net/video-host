@@ -14,6 +14,7 @@ import {
   AudioTracksAtom,
   HlsRefAtom,
   PlayerConfigAtom,
+  PlayerMutedAtom,
   PlayerPlaybackRateAtom,
   PlayerStateAtom,
   PlayerVolumeAtom,
@@ -42,6 +43,7 @@ const Video = ({ className, videoRef, movie }: props) => {
   const playerConfig = useAtomValue(PlayerConfigAtom);
   const playbackRate = useAtomValue(PlayerPlaybackRateAtom);
   const [configVolume, setConfigVolume] = useAtom(PlayerVolumeAtom);
+  const [configMuted, setConfigMuted] = useAtom(PlayerMutedAtom);
   const setWatchedHistory = useSetAtom(watchedHistoryAtom);
   const setHls = useSetAtom(HlsRefAtom);
   const setAudioTracks = useSetAtom(AudioTracksAtom);
@@ -126,7 +128,11 @@ const Video = ({ className, videoRef, movie }: props) => {
   };
 
   const onVideoVolumeChange = () => {
-    setConfigVolume(videoRef.current?.volume || 0);
+    const video = videoRef.current;
+    if (!video) return;
+    // Muting changes `muted` only, so the stored volume survives it.
+    setConfigVolume(video.volume);
+    setConfigMuted(video.muted);
   };
 
   const onVideoLoadedMetadata = () => {
@@ -159,7 +165,7 @@ const Video = ({ className, videoRef, movie }: props) => {
 
   const onVideoEnded = () => {
     saveWatchedProgress(true);
-    if (!playerConfig.autoPlay || !movie) return;
+    if (!playerConfig.autoPlayNext || !movie) return;
     const next = findNext(movie);
     if (!next) return;
     void navigate({ to: "/movies/$movie", params: { movie: next.id } });
@@ -346,6 +352,11 @@ const Video = ({ className, videoRef, movie }: props) => {
     if (!videoEl) return;
     videoEl.volume = configVolume;
   }, [configVolume, videoEl]);
+
+  useEffect(() => {
+    if (!videoEl) return;
+    videoEl.muted = configMuted;
+  }, [configMuted, videoEl]);
 
   const contentUrl = movie?.variants[0]?.contentUrl;
 

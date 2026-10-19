@@ -1,4 +1,9 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  useBlocker,
+  useNavigate,
+} from "@tanstack/react-router";
 import type {
   FilteredUser,
   FormattedMovie,
@@ -13,12 +18,13 @@ import {
   useState,
 } from "react";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
+import { useConfirm } from "@/components/Feedback/FeedbackProvider";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { ApiEndpoint } from "@/contexts/env";
 import { useProfileSelectionGeneration } from "@/hooks/useProfileSelectionGeneration";
 import { useUpload } from "@/hooks/useUpload";
 import { authClient } from "@/lib/auth-client";
-import { client, getSelectedProfileId } from "@/lib/client";
+import { client } from "@/lib/client";
 
 export const Route = createFileRoute("/_app/dashboard/videos/$id/edit")({
   head: () => ({ meta: [{ title: "動画を編集" }] }),
@@ -33,8 +39,18 @@ interface EncodeProgress {
   duration?: number;
 }
 
+const isEncodeProgress = (value: unknown): value is EncodeProgress => {
+  if (typeof value !== "object" || value === null || !("status" in value)) {
+    return false;
+  }
+  return ["queued", "processing", "retrying", "completed", "failed"].includes(
+    String(value.status),
+  );
+};
+
 function EditVideoPage() {
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const { id } = Route.useParams();
   const { data: authSession, isPending: sessionPending } =
     authClient.useSession();
@@ -54,58 +70,81 @@ function EditVideoPage() {
   );
   const { resume, state: uploadState } = useUpload();
   const resumeFileInputRef = useRef<HTMLInputElement>(null);
+  const resumeActiveRef = useRef(false);
   const fetchGenerationRef = useRef(0);
-  const submissionIdRef = useRef(0);
+  const isResuming =
+    uploadState.phase === "uploading" ||
+    uploadState.phase === "completing" ||
+    uploadState.phase === "creating";
+  const hasMovie = movie !== null;
+  const movieVariantStatus = movie?.variants?.[0]?.status;
   const { selectedProfileId, generationRef: selectionGenerationRef } =
     useProfileSelectionGeneration(() => {
+      fetchGenerationRef.current += 1;
+      setMovie(null);
+      setIsLoading(true);
       setIsSubmitting(false);
       setError(null);
     });
 
-  const fetchMovie = useCallback(async () => {
-    const generation = ++fetchGenerationRef.current;
-    if (sessionPending) return;
-    if (!session) {
-      setLoadError("ログイン状態を確認できませんでした");
-      setIsLoading(false);
-      return;
-    }
+  useBlocker({
+    shouldBlockFn: async () =>
+      !(await confirm({
+        title: "アップロード中です",
+        description: "ファイルの再アップロードが完了するまで移動できません。",
+        confirmLabel: "ページを離れる",
+        destructive: true,
+      })),
+    enableBeforeUnload: isResuming,
+    disabled: !isResuming,
+  });
 
-    try {
-      const res = await client.api.v4.movies[":movie"].$get(
-        { param: { movie: id } },
-        { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
-      );
-
-      if (Number(res.status) === 404) {
-        if (generation === fetchGenerationRef.current)
-          setLoadError("動画が見つかりません");
+  const fetchMovie = useCallback(
+    async (options?: { preserveForm?: boolean }) => {
+      const generation = ++fetchGenerationRef.current;
+      if (sessionPending) return;
+      if (!session) {
+        setLoadError("ログイン状態を確認できませんでした");
+        setIsLoading(false);
         return;
       }
-      if (!res.ok) {
-        throw new Error("Failed to fetch");
-      }
 
-      const json = await res.json();
-      const movieData = json.data;
-      if (generation !== fetchGenerationRef.current) return;
-      setMovie(movieData);
-      setTitle(movieData.title);
-      setDescription(movieData.description || "");
-      setVisibility(movieData.visibility);
-      setViewers(movieData.viewers ?? []);
-    } catch {
-      if (generation === fetchGenerationRef.current)
-        setLoadError("動画の取得に失敗しました");
-    } finally {
-      if (generation === fetchGenerationRef.current) setIsLoading(false);
-    }
-  }, [id, session, sessionPending, selectedProfileId]);
+      try {
+        const res = await client.api.v4.movies[":movie"].$get(
+          { param: { movie: id } },
+          { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+        );
+
+        if (Number(res.status) === 404) {
+          if (generation === fetchGenerationRef.current)
+            setLoadError("動画が見つかりません");
+          return;
+        }
+        if (!res.ok) {
+          throw new Error("Failed to fetch");
+        }
+
+        const json = await res.json();
+        if (generation !== fetchGenerationRef.current) return;
+        const movieData = json.data;
+        setMovie(movieData);
+        if (!options?.preserveForm) {
+          setTitle(movieData.title);
+          setDescription(movieData.description || "");
+          setVisibility(movieData.visibility);
+          setViewers(movieData.viewers ?? []);
+        }
+      } catch {
+        if (generation === fetchGenerationRef.current)
+          setLoadError("動画の取得に失敗しました");
+      } finally {
+        if (generation === fetchGenerationRef.current) setIsLoading(false);
+      }
+    },
+    [id, session, sessionPending, selectedProfileId],
+  );
 
   useEffect(() => {
-    setIsLoading(true);
-    setLoadError(null);
-    setMovie(null);
     void fetchMovie();
     return () => {
       fetchGenerationRef.current += 1;
@@ -113,23 +152,27 @@ function EditVideoPage() {
   }, [fetchMovie]);
 
   const handleResumeFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
     const selectedFile = e.target.files?.[0];
-    e.target.value = "";
-    if (!selectedFile || typeof id !== "string") return;
-    const profileId = selectedProfileId;
-    const succeeded = await resume(id, selectedFile);
-    if (succeeded && getSelectedProfileId() === profileId) {
-      // Variant flipped to PROCESSING; the SSE effect picks it up.
-      await fetchMovie();
+    input.value = "";
+    if (!selectedFile || typeof id !== "string" || resumeActiveRef.current) {
+      return;
+    }
+    resumeActiveRef.current = true;
+    try {
+      const succeeded = await resume(id, selectedFile);
+      if (succeeded) {
+        // Refresh variant status without overwriting edits made during resume.
+        await fetchMovie({ preserveForm: true });
+      }
+    } finally {
+      resumeActiveRef.current = false;
     }
   };
 
   // SSE for encoding progress with authentication
   useEffect(() => {
-    if (!movie || !session) return;
-
-    const variant = movie.variants?.[0];
-    if (variant?.status !== "PROCESSING") {
+    if (!hasMovie || !session || movieVariantStatus !== "PROCESSING") {
       return;
     }
 
@@ -141,6 +184,7 @@ function EditVideoPage() {
       const { EventSourcePlus } = await import("event-source-plus");
       if (controller.signal.aborted) return;
 
+      const profileId = selectedProfileId;
       const url = new URL(
         `${ApiEndpoint}/api/v4/progress/${encodeURIComponent(id)}`,
         window.location.origin,
@@ -148,9 +192,7 @@ function EditVideoPage() {
 
       const eventSource = new EventSourcePlus(url, {
         credentials: "include",
-        headers: getSelectedProfileId()
-          ? { "X-Profile-Id": getSelectedProfileId() as string }
-          : {},
+        headers: profileId ? { "X-Profile-Id": profileId } : {},
         signal: controller.signal,
       });
 
@@ -166,7 +208,9 @@ function EditVideoPage() {
             return;
           }
           try {
-            const data = JSON.parse(event.data) as EncodeProgress;
+            const parsed: unknown = JSON.parse(event.data);
+            if (!isEncodeProgress(parsed)) return;
+            const data = parsed;
             setEncodeProgress(data);
 
             // Reload movie data when completed
@@ -174,9 +218,10 @@ function EditVideoPage() {
               controller?.abort();
               // Refresh movie data
               client.api.v4.movies[":movie"]
-                .$get({
-                  param: { movie: id },
-                })
+                .$get(
+                  { param: { movie: id } },
+                  { headers: { "X-Profile-Id": profileId ?? "" } },
+                )
                 .then(async (res) => {
                   if (!disposed && res.ok) {
                     const json = await res.json();
@@ -216,16 +261,15 @@ function EditVideoPage() {
       disposed = true;
       controller.abort();
     };
-  }, [id, movie, session]);
+  }, [hasMovie, id, movieVariantStatus, selectedProfileId, session]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || isResuming) return;
 
     setIsSubmitting(true);
     setError(null);
     const selectionGeneration = selectionGenerationRef.current;
-    const submissionId = ++submissionIdRef.current;
 
     try {
       const res = await client.api.v4.movies[":movie"].$patch(
@@ -235,7 +279,10 @@ function EditVideoPage() {
             title: title.trim(),
             description: description.trim(),
             visibility,
-            viewerIds: viewers.map((viewer) => viewer.id),
+            viewerIds:
+              visibility === "LIMITED"
+                ? viewers.map((viewer) => viewer.id)
+                : [],
           },
         },
         { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
@@ -248,10 +295,10 @@ function EditVideoPage() {
       if (selectionGenerationRef.current === selectionGeneration)
         await navigate({ to: "/dashboard/videos" });
     } catch (err) {
-      if (selectionGenerationRef.current === selectionGeneration)
+      if (selectionGenerationRef.current === selectionGeneration) {
         setError(err instanceof Error ? err.message : "更新に失敗しました");
-    } finally {
-      if (submissionIdRef.current === submissionId) setIsSubmitting(false);
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -273,11 +320,6 @@ function EditVideoPage() {
   const variant = movie.variants?.[0];
   const isEncoding = variant?.status === "PROCESSING";
   const isUploadPending = variant?.status === "UPLOADING";
-  const isResuming =
-    uploadState.phase === "uploading" ||
-    uploadState.phase === "completing" ||
-    uploadState.phase === "creating";
-
   return (
     <>
       <div className="edit-page">
@@ -349,6 +391,7 @@ function EditVideoPage() {
                   type="button"
                   className="self-start cursor-pointer rounded-lg border border-[#eab308] bg-transparent px-5 py-2.5 font-medium text-[#eab308] hover:bg-[rgba(234,179,8,0.15)]"
                   onClick={() => resumeFileInputRef.current?.click()}
+                  disabled={isResuming || resumeActiveRef.current}
                 >
                   アップロードを再開
                 </button>
@@ -364,6 +407,7 @@ function EditVideoPage() {
           type="file"
           accept="video/*"
           onChange={(e) => void handleResumeFileChange(e)}
+          disabled={isResuming}
           hidden
         />
 
@@ -433,7 +477,7 @@ function EditVideoPage() {
             </button>
             <button
               type="submit"
-              disabled={!title.trim() || isSubmitting}
+              disabled={!title.trim() || isSubmitting || isResuming}
               className="submit-button"
             >
               {isSubmitting ? "保存中..." : "保存"}
