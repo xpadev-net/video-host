@@ -67,6 +67,8 @@ services:
       - ./nginx:/etc/nginx:ro
     depends_on:
       - minio
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:

@@ -20,6 +20,7 @@ dist/
 
 # testing
 coverage/
+.playwright-cli/
 
 # logs
 logs/

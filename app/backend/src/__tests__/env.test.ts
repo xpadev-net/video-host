@@ -41,10 +41,12 @@ describe("authentication environment", () => {
     schemaKeys.add("DATABASE_URL");
     expect([...documentedKeys].sort()).toEqual([...schemaKeys].sort());
 
-    const rootExamplePath = resolve(process.cwd(), ".env.example");
-    const rootPath = existsSync(rootExamplePath)
-      ? rootExamplePath
-      : resolve(process.cwd(), "../../.env.example");
+    const workspaceRoot = existsSync(
+      resolve(process.cwd(), "pnpm-workspace.yaml"),
+    )
+      ? process.cwd()
+      : resolve(process.cwd(), "../..");
+    const rootPath = resolve(workspaceRoot, ".env.example");
     const rootExample = readFileSync(rootPath, "utf8");
     const rootKeys = new Set(
       rootExample
