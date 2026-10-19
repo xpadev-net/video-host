@@ -23,7 +23,10 @@ must have the same random value.
 MySQL, Redis, and an S3-compatible service are external dependencies and are
 not created by these manifests. Ensure their configured DNS names and ports
 are reachable from `video-host`. Egress remains available for these external
-dependencies. The production NetworkPolicies restrict application ingress.
+dependencies. The production overlay runs two replicas for each workload; the
+PodDisruptionBudgets allow at most one unavailable replica. The base install
+keeps one replica and does not block voluntary eviction. NetworkPolicies
+restrict application ingress.
 
 ## Standalone base install
 
