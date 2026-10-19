@@ -855,7 +855,18 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 // Start polling
-const pollPromise = pollForJobs().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
-});
+const verifyMediaTools = async (): Promise<void> => {
+  for (const binary of ["ffmpeg", "ffprobe"]) {
+    const { stdout } = await execFileAsync(binary, ["-version"], {
+      timeout: 5_000,
+    });
+    console.log(`${binary}: ${stdout.split("\n", 1)[0]}`);
+  }
+};
+
+const pollPromise = verifyMediaTools()
+  .then(() => pollForJobs())
+  .catch((error) => {
+    console.error("Fatal error:", error);
+    process.exit(1);
+  });

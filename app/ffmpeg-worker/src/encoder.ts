@@ -1,7 +1,146 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { FFMPEG_THREADS, TEMP_DIR } from "./env";
+import { FFMPEG_THREADS, JOB_TIMEOUT_SECONDS, TEMP_DIR } from "./env";
+
+const PROBE_TIMEOUT_MS = 30_000;
+const PROCESS_KILL_GRACE_MS = 5_000;
+const MAX_PROBE_OUTPUT_BYTES = 1024 * 1024;
+const MAX_FFMPEG_STDERR_BYTES = 8 * 1024;
+
+interface ProbeResult {
+  duration: number;
+  videoMap: string;
+}
+
+const probeMedia = async (
+  inputPath: string,
+  signal?: AbortSignal,
+): Promise<ProbeResult> => {
+  const { stdout } = await runFfprobe(
+    [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration:stream=index,codec_type,width,height:stream_disposition=attached_pic",
+      "-show_format",
+      "-show_streams",
+      "-of",
+      "json",
+      "-probesize",
+      "50M",
+      "-analyzeduration",
+      "10M",
+      inputPath,
+    ],
+    signal,
+  );
+  const parsed = JSON.parse(stdout) as {
+    format?: { duration?: string };
+    streams?: {
+      index: number;
+      codec_type?: string;
+      width?: number;
+      height?: number;
+      disposition?: { attached_pic?: number };
+    }[];
+  };
+  const duration = Number.parseFloat(parsed.format?.duration ?? "");
+  const videoStreams = (parsed.streams ?? []).filter(
+    (stream) =>
+      stream.codec_type === "video" && stream.disposition?.attached_pic !== 1,
+  );
+  const bestVideo = videoStreams.reduce<(typeof videoStreams)[number] | null>(
+    (best, stream) =>
+      !best ||
+      (stream.width ?? 0) * (stream.height ?? 0) >
+        (best.width ?? 0) * (best.height ?? 0)
+        ? stream
+        : best,
+    null,
+  );
+
+  return {
+    duration: Number.isFinite(duration) ? duration : 0,
+    videoMap: bestVideo ? `0:${bestVideo.index}` : "0:V",
+  };
+};
+
+const runFfprobe = (
+  args: string[],
+  signal?: AbortSignal,
+): Promise<{ stdout: string }> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("ffprobe aborted before start"));
+      return;
+    }
+
+    const ffprobe = spawn("ffprobe", args, {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    let stdout = "";
+    let outputBytes = 0;
+    let forcedError: Error | null = null;
+    let finished = false;
+    let killTimer: NodeJS.Timeout | undefined;
+    const timeout = setTimeout(() => {
+      forcedError = new Error(`ffprobe timed out after ${PROBE_TIMEOUT_MS}ms`);
+      terminate();
+    }, PROBE_TIMEOUT_MS);
+
+    const terminate = () => {
+      if (ffprobe.exitCode !== null || ffprobe.signalCode !== null) return;
+      ffprobe.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (ffprobe.exitCode === null && ffprobe.signalCode === null) {
+          ffprobe.kill("SIGKILL");
+        }
+      }, PROCESS_KILL_GRACE_MS);
+      killTimer.unref();
+    };
+    const onAbort = () => {
+      forcedError = new Error("ffprobe aborted");
+      terminate();
+    };
+    const finish = (error?: Error, value?: { stdout: string }) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      if (killTimer) clearTimeout(killTimer);
+      signal?.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else resolve(value as { stdout: string });
+    };
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+    ffprobe.stdout.on("data", (data: Buffer) => {
+      outputBytes += data.length;
+      if (outputBytes > MAX_PROBE_OUTPUT_BYTES) {
+        forcedError = new Error("ffprobe output exceeded 1 MiB");
+        terminate();
+        return;
+      }
+      stdout += data.toString();
+    });
+    ffprobe.on("error", (error) => finish(error));
+    ffprobe.on("close", (code, childSignal) => {
+      if (forcedError) {
+        finish(forcedError);
+      } else if (signal?.aborted) {
+        finish(new Error("ffprobe aborted"));
+      } else if (code !== 0) {
+        finish(
+          new Error(
+            `ffprobe exited with code ${code ?? "null"}${childSignal ? ` (${childSignal})` : ""}`,
+          ),
+        );
+      } else {
+        finish(undefined, { stdout });
+      }
+    });
+  });
 
 export interface EncodeResult {
   success: boolean;
@@ -20,91 +159,6 @@ export type ProgressCallback = (progress: {
 if (!existsSync(TEMP_DIR)) {
   mkdirSync(TEMP_DIR, { recursive: true });
 }
-
-// Get input file duration before encoding
-const getInputDuration = async (inputPath: string): Promise<number> => {
-  return new Promise((resolve) => {
-    const ffprobe = spawn("ffprobe", [
-      "-v",
-      "error",
-      "-show_entries",
-      "format=duration",
-      "-of",
-      "default=noprint_wrappers=1:nokey=1",
-      inputPath,
-    ]);
-
-    let stdout = "";
-    ffprobe.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    ffprobe.on("close", (code) => {
-      if (code === 0) {
-        const duration = parseFloat(stdout.trim());
-        resolve(Number.isNaN(duration) ? 0 : duration);
-      } else {
-        resolve(0);
-      }
-    });
-
-    ffprobe.on("error", () => {
-      resolve(0);
-    });
-  });
-};
-
-// Pick the highest-resolution non-cover-art video stream so explicit
-// mapping keeps FFmpeg's "best video" selection instead of the first one
-const getVideoStreamMap = async (inputPath: string): Promise<string> => {
-  return new Promise((resolve) => {
-    const ffprobe = spawn("ffprobe", [
-      "-v",
-      "error",
-      "-show_entries",
-      "stream=index,codec_type,width,height:stream_disposition=attached_pic",
-      "-of",
-      "json",
-      inputPath,
-    ]);
-
-    let stdout = "";
-    ffprobe.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    const fallback = () => resolve("0:V");
-
-    ffprobe.on("close", (code) => {
-      try {
-        if (code !== 0) return fallback();
-        const parsed = JSON.parse(stdout) as {
-          streams?: {
-            index: number;
-            codec_type?: string;
-            width?: number;
-            height?: number;
-            disposition?: { attached_pic?: number };
-          }[];
-        };
-        const videoStreams = (parsed.streams ?? []).filter(
-          (s) => s.codec_type === "video" && s.disposition?.attached_pic !== 1,
-        );
-        if (videoStreams.length === 0) return fallback();
-        const best = videoStreams.reduce((a, b) =>
-          (b.width ?? 0) * (b.height ?? 0) > (a.width ?? 0) * (a.height ?? 0)
-            ? b
-            : a,
-        );
-        resolve(`0:${best.index}`);
-      } catch {
-        fallback();
-      }
-    });
-
-    ffprobe.on("error", fallback);
-  });
-};
 
 // Parse time=HH:MM:SS.XX from ffmpeg stderr
 const parseTimeFromStderr = (line: string): number | null => {
@@ -133,18 +187,16 @@ export const encodeVideo = async (
     };
   }
 
-  // Get input duration for progress calculation
-  const inputDuration = await getInputDuration(inputPath);
-
-  // Check again after async operation (abort may have occurred during getInputDuration)
-  if (abortSignal?.aborted) {
+  let inputMetadata: ProbeResult;
+  try {
+    inputMetadata = await probeMedia(inputPath, abortSignal);
+  } catch (error) {
     return {
       success: false,
-      error: "Encoding aborted before start (timeout during download)",
+      error: `Failed to probe input: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
-
-  const videoMap = await getVideoStreamMap(inputPath);
+  const { duration: inputDuration, videoMap } = inputMetadata;
 
   return new Promise((resolve) => {
     // Ensure output directory exists
@@ -157,6 +209,7 @@ export const encodeVideo = async (
     // Keep all audio streams so multi-audio sources stay selectable when
     // packaged as HLS by nginx-vod-module.
     const ffmpegArgs = [
+      "-nostdin",
       "-i",
       inputPath,
       "-map",
@@ -193,59 +246,48 @@ export const encodeVideo = async (
 
     console.log(`Starting encode: ffmpeg ${ffmpegArgs.join(" ")}`);
 
-    const ffmpeg = spawn("ffmpeg", ffmpegArgs);
-
-    // Check if already aborted after spawning (race condition check)
-    if (abortSignal?.aborted) {
-      console.log(
-        "Encoding aborted immediately after spawn (timeout during download)",
-      );
+    const ffmpeg = spawn("ffmpeg", ffmpegArgs, {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let settled = false;
+    let stderrTail = "";
+    let timedOut = false;
+    let killTimer: NodeJS.Timeout | undefined;
+    let timeoutTimer: NodeJS.Timeout | undefined;
+    const finish = (result: EncodeResult) => {
+      if (settled) return;
+      settled = true;
+      if (killTimer) clearTimeout(killTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      abortSignal?.removeEventListener("abort", onAbort);
+      resolve(result);
+    };
+    const onAbort = () => {
+      console.log("Encoding aborted due to timeout or cancellation");
+      if (ffmpeg.exitCode !== null || ffmpeg.signalCode !== null) return;
       ffmpeg.kill("SIGTERM");
-      // Force kill after short delay
-      setTimeout(() => {
+      killTimer = setTimeout(() => {
         if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
+          console.log("Force killing FFmpeg process (SIGTERM ignored)");
           ffmpeg.kill("SIGKILL");
         }
-      }, 1000);
-      resolve({
-        success: false,
-        error: "Encoding aborted before start (timeout during download)",
-      });
-      return;
-    }
+      }, PROCESS_KILL_GRACE_MS);
+      killTimer.unref();
+    };
+    abortSignal?.addEventListener("abort", onAbort, { once: true });
+    if (abortSignal?.aborted) onAbort();
+    timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      onAbort();
+    }, JOB_TIMEOUT_SECONDS * 1000);
+    timeoutTimer.unref();
 
-    // Handle abort signal
-    if (abortSignal) {
-      abortSignal.addEventListener("abort", () => {
-        console.log("Encoding aborted due to timeout or cancellation");
-        // Check if process is still running (exitCode and signalCode are null)
-        if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
-          ffmpeg.kill("SIGTERM");
-          // Force kill after 5 seconds if still running
-          // Use exitCode/signalCode instead of killed, as killed becomes true
-          // immediately after kill() is called, not when the process actually exits
-          const killTimeout = setTimeout(() => {
-            // Check if process is still running (not terminated)
-            if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
-              console.log("Force killing FFmpeg process (SIGTERM ignored)");
-              ffmpeg.kill("SIGKILL");
-            }
-          }, 5000);
-          // Clear timeout if process exits before SIGKILL
-          ffmpeg.once("close", () => {
-            clearTimeout(killTimeout);
-          });
-        }
-      });
-    }
-
-    let stderr = "";
     let lastProgressAt = 0;
     let lastProgressPercent = -1;
     let progressCallbackInFlight = false;
     ffmpeg.stderr.on("data", (data) => {
       const line = data.toString();
-      stderr += line;
+      stderrTail = (stderrTail + line).slice(-MAX_FFMPEG_STDERR_BYTES);
 
       // Parse progress if callback provided and we have duration
       if (onProgress && inputDuration > 0) {
@@ -282,35 +324,46 @@ export const encodeVideo = async (
       }
     });
 
-    ffmpeg.on("close", (code) => {
+    ffmpeg.on("close", (code, childSignal) => {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
       // Check if aborted
       if (abortSignal?.aborted) {
-        resolve({
+        finish({
           success: false,
           error: "Encoding aborted due to timeout",
         });
         return;
       }
+      if (timedOut) {
+        finish({ success: false, error: "FFmpeg timed out" });
+        return;
+      }
 
       if (code === 0 && existsSync(outputPath)) {
         // Get duration from ffprobe
-        getDuration(outputPath).then((duration) => {
-          resolve({
-            success: true,
-            outputPath,
-            duration,
+        getDuration(outputPath, abortSignal)
+          .then((duration) => {
+            finish({ success: true, outputPath, duration });
+          })
+          .catch((error) => {
+            finish({
+              success: false,
+              error: `Failed to probe encoded output: ${error instanceof Error ? error.message : String(error)}`,
+            });
           });
-        });
       } else {
-        resolve({
+        const termination = childSignal
+          ? `terminated by ${childSignal}${childSignal === "SIGKILL" ? " (possible memory limit/OOM kill)" : ""}`
+          : `exited with code ${code ?? "null"}`;
+        finish({
           success: false,
-          error: `FFmpeg exited with code ${code}: ${stderr.slice(-500)}`,
+          error: `FFmpeg ${termination}: ${stderrTail}`,
         });
       }
     });
 
     ffmpeg.on("error", (err) => {
-      resolve({
+      finish({
         success: false,
         error: `Failed to start FFmpeg: ${err.message}`,
       });
@@ -318,9 +371,12 @@ export const encodeVideo = async (
   });
 };
 
-const getDuration = async (filePath: string): Promise<number> => {
-  return new Promise((resolve) => {
-    const ffprobe = spawn("ffprobe", [
+const getDuration = async (
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<number> => {
+  const { stdout } = await runFfprobe(
+    [
       "-v",
       "error",
       "-show_entries",
@@ -328,26 +384,11 @@ const getDuration = async (filePath: string): Promise<number> => {
       "-of",
       "default=noprint_wrappers=1:nokey=1",
       filePath,
-    ]);
-
-    let stdout = "";
-    ffprobe.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    ffprobe.on("close", (code) => {
-      if (code === 0) {
-        const duration = parseFloat(stdout.trim());
-        resolve(Number.isNaN(duration) ? 0 : Math.round(duration));
-      } else {
-        resolve(0);
-      }
-    });
-
-    ffprobe.on("error", () => {
-      resolve(0);
-    });
-  });
+    ],
+    signal,
+  );
+  const duration = Number.parseFloat(stdout.trim());
+  return Number.isFinite(duration) ? Math.round(duration) : 0;
 };
 
 const sanitizeFilename = (name: string): string => {
