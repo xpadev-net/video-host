@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { AuthForm, AuthLayout, FormField } from "@/components/Auth";
-import { RequireSignupCode, SiteName } from "@/contexts/env";
+import { SiteName } from "@/contexts/env";
 import { getSafeCallback, useAuth } from "@/hooks/useAuth";
 import { useAuthConfig } from "@/hooks/useAuthConfig";
 import { authClient } from "@/lib/auth-client";
@@ -36,7 +36,7 @@ function RegisterRoute() {
   const { authConfig, isLoading: isAuthConfigLoading } = useAuthConfig();
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sessionError, setSessionError] = useState(false);
-  const requireSignupCode = authConfig?.requireSignupCode ?? RequireSignupCode;
+  const requireSignupCode = authConfig?.requireSignupCode ?? false;
   const passwordAuthEnabled = authConfig?.passwordAuthEnabled ?? false;
 
   useEffect(() => {

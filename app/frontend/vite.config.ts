@@ -8,6 +8,27 @@ import {
   getApiProxyTarget,
 } from "./src/server/api-upstream";
 
+const securityHeaders = {
+  "Content-Security-Policy-Report-Only": [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "script-src 'self' blob:",
+    "style-src 'self'",
+    "img-src 'self' data: blob: https:",
+    "media-src 'self' blob: https:",
+    "font-src 'self' data: https:",
+    "connect-src 'self' https: wss:",
+    "worker-src 'self' blob:",
+  ].join("; "),
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "camera=(), geolocation=(), microphone=()",
+};
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const upstream =
@@ -70,6 +91,9 @@ export default defineConfig(({ mode }) => {
       }),
       nitro({
         serverDir: "./src/server",
+        routeRules: {
+          "/**": { headers: securityHeaders },
+        },
       }),
       viteReact(),
       tailwindcss(),

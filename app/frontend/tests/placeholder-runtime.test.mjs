@@ -38,9 +38,10 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
     {
       name: "unresolved",
       endpoint: "",
-      site: "_VITE_SITE_NAME_",
+      site: "Video Host",
       flag: false,
-      replace: false,
+      replace: true,
+      siteEnv: false,
     },
     {
       name: "same-origin",
@@ -48,13 +49,15 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
       site: "Runtime same-origin",
       flag: true,
       replace: true,
+      siteEnv: true,
     },
     {
       name: "explicit-origin",
       endpoint: "https://api.example.test",
-      site: `Runtime $HOME & | \\path \` ${String.fromCharCode(36)}{window.name}`,
+      site: `Runtime O'Neil "quote" <tag> $HOME & | \\path \` ${String.fromCharCode(36)}{window.name}`,
       flag: false,
       replace: true,
+      siteEnv: true,
     },
   ]) {
     await t.test(scenario.name, async () => {
@@ -73,9 +76,8 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
               env: {
                 ...process.env,
                 VITE_API_ENDPOINT: scenario.endpoint,
-                VITE_SITE_NAME: scenario.site,
+                VITE_SITE_NAME: scenario.siteEnv ? scenario.site : "",
                 VITE_ENABLE_COMMENTS: String(scenario.flag),
-                VITE_REQUIRE_SIGNUP_CODE: String(scenario.flag),
               },
               encoding: "utf8",
             },
@@ -89,12 +91,7 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
         );
         assert.deepEqual(
           Object.values(config).sort(),
-          [
-            scenario.endpoint,
-            scenario.site,
-            scenario.flag,
-            scenario.flag,
-          ].sort(),
+          [scenario.endpoint, scenario.site, scenario.flag].sort(),
         );
 
         const reserve = http.createServer().listen(0, "127.0.0.1");
@@ -166,7 +163,18 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
             const html = await response.text();
             assert.match(html, /<html/);
             assert.ok(
-              html.includes(scenario.site.replaceAll("&", "&amp;")),
+              html.includes(
+                scenario.site.replace(/[&<>"']/g, (character) => {
+                  const entities = {
+                    "&": "&amp;",
+                    "<": "&lt;",
+                    ">": "&gt;",
+                    '"': "&quot;",
+                    "'": "&#x27;",
+                  };
+                  return entities[character];
+                }),
+              ),
               `${route} must render the configured site name`,
             );
             if (scenario.replace)
