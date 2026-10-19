@@ -29,7 +29,7 @@ RUN apt-get update \
 COPY --from=builder /prod/worker/ ./
 ENV TEMP_DIR=/tmp/ffmpeg-worker
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-  CMD ["node", "-e", "try { const age = Date.now() - require('node:fs').statSync(process.env.TEMP_DIR + '/healthy').mtimeMs; process.exit(age < 45000 ? 0 : 1); } catch { process.exit(1); }"]
+  CMD ["node", "-e", "try { const dir = (process.env.TEMP_DIR || '').trim() || '/tmp/ffmpeg-worker'; const age = Date.now() - require('node:fs').statSync(dir + '/healthy').mtimeMs; process.exit(age < 45000 ? 0 : 1); } catch { process.exit(1); }"]
 USER node
 WORKDIR /app
 CMD ["node", "dist/index.js"]
