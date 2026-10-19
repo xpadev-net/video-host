@@ -48,6 +48,7 @@ function NewVideoPage() {
   metadataRef.current = { title, description, visibility, viewers };
   const movieIdRef = useRef<string | null>(null);
   movieIdRef.current = movieId;
+  const movieProfileIdRef = useRef<string | null>(null);
 
   const isBusy =
     uploadState.phase === "creating" ||
@@ -76,15 +77,18 @@ function NewVideoPage() {
     const id = movieIdRef.current;
     const current = metadataRef.current;
     if (!id || !current.title.trim()) return false;
-    const res = await client.api.v4.movies[":movie"].$patch({
-      param: { movie: id },
-      json: {
-        title: current.title.trim(),
-        description: current.description.trim(),
-        visibility: current.visibility,
-        viewerIds: current.viewers.map((viewer) => viewer.id),
+    const res = await client.api.v4.movies[":movie"].$patch(
+      {
+        param: { movie: id },
+        json: {
+          title: current.title.trim(),
+          description: current.description.trim(),
+          visibility: current.visibility,
+          viewerIds: current.viewers.map((viewer) => viewer.id),
+        },
       },
-    });
+      { headers: { "X-Profile-Id": movieProfileIdRef.current ?? "" } },
+    );
     if (!res.ok) {
       throw new Error("Failed to update");
     }
@@ -111,6 +115,7 @@ function NewVideoPage() {
 
     setFile(selectedFile);
     setMovieId(null);
+    movieProfileIdRef.current = null;
     setSaved(false);
     setError(null);
     resetUpload();
@@ -125,6 +130,7 @@ function NewVideoPage() {
     }
 
     setMovieId(result.movieId);
+    movieProfileIdRef.current = result.profileId;
     setTitle(result.title);
 
     // Upload in the background; when it lands, persist the metadata the user
@@ -173,6 +179,7 @@ function NewVideoPage() {
           });
           if (!result) return false;
           setMovieId(result.movieId);
+          movieProfileIdRef.current = result.profileId;
           setTitle(result.title);
           return upload(result.movieId, result.uploadUrl, file);
         })();
@@ -198,11 +205,15 @@ function NewVideoPage() {
       // Discard the record created for this upload; a leftover UPLOADING
       // movie would sit in the dashboard forever otherwise.
       await client.api.v4.movies[":movie"]
-        .$delete({ param: { movie: movieId } })
+        .$delete(
+          { param: { movie: movieId } },
+          { headers: { "X-Profile-Id": movieProfileIdRef.current ?? "" } },
+        )
         .catch(() => {});
     }
     setFile(null);
     setMovieId(null);
+    movieProfileIdRef.current = null;
     setTitle("");
     setDescription("");
     resetUpload();

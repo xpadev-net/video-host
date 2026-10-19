@@ -7,7 +7,7 @@ import {
 } from "@/atoms/SelectedAccount";
 import { useNotify } from "@/components/Feedback/FeedbackProvider";
 import { authClient } from "@/lib/auth-client";
-import { client } from "@/lib/client";
+import { client, getSelectedProfileId } from "@/lib/client";
 
 type Movie = Pick<FormattedMovie, "id" | "title" | "thumbnailUrl">;
 
@@ -40,6 +40,23 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const [isAdding, setIsAdding] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const requestIdRef = useRef(0);
+  const profileIdRef = useRef(selectedProfileId);
+  const mountedRef = useRef(true);
+  profileIdRef.current = selectedProfileId;
+
+  const isCurrentProfileRequest = (profileId: string | null, id: number) =>
+    mountedRef.current &&
+    profileIdRef.current === profileId &&
+    getSelectedProfileId() === profileId &&
+    requestIdRef.current === id;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+    };
+  }, []);
 
   // Fetch available movies for selection
   const fetchAvailableMovies = useCallback(
@@ -92,20 +109,29 @@ export const MovieManager: FC<MovieManagerProps> = ({
 
   const handleAddMovie = async () => {
     if (!selectedMovieId || !session) return;
+    const profileId = selectedProfileId;
+    const requestId = requestIdRef.current;
     setIsAdding(true);
     try {
       const res =
         entityType === "series"
-          ? await client.api.v4.series[":series"].movies.$post({
-              param: { series: entityId },
-              json: { movieId: selectedMovieId },
-            })
-          : await client.api.v4.playlists[":playlist"].movies.$post({
-              param: { playlist: entityId },
-              json: { movieId: selectedMovieId },
-            });
+          ? await client.api.v4.series[":series"].movies.$post(
+              {
+                param: { series: entityId },
+                json: { movieId: selectedMovieId },
+              },
+              { headers: { "X-Profile-Id": profileId ?? "" } },
+            )
+          : await client.api.v4.playlists[":playlist"].movies.$post(
+              {
+                param: { playlist: entityId },
+                json: { movieId: selectedMovieId },
+              },
+              { headers: { "X-Profile-Id": profileId ?? "" } },
+            );
 
       if (!res.ok) throw new Error("Failed to add");
+      if (!isCurrentProfileRequest(profileId, requestId)) return;
 
       // Find the movie and add it to the list
       const movie = availableMovies.find((m) => m.id === selectedMovieId);
@@ -118,31 +144,40 @@ export const MovieManager: FC<MovieManagerProps> = ({
       }
       setSelectedMovieId("");
     } catch {
-      notify("動画の追加に失敗しました");
+      if (isCurrentProfileRequest(profileId, requestId))
+        notify("動画の追加に失敗しました");
     } finally {
-      setIsAdding(false);
+      if (isCurrentProfileRequest(profileId, requestId)) setIsAdding(false);
     }
   };
 
   const handleRemoveMovie = async (movieId: string) => {
     if (!session) return;
+    const profileId = selectedProfileId;
+    const requestId = requestIdRef.current;
     try {
       const res =
         entityType === "series"
-          ? await client.api.v4.series[":series"].movies[":movie"].$delete({
-              param: { series: entityId, movie: movieId },
-            })
+          ? await client.api.v4.series[":series"].movies[":movie"].$delete(
+              {
+                param: { series: entityId, movie: movieId },
+              },
+              { headers: { "X-Profile-Id": profileId ?? "" } },
+            )
           : await client.api.v4.playlists[":playlist"].movies[":movie"].$delete(
               {
                 param: { playlist: entityId, movie: movieId },
               },
+              { headers: { "X-Profile-Id": profileId ?? "" } },
             );
 
       if (!res.ok) throw new Error("Failed to remove");
+      if (!isCurrentProfileRequest(profileId, requestId)) return;
 
       onMoviesChange(movies.filter((m) => m.movie.id !== movieId));
     } catch {
-      notify("動画の削除に失敗しました");
+      if (isCurrentProfileRequest(profileId, requestId))
+        notify("動画の削除に失敗しました");
     }
   };
 

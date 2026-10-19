@@ -20,6 +20,7 @@ export interface InitUploadResult {
   movieId: string;
   title: string;
   uploadUrl: string;
+  profileId: string | null;
 }
 
 interface UseUploadResult {
@@ -131,14 +132,17 @@ export const useUpload = (): UseUploadResult => {
       setState({ phase: "creating", progress: 0, error: null });
       const profileId = getSelectedProfileId();
       try {
-        const res = await client.api.v4.upload.init.$post({
-          json: {
-            filename: file.name,
-            contentType: contentTypeOf(file),
-            size: file.size,
-            asUserId: options?.asUserId,
+        const res = await client.api.v4.upload.init.$post(
+          {
+            json: {
+              filename: file.name,
+              contentType: contentTypeOf(file),
+              size: file.size,
+              asUserId: options?.asUserId,
+            },
           },
-        });
+          { headers: { "X-Profile-Id": profileId ?? "" } },
+        );
         if (!res.ok) {
           throw new Error("Failed to create upload");
         }
@@ -148,6 +152,7 @@ export const useUpload = (): UseUploadResult => {
           movieId: json.data.movie.id,
           title: json.data.movie.title,
           uploadUrl: json.data.uploadUrl,
+          profileId,
         };
       } catch (error) {
         fail(error, "動画の作成に失敗しました");
@@ -183,16 +188,22 @@ export const useUpload = (): UseUploadResult => {
   const resume = useCallback(
     async (movieId: string, file: File): Promise<boolean> => {
       setState({ phase: "creating", progress: 0, error: null });
-      profileByMovieIdRef.current.set(movieId, getSelectedProfileId());
+      const profileId = profileByMovieIdRef.current.has(movieId)
+        ? (profileByMovieIdRef.current.get(movieId) ?? null)
+        : getSelectedProfileId();
+      profileByMovieIdRef.current.set(movieId, profileId);
       try {
-        const res = await client.api.v4.upload[":movieId"].url.$post({
-          param: { movieId },
-          json: {
-            filename: file.name,
-            contentType: contentTypeOf(file),
-            size: file.size,
+        const res = await client.api.v4.upload[":movieId"].url.$post(
+          {
+            param: { movieId },
+            json: {
+              filename: file.name,
+              contentType: contentTypeOf(file),
+              size: file.size,
+            },
           },
-        });
+          { headers: { "X-Profile-Id": profileId ?? "" } },
+        );
         if (!res.ok) {
           throw new Error("Failed to get upload URL");
         }

@@ -32,6 +32,18 @@ const StopPlayerAtom = atom(null, (get, set) => {
   set(VideoRefAtom, null);
   set(CurrentMovieAtom, null);
   set(DurablePlayerAtom, null);
+  set(PlayerStateAtom, {
+    paused: false,
+    isLoading: true,
+    isSetting: false,
+    isFullscreen: false,
+  });
+  set(VideoMetadataAtom, { currentTime: 0, duration: 0 });
+  set(AudioTracksAtom, []);
+  set(AudioTrackIdAtom, -1);
+  set(PlayerSettingAtom, ["main"]);
+  set(PlayerSeekNotificationAtom, null);
+  set(PlayerPlayPauseNotificationAtom, null);
 });
 const AudioTracksAtom = atom<PlayerAudioTrack[]>([]);
 const AudioTrackIdAtom = atom<number>(-1);
