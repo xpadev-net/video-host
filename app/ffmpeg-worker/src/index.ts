@@ -3,7 +3,11 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { sendCallback } from "./callback";
-import { PROCESSING_JOB_HEARTBEAT_MS } from "./config";
+import {
+  PROCESSING_JOB_HEARTBEAT_MS,
+  WORKER_HEARTBEAT_INTERVAL_MS,
+  WORKER_MEDIA_TOOL_TIMEOUT_MS,
+} from "./config";
 import { TEMP_DIR } from "./env";
 import { markJobFailed, processJob } from "./job-runner";
 import { log, withLogContext } from "./logger";
@@ -28,7 +32,10 @@ const writeHeartbeat = () =>
     log.error("Failed to update worker heartbeat", error),
   );
 void writeHeartbeat();
-const heartbeatTimer = setInterval(() => void writeHeartbeat(), 15_000);
+const heartbeatTimer = setInterval(
+  () => void writeHeartbeat(),
+  WORKER_HEARTBEAT_INTERVAL_MS,
+);
 heartbeatTimer.unref();
 const writeReadiness = () =>
   writeFile(READINESS_FILE, `${Date.now()}\n`).catch((error) =>
@@ -206,7 +213,7 @@ process.on("SIGTERM", shutdown);
 const verifyMediaTools = async (): Promise<void> => {
   for (const binary of ["ffmpeg", "ffprobe"]) {
     const { stdout } = await execFileAsync(binary, ["-version"], {
-      timeout: 5_000,
+      timeout: WORKER_MEDIA_TOOL_TIMEOUT_MS,
     });
     log.info(`${binary}: ${stdout.split("\n", 1)[0]}`);
   }

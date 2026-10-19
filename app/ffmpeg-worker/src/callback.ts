@@ -1,13 +1,14 @@
+import {
+  CALLBACK_RETRY_BASE_DELAY_MS,
+  CALLBACK_TIMEOUT_MS,
+  MAX_CALLBACK_ATTEMPTS,
+} from "./config";
 import { BACKEND_BASE_URL, CALLBACK_SECRET } from "./env";
 import { log } from "./logger";
 import { deleteFromProd } from "./s3";
 
 const callbackBaseUrl = `${BACKEND_BASE_URL.replace(/\/+$/, "")}/`;
 const callbackUrl = new URL("api/v4/callback", callbackBaseUrl);
-const CALLBACK_TIMEOUT_MS = 10_000;
-const MAX_CALLBACK_ATTEMPTS = 5;
-const CALLBACK_RETRY_BASE_DELAY_MS = 500;
-
 const requestCallback = async (
   body: string,
   movieId: string,

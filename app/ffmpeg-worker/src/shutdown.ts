@@ -1,3 +1,4 @@
+import { SHUTDOWN_FINALIZE_ABORT_TIMEOUT_MS } from "./config";
 import { log } from "./logger";
 import type { EncodeJob } from "./queue";
 
@@ -56,7 +57,9 @@ export const createShutdownHandler =
       deps.abortJob();
       await Promise.race([
         deps.pollPromise(),
-        new Promise((resolve) => setTimeout(resolve, 5_000)),
+        new Promise((resolve) =>
+          setTimeout(resolve, SHUTDOWN_FINALIZE_ABORT_TIMEOUT_MS),
+        ),
       ]);
     }
     if (state.activeJob) {

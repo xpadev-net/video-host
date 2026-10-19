@@ -1,5 +1,10 @@
 import { sendCallback } from "./callback";
-import { DISK_SPACE_MARGIN_BYTES, DISK_SPACE_MULTIPLIER } from "./config";
+import {
+  COMPLETION_COMMIT_ATTEMPTS,
+  COMPLETION_COMMIT_RETRY_BASE_MS,
+  DISK_SPACE_MARGIN_BYTES,
+  DISK_SPACE_MULTIPLIER,
+} from "./config";
 import { getDiskSpace } from "./disk";
 import {
   cleanup,
@@ -8,6 +13,7 @@ import {
   getLocalPath,
 } from "./encoder";
 import { getVodContentUrl, JOB_TIMEOUT_SECONDS } from "./env";
+import { createJobFinalizer } from "./job-finalizer";
 import { log } from "./logger";
 import {
   callbackFailures,
@@ -64,20 +70,22 @@ const sendCallbackObserved = async (
   }
 };
 
+const jobFinalizer = createJobFinalizer({
+  setProgress: setEncodeProgress,
+  callback: sendCallbackObserved,
+  deleteOutput: deleteFromProd,
+});
+
 export const markJobFailed = async (
   job: EncodeJob,
   reason: string,
   stderrTail?: string,
 ): Promise<void> => {
   await addJobToDeadLetterQueue(job, reason, stderrTail);
-  await setEncodeProgress(job.movieId, { status: "failed" });
-  await sendCallbackObserved({
-    movieId: job.movieId,
-    variantId: "original",
-    status: "failed",
-    s3Key: job.s3Key,
-  });
+  await jobFinalizer.notifyFailure(job);
 };
+
+export const { finalizeSuccess } = jobFinalizer;
 
 const retryOrDeadLetter = async (
   job: EncodeJob,
@@ -374,7 +382,11 @@ export const processJob = async (
     }
     let committedMember: string | null = null;
     let commitError: unknown;
-    for (let attempt = 0; attempt < 3 && !committedMember; attempt++) {
+    for (
+      let attempt = 0;
+      attempt < COMPLETION_COMMIT_ATTEMPTS && !committedMember;
+      attempt++
+    ) {
       try {
         committedMember = await commitProcessingJob(
           context.activeJobClaim,
@@ -383,9 +395,9 @@ export const processJob = async (
         );
       } catch (error) {
         commitError = error;
-        if (attempt < 2) {
+        if (attempt < COMPLETION_COMMIT_ATTEMPTS - 1) {
           await new Promise((resolve) =>
-            setTimeout(resolve, 100 * 2 ** attempt),
+            setTimeout(resolve, COMPLETION_COMMIT_RETRY_BASE_MS * 2 ** attempt),
           );
         }
       }
@@ -430,43 +442,7 @@ export const processJob = async (
       return "relinquished";
     }
 
-    // Set status to completed
-    await setEncodeProgress(job.movieId, {
-      status: "completed",
-      progress: 100,
-      duration: result.duration,
-    });
-
-    // Send success callback
-    const callbackResult = await sendCallbackObserved({
-      movieId: job.movieId,
-      variantId: "original",
-      status: "success",
-      s3Key: job.s3Key,
-      contentUrl,
-      duration: result.duration,
-      thumbnailKey: uploadedThumbnailKey,
-    });
-
-    if (callbackResult === "rejected") {
-      await deleteFromProd(job.s3Key).catch((error) =>
-        log.error(
-          `Failed to remove rejected output: movieId=${job.movieId}`,
-          error,
-        ),
-      );
-      await setEncodeProgress(job.movieId, { status: "failed" });
-      await sendCallbackObserved({
-        movieId: job.movieId,
-        variantId: "original",
-        status: "failed",
-        s3Key: job.s3Key,
-      });
-      return "failed";
-    }
-
-    log.info(`Job completed successfully: movieId=${job.movieId}`);
-    return "completed";
+    return await finalizeSuccess(job, completion);
   } catch (error) {
     if (context.jobRelinquished) {
       return "relinquished";
@@ -488,32 +464,7 @@ export const processJob = async (
         error,
       );
       try {
-        await setEncodeProgress(job.movieId, {
-          status: "completed",
-          progress: 100,
-          duration: committedOutcome.duration,
-        });
-        const callbackResult = await sendCallbackObserved({
-          movieId: job.movieId,
-          variantId: "original",
-          status: "success",
-          s3Key: job.s3Key,
-          contentUrl: committedOutcome.contentUrl,
-          duration: committedOutcome.duration,
-          thumbnailKey: committedOutcome.thumbnailKey,
-        });
-        if (callbackResult === "rejected") {
-          await deleteFromProd(job.s3Key).catch(() => {});
-          await setEncodeProgress(job.movieId, { status: "failed" });
-          await sendCallbackObserved({
-            movieId: job.movieId,
-            variantId: "original",
-            status: "failed",
-            s3Key: job.s3Key,
-          });
-          return "failed";
-        }
-        return "completed";
+        return await finalizeSuccess(job, committedOutcome);
       } catch (finalizeError) {
         log.error(
           `Failed to finalize committed job: movieId=${job.movieId}`,
