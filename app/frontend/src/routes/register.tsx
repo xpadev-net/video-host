@@ -48,7 +48,10 @@ function RegisterRoute() {
         ]);
         if (cancelled) return;
         if (session.data) {
-          await navigate({ to: callback ?? "/", replace: true });
+          await navigate({
+            to: getSafeCallback(callback) ?? "/",
+            replace: true,
+          });
           return;
         }
         setAuthConfig(config);
