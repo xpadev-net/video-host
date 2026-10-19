@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { AuthForm, AuthLayout, FormField } from "@/components/Auth";
@@ -6,6 +6,7 @@ import { RequireSignupCode, SiteName } from "@/contexts/env";
 import { getSafeCallback, useAuth } from "@/hooks/useAuth";
 import { authClient } from "@/lib/auth-client";
 import { type AuthConfig, getAuthConfig } from "@/service/getAuthConfig";
+import { getAuthErrorMessage } from "@/utils/authErrorMessage";
 import {
   validatePassword,
   validatePasswordMatch,
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/register")({
 });
 
 function RegisterRoute() {
+  const navigate = useNavigate();
   const { loading, error, startAuth, handleAuthSuccess, handleAuthError } =
     useAuth();
   const { callback } = Route.useSearch();
@@ -37,11 +39,29 @@ function RegisterRoute() {
   const passwordAuthEnabled = authConfig?.passwordAuthEnabled ?? false;
 
   useEffect(() => {
-    void getAuthConfig().then((config) => {
-      setAuthConfig(config);
-      setConfigLoaded(true);
-    });
-  }, []);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [config, session] = await Promise.all([
+          getAuthConfig(),
+          authClient.getSession(),
+        ]);
+        if (cancelled) return;
+        if (session.data) {
+          await navigate({ to: callback ?? "/", replace: true });
+          return;
+        }
+        setAuthConfig(config);
+      } catch {
+        if (!cancelled) setAuthConfig(null);
+      } finally {
+        if (!cancelled) setConfigLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [callback, navigate]);
 
   const handleRegister = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -67,7 +87,8 @@ function RegisterRoute() {
         password,
         ...(requireSignupCode ? { signupCode } : {}),
       });
-      if (error) handleAuthError(error.message || "登録に失敗しました");
+      if (error)
+        handleAuthError(getAuthErrorMessage(error, "登録に失敗しました"));
       else await handleAuthSuccess();
     } catch {
       handleAuthError("ネットワークエラーが発生しました");

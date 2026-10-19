@@ -4,6 +4,8 @@ import {
   type ForwardedRef,
   forwardRef,
   type KeyboardEvent,
+  useEffect,
+  useRef,
   useState,
 } from "react";
 import { useSeriesSuggest } from "@/hooks/useSeriesSuggest";
@@ -17,22 +19,34 @@ type props = {
 const Search_ = ({ className }: props, ref: ForwardedRef<HTMLInputElement>) => {
   const [input, setInput] = useState("");
   const [showSuggest, setShowSuggest] = useState(false);
+  const blurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggest = useSeriesSuggest({ query: input });
   const inputRef = useForwardRef<HTMLInputElement>(ref);
   const isMobile = useIsMobile();
 
+  useEffect(
+    () => () => {
+      if (blurTimeout.current) clearTimeout(blurTimeout.current);
+    },
+    [],
+  );
+
   const navigate = useNavigate();
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     e.stopPropagation();
-    if (!e.nativeEvent.isComposing && e.key === "Enter") {
-      void navigate({ to: "/search/$query", params: { query: input } });
+    if (
+      !e.nativeEvent.isComposing &&
+      e.key === "Enter" &&
+      input.trim().length > 1
+    ) {
+      void navigate({ to: "/search/$query", params: { query: input.trim() } });
       inputRef.current?.blur();
       setShowSuggest(false);
     }
   };
   const onSearchClick = () => {
-    if (input && input.length > 1) {
-      void navigate({ to: "/search/$query", params: { query: input } });
+    if (input.trim().length > 1) {
+      void navigate({ to: "/search/$query", params: { query: input.trim() } });
       setShowSuggest(false);
     }
   };
@@ -53,14 +67,18 @@ const Search_ = ({ className }: props, ref: ForwardedRef<HTMLInputElement>) => {
           value={input}
           id={"headerSearchInput"}
           onChange={(e) => setInput(e.target.value)}
-          onFocus={() => setShowSuggest(true)}
-          onBlur={() => setTimeout(() => setShowSuggest(false), 200)}
+          onFocus={() => {
+            if (blurTimeout.current) clearTimeout(blurTimeout.current);
+            setShowSuggest(true);
+          }}
+          onBlur={() => {
+            blurTimeout.current = setTimeout(() => setShowSuggest(false), 200);
+          }}
         />
 
         {suggest.data?.status === "ok" &&
           suggest.data.data.items.length > 0 && (
-            <label
-              htmlFor={"headerSearchInput"}
+            <div
               className={`${isMobile ? "block" : "hidden"} ${
                 showSuggest ? "group-hover:block focus-within:block" : "hidden"
               } z-10 absolute -left-[1px] top-full w-[calc(100%+2px)] pt-1`}
@@ -80,7 +98,7 @@ const Search_ = ({ className }: props, ref: ForwardedRef<HTMLInputElement>) => {
                   );
                 })}
               </div>
-            </label>
+            </div>
           )}
       </div>
       <button

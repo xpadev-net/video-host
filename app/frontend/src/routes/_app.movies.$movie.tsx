@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/libraries/isMobile";
 
 export const Route = createFileRoute("/_app/movies/$movie")({
-  head: () => ({ meta: [{ title: SiteName }] }),
   component: MovieRoute,
 });
 
@@ -42,7 +41,8 @@ function MovieRoute() {
   useEffect(() => {
     if (data.data?.status === "ok") {
       const previousTitle = document.title;
-      const movieTitle = `${data.data.data.title} / ${data.data.data.series?.title} - ${SiteName}`;
+      const seriesTitle = data.data.data.series?.title;
+      const movieTitle = `${data.data.data.title}${seriesTitle ? ` / ${seriesTitle}` : ""} - ${SiteName}`;
       document.title = movieTitle;
 
       return () => {

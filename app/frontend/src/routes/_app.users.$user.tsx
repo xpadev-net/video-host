@@ -19,7 +19,12 @@ function UserRoute() {
 
   useEffect(() => {
     if (user?.status === "ok" && "data" in user && user.data) {
-      document.title = `${user.data.name} - ${SiteName}`;
+      const previousTitle = document.title;
+      const title = `${user.data.name} - ${SiteName}`;
+      document.title = title;
+      return () => {
+        if (document.title === title) document.title = previousTitle;
+      };
     }
   }, [user]);
 
