@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { type SetStateAction, useCallback, useState } from "react";
+import { type SetStateAction, useCallback, useEffect, useState } from "react";
 import {
   selectedAccountIdAtom,
   selectedProfileIdAtom,
@@ -27,6 +27,13 @@ function SeriesPage() {
     profileId: selectedProfileId,
     page: 1,
   });
+  useEffect(() => {
+    setPagination({
+      accountId: selectedAccountId,
+      profileId: selectedProfileId,
+      page: 1,
+    });
+  }, [selectedAccountId, selectedProfileId]);
   const page =
     pagination.accountId === selectedAccountId &&
     pagination.profileId === selectedProfileId
