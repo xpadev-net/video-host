@@ -1,7 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { type FormEvent, useState } from "react";
-import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
@@ -14,6 +17,7 @@ export const Route = createFileRoute("/_app/dashboard/series/new")({
 function NewSeriesPage() {
   const navigate = useNavigate();
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   const { data: user, isLoading } = useSelf();
 
   const [title, setTitle] = useState("");
@@ -23,6 +27,20 @@ function NewSeriesPage() {
   >("PUBLIC");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const previousSelectionRef = useRef({ selectedAccountId, selectedProfileId });
+
+  useEffect(() => {
+    if (
+      previousSelectionRef.current.selectedAccountId === selectedAccountId &&
+      previousSelectionRef.current.selectedProfileId === selectedProfileId
+    )
+      return;
+    previousSelectionRef.current = { selectedAccountId, selectedProfileId };
+    setTitle("");
+    setDescription("");
+    setVisibility("PUBLIC");
+    setError(null);
+  }, [selectedAccountId, selectedProfileId]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
