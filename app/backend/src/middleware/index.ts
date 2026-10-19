@@ -34,6 +34,9 @@ export const registerMiddleware = (app: HonoApp) => {
     );
   });
 
+  handleMetrics(app);
+  handleCors(app);
+
   // Every JSON body is small (files go straight to S3), so cap them before any
   // handler or parser reads the stream.
   app.use(
@@ -51,8 +54,6 @@ export const registerMiddleware = (app: HonoApp) => {
   // used; Cross-Origin-Resource-Policy stays off to not break CORS fetches.
   app.use("/*", secureHeaders({ crossOriginResourcePolicy: false }));
 
-  handleMetrics(app);
-  handleCors(app);
   handleAuth(app);
   app.use(trimTrailingSlash());
 };

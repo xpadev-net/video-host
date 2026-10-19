@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const database = vi.hoisted(() => ({
   user: { findUnique: vi.fn(), create: vi.fn(), upsert: vi.fn() },
-  authRateLimit: { deleteMany: vi.fn() },
+  authRateLimit: { findMany: vi.fn(), deleteMany: vi.fn() },
   $queryRaw: vi.fn(),
 }));
 const redis = vi.hoisted(() => ({ ping: vi.fn() }));
@@ -101,13 +101,28 @@ describe("provisionAuthProfile", () => {
 });
 
 describe("rate limit cleanup", () => {
-  it("deletes rows older than the retention window", async () => {
-    database.authRateLimit.deleteMany.mockResolvedValue({ count: 3 });
+  it("deletes expired rows in bounded batches", async () => {
+    const full = Array.from({ length: 1000 }, (_, i) => ({ id: `r${i}` }));
+    database.authRateLimit.findMany
+      .mockResolvedValueOnce(full)
+      .mockResolvedValueOnce([{ id: "last" }]);
+    database.authRateLimit.deleteMany
+      .mockResolvedValueOnce({ count: 1000 })
+      .mockResolvedValueOnce({ count: 1 });
     const now = 10 * 3600 * 1000;
-    expect(await cleanupAuthRateLimits(now)).toBe(3);
-    expect(database.authRateLimit.deleteMany).toHaveBeenCalledWith({
+    expect(await cleanupAuthRateLimits(now)).toBe(1001);
+    expect(database.authRateLimit.findMany).toHaveBeenCalledWith({
       where: { lastRequest: { lt: BigInt(now - 3600 * 1000) } },
+      select: { id: true },
+      take: 1000,
     });
+    expect(database.authRateLimit.deleteMany).toHaveBeenCalledTimes(2);
+  });
+
+  it("does nothing when nothing expired", async () => {
+    database.authRateLimit.findMany.mockResolvedValue([]);
+    expect(await cleanupAuthRateLimits()).toBe(0);
+    expect(database.authRateLimit.deleteMany).not.toHaveBeenCalled();
   });
 });
 
@@ -130,6 +145,16 @@ describe("readiness, body limit and security headers", () => {
   registerMiddleware(app);
   registerHealthzRoute(app);
   app.post("/echo", async (c) => c.json(await c.req.json()));
+
+  it("does not hang when Redis stalls", async () => {
+    database.$queryRaw.mockResolvedValue([{ 1: 1 }]);
+    redis.ping.mockReturnValue(new Promise(() => {}));
+    const started = Date.now();
+    const res = await app.request("/readyz");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ database: true, redis: false });
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
 
   it("reports 503 only when the database is down", async () => {
     database.$queryRaw.mockResolvedValue([{ 1: 1 }]);
