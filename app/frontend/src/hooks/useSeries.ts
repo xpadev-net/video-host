@@ -30,8 +30,8 @@ export const useSeries = (query?: string) => {
   const sessionUserId = authSession?.user.id;
   const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   return useStickySWR(
-    query && sessionUserId
-      ? ([query, selectedProfileId, sessionUserId] as const)
+    query
+      ? ([query, selectedProfileId, sessionUserId ?? "anonymous"] as const)
       : null,
     fetcher,
     {},

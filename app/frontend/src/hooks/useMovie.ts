@@ -30,8 +30,8 @@ export const useMovie = (query?: string) => {
   // data object while the response is unchanged, so nothing reloads until
   // the token actually rotates).
   return useStickySWR(
-    query && sessionUserId
-      ? ([query, selectedProfileId, sessionUserId] as const)
+    query
+      ? ([query, selectedProfileId, sessionUserId ?? "anonymous"] as const)
       : null,
     fetcher,
     {
