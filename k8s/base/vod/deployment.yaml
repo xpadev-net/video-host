@@ -40,6 +40,17 @@ spec:
                 S3_PROXY_HOST="s3.${S3_REGION}.amazonaws.com"
               fi
               S3_USE_PATH_STYLE="$S3_FORCE_PATH_STYLE"
+              S3_BUCKET_HOSTABLE=true
+              case "$S3_PROD_BUCKET" in
+                [a-z0-9]*[a-z0-9]) ;;
+                *) S3_BUCKET_HOSTABLE=false ;;
+              esac
+              case "$S3_PROD_BUCKET" in
+                *[!a-z0-9.-]*|*..*|.*|*.) S3_BUCKET_HOSTABLE=false ;;
+              esac
+              if [ "${#S3_PROD_BUCKET}" -gt 63 ]; then
+                S3_BUCKET_HOSTABLE=false
+              fi
               case "$S3_PROD_BUCKET" in
                 *.*)
                   if [ "$S3_PROXY_SCHEME" = "https" ]; then
@@ -47,6 +58,9 @@ spec:
                   fi
                   ;;
               esac
+              if [ "$S3_BUCKET_HOSTABLE" != "true" ]; then
+                S3_USE_PATH_STYLE=true
+              fi
               if [ "$S3_USE_PATH_STYLE" != "true" ]; then
                 S3_PROXY_HOST="${S3_PROD_BUCKET}.${S3_PROXY_HOST}"
               fi
