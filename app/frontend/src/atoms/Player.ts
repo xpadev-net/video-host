@@ -38,6 +38,7 @@ const StopPlayerAtom = atom(null, (get, set) => {
     isLoading: true,
     isSetting: false,
     isFullscreen: false,
+    error: null,
   });
   set(VideoMetadataAtom, { currentTime: 0, duration: 0 });
   set(AudioTracksAtom, []);
@@ -55,6 +56,7 @@ const PlayerStateAtom = atom<PlayerState>({
   isLoading: true,
   isSetting: false,
   isFullscreen: false,
+  error: null,
 });
 const PlayerConfigAtom = atomWithStorage<PlayerConfig>("playerConfig", {
   windowFullscreen: true,

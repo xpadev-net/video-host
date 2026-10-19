@@ -16,6 +16,7 @@ export type PlayerState = {
   isLoading: boolean;
   isSetting: boolean;
   isFullscreen: boolean;
+  error: string | null;
 };
 
 export type SettingKey = "main" | "playbackRate" | "audioTrack";
