@@ -365,7 +365,7 @@ function NewVideoPage() {
                   type="button"
                   className="font-medium text-green-500"
                   onClick={handleStartNextUpload}
-                  disabled={savePending}
+                  disabled={savePending || !saved}
                 >
                   次の動画をアップロード
                 </button>

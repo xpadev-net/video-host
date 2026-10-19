@@ -47,10 +47,15 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const orderingRef = useRef(false);
   const dragStartMoviesRef = useRef<MovieItem[]>([]);
+  const availableRequestGenerationRef = useRef(0);
 
   // Fetch available movies for selection
   const fetchAvailableMovies = useCallback(
-    async (page = 1, append = false) => {
+    async (
+      page = 1,
+      append = false,
+      generation = availableRequestGenerationRef.current,
+    ) => {
       if (!session) return;
       setIsLoadingMovies(true);
       try {
@@ -65,6 +70,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
 
         if (!res.ok) throw new Error("Failed to fetch");
         const json = await res.json();
+        if (generation !== availableRequestGenerationRef.current) return;
         const pageMovies = json.data.items.map((movie) => ({
           ...movie,
           thumbnailUrl: movie.thumbnailUrl ?? undefined,
@@ -75,21 +81,31 @@ export const MovieManager: FC<MovieManagerProps> = ({
         setAvailablePage(page);
         setHasMoreAvailableMovies(json.data.pagination.hasNext);
       } catch (error) {
-        console.error("Failed to fetch movies", error);
+        if (generation === availableRequestGenerationRef.current) {
+          console.error("Failed to fetch movies", error);
+        }
       } finally {
-        setIsLoadingMovies(false);
+        if (generation === availableRequestGenerationRef.current) {
+          setIsLoadingMovies(false);
+        }
       }
     },
     [session, selectedAccountId],
   );
 
   useEffect(() => {
+    const generation = ++availableRequestGenerationRef.current;
     setAvailableMovies([]);
-    void fetchAvailableMovies(1);
+    setAvailablePage(1);
+    setHasMoreAvailableMovies(false);
+    void fetchAvailableMovies(1, false, generation);
+    return () => {
+      availableRequestGenerationRef.current += 1;
+    };
   }, [fetchAvailableMovies]);
 
   const handleAddMovie = async () => {
-    if (!selectedMovieId || !session) return;
+    if (!selectedMovieId || !session || orderingRef.current || isAdding) return;
     setIsAdding(true);
     try {
       const res =
@@ -123,7 +139,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
   };
 
   const handleRemoveMovie = async (movieId: string) => {
-    if (!session) return;
+    if (!session || orderingRef.current || isAdding) return;
     try {
       const res =
         entityType === "series"
@@ -145,6 +161,10 @@ export const MovieManager: FC<MovieManagerProps> = ({
   };
 
   const handleDragStart = (e: DragEvent<HTMLLIElement>, index: number) => {
+    if (orderingRef.current || isAdding) {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.setData("text/plain", movies[index].movie.id);
     e.dataTransfer.effectAllowed = "move";
     dragStartMoviesRef.current = movies;
@@ -208,7 +228,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
   };
 
   const handleMoveUp = async (index: number) => {
-    if (index === 0 || !session || orderingRef.current) return;
+    if (index === 0 || !session || orderingRef.current || isAdding) return;
     const previousMovies = movies;
     const newMovies = [...movies];
     [newMovies[index - 1], newMovies[index]] = [
@@ -221,7 +241,13 @@ export const MovieManager: FC<MovieManagerProps> = ({
   };
 
   const handleMoveDown = async (index: number) => {
-    if (index === movies.length - 1 || !session || orderingRef.current) return;
+    if (
+      index === movies.length - 1 ||
+      !session ||
+      orderingRef.current ||
+      isAdding
+    )
+      return;
     const previousMovies = movies;
     const newMovies = [...movies];
     [newMovies[index], newMovies[index + 1]] = [
@@ -245,7 +271,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
           aria-label="追加する動画を選択"
           value={selectedMovieId}
           onChange={(e) => setSelectedMovieId(e.target.value)}
-          disabled={isLoadingMovies || isAdding}
+          disabled={isLoadingMovies || isAdding || isOrdering}
           className="movie-select"
         >
           <option value="">動画を選択...</option>
@@ -260,7 +286,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
         <button
           type="button"
           onClick={handleAddMovie}
-          disabled={!selectedMovieId || isAdding}
+          disabled={!selectedMovieId || isAdding || isOrdering}
           className="add-btn"
         >
           {isAdding ? "追加中..." : "追加"}
@@ -270,7 +296,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
         <button
           type="button"
           onClick={() => void fetchAvailableMovies(availablePage + 1, true)}
-          disabled={isLoadingMovies}
+          disabled={isLoadingMovies || isOrdering || isAdding}
           className="add-btn"
         >
           {isLoadingMovies ? "読み込み中..." : "さらに読み込む"}
@@ -286,7 +312,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
             <li
               key={m.movie.id}
               className={`movie-item ${draggedIndex === index ? "dragging" : ""}`}
-              draggable={!isOrdering}
+              draggable={!isOrdering && !isAdding}
               onDragStart={(e) => handleDragStart(e, index)}
               onDragOver={(e) => handleDragOver(e, index)}
               onDrop={handleDrop}
@@ -298,7 +324,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => handleMoveUp(index)}
-                  disabled={index === 0 || isOrdering}
+                  disabled={index === 0 || isOrdering || isAdding}
                   className="move-btn"
                   title="上へ"
                   aria-label={`${m.movie.title}を上へ移動`}
@@ -308,7 +334,9 @@ export const MovieManager: FC<MovieManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => handleMoveDown(index)}
-                  disabled={index === movies.length - 1 || isOrdering}
+                  disabled={
+                    index === movies.length - 1 || isOrdering || isAdding
+                  }
                   className="move-btn"
                   title="下へ"
                   aria-label={`${m.movie.title}を下へ移動`}
@@ -318,6 +346,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => handleRemoveMovie(m.movie.id)}
+                  disabled={isOrdering || isAdding}
                   className="remove-btn"
                 >
                   削除
