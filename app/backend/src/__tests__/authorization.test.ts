@@ -69,8 +69,8 @@ describe("Authorization - Visibility Filtering", () => {
       expect(filter).toEqual({
         visibility: "PUBLIC",
         OR: [
-          { title: { contains: "test query" } },
-          { description: { contains: "test query" } },
+          { title: { search: "test query" } },
+          { description: { search: "test query" } },
         ],
       });
     });
@@ -95,8 +95,8 @@ describe("Authorization - Visibility Filtering", () => {
         visibility: "PUBLIC",
         authorId: "author-456",
         OR: [
-          { title: { contains: "search term" } },
-          { description: { contains: "search term" } },
+          { title: { search: "search term" } },
+          { description: { search: "search term" } },
         ],
       });
     });
@@ -146,8 +146,8 @@ describe("Authorization - Visibility Filtering", () => {
           },
           {
             OR: [
-              { title: { contains: "my video" } },
-              { description: { contains: "my video" } },
+              { title: { search: "my video" } },
+              { description: { search: "my video" } },
             ],
           },
         ],
@@ -196,8 +196,8 @@ describe("Authorization - Visibility Filtering", () => {
 
       expect(filter).toEqual({
         OR: [
-          { title: { contains: "admin search" } },
-          { description: { contains: "admin search" } },
+          { title: { search: "admin search" } },
+          { description: { search: "admin search" } },
         ],
       });
     });
@@ -220,8 +220,8 @@ describe("Authorization - Visibility Filtering", () => {
       expect(filter).toEqual({
         authorId: "specific-author",
         OR: [
-          { title: { contains: "test" } },
-          { description: { contains: "test" } },
+          { title: { search: "test" } },
+          { description: { search: "test" } },
         ],
       });
     });
@@ -259,7 +259,7 @@ describe("Authorization - Visibility Filtering", () => {
 
       // The function doesn't trim whitespace, so it's passed as-is
       expect(filter.AND?.[1]?.OR?.[0]).toEqual({
-        title: { contains: "  search  " },
+        title: { search: "  search  " },
       });
     });
 
@@ -270,7 +270,7 @@ describe("Authorization - Visibility Filtering", () => {
       // Special characters should be passed through to the database query
       // The database layer handles escaping
       expect(filter.AND?.[1]?.OR?.[0]).toEqual({
-        title: { contains: specialQuery },
+        title: { search: specialQuery },
       });
     });
   });
@@ -396,8 +396,8 @@ describe("Authorization - Visibility Filtering", () => {
           },
           {
             OR: [
-              { title: { contains: "shared" } },
-              { description: { contains: "shared" } },
+              { title: { search: "shared" } },
+              { description: { search: "shared" } },
             ],
           },
         ],

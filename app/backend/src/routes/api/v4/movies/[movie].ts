@@ -227,17 +227,8 @@ export const movieRoute = app
       }
     }
 
-    // Delete from playlists first
-    await prisma.movieOnPlaylist.deleteMany({
-      where: { movieId: param },
-    });
-
-    // Delete variants
-    await prisma.movieVariant.deleteMany({
-      where: { movieId: param },
-    });
-
-    // Delete movie
+    // Join rows, variants, and viewer entries are removed by database
+    // cascades as part of the same delete statement.
     await prisma.movie.delete({
       where: { id: param },
     });

@@ -4,10 +4,10 @@ import type { Visibility } from "@/@types/models";
 type FilterSchema = {
   visibility?: Visibility | { in?: Visibility[] };
   title?: {
-    contains?: string;
+    search?: string;
   };
   description?: {
-    contains?: string;
+    search?: string;
   };
   authorId?: string;
   viewers?: {
@@ -162,12 +162,12 @@ export const buildVisibilityFilter = (
       OR: [
         {
           title: {
-            contains: query,
+            search: query,
           },
         },
         {
           description: {
-            contains: query,
+            search: query,
           },
         },
       ],

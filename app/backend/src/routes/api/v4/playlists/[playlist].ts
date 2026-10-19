@@ -150,10 +150,7 @@ export const playlistDetailRoute = app
       unauthorized("Not authorized to delete this playlist");
     }
 
-    await prisma.movieOnPlaylist.deleteMany({
-      where: { playlistId: param },
-    });
-
+    // Join rows are removed by the database cascade with the playlist.
     await prisma.playlist.delete({
       where: { id: param },
     });

@@ -34,6 +34,21 @@ Provide your own disposable MySQL database and run `pnpm -F @video-host/backend 
 
 Email/password signup requires name, a valid email address and an 8–128 character password. Email delivery/verification and password recovery are not configured by this migration; an email address is not proof of ownership. Automatic same-email OAuth account linking is disabled. Domain profile names and avatars remain application-owned after initial provisioning; Better Auth names are authentication metadata.
 
+## Schema and search behavior
+
+Deleting a movie cascades to its variants, viewer rows, and playlist entries; deleting a playlist cascades to its entries. Movie, series, and playlist ownership relations explicitly restrict deleting a user while owned content remains. Move or delete owned content before deleting its user. Before applying the variant uniqueness migration to an existing database, check for duplicate `(movieId, variantId)` groups and resolve any intentionally distinct rows:
+
+```sql
+SELECT `movieId`, `variantId`, COUNT(*) AS `count`
+FROM `MovieVariant`
+GROUP BY `movieId`, `variantId`
+HAVING COUNT(*) > 1;
+```
+
+List search uses MySQL full-text token search rather than substring matching. It matches indexed words and follows MySQL's minimum token length and stop-word rules. The client generator provider is explicitly `prisma-client-js` while the Prisma CLI and client are pinned to the same Prisma 6 release; keep the provider explicit when changing Prisma versions.
+
+CI checks that the migration history matches `schema.prisma` by replaying migrations into a disposable MySQL 8 shadow database. Run `pnpm -F @video-host/backend prisma:schema-check` locally with `DATABASE_URL` and `SHADOW_DATABASE_URL` pointed at disposable databases.
+
 ## OpenID Connect
 
 Set `OIDC_ENABLED=true`, `OIDC_ISSUER_URL`, and `OIDC_CLIENT_ID`; set `OIDC_CLIENT_SECRET` for confidential clients. `OIDC_SCOPE` defaults to `openid profile email` and must include openid/email. The provider must return a valid email and publish usable issuer/JWKS metadata; ID tokens are verified and authorization code flow uses state, PKCE and nonce. Tokens must include finite numeric exp/iat, expire in the future and after iat; issued-at time may be at most 60 seconds ahead to allow small clock skew.
