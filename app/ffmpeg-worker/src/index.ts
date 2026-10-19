@@ -6,29 +6,36 @@ import {
   getVodContentUrl,
   JOB_TIMEOUT_SECONDS,
   MIN_DISK_SPACE_GB,
+  POLL_INTERVAL_MS,
   TEMP_DIR,
 } from "./env";
 import { getMeter, initOtelMetrics } from "./otel";
 import {
   addJobToRetryQueue,
-  claimProcessingJob,
+  claimNextEncodeJob,
   closeRedis,
   commitProcessingJob,
   type EncodeJob,
   expireProcessingJob,
   finishProcessingJob,
-  getEncodeJobBlocking,
   getEncodeProgress,
   getJobCompletion,
   getQueueDepths,
   getStaleProcessingJobs,
   type ProcessingClaim,
   processRetryQueue,
+  refreshProcessingJob,
   releaseProcessingJob,
+  requeueProcessingJob,
   requeueStaleProcessingJob,
   setEncodeProgress,
 } from "./queue";
-import { deleteFromTmp, downloadFromTmp, uploadToProd } from "./s3";
+import {
+  deleteFromProd,
+  deleteFromTmp,
+  downloadFromTmp,
+  uploadToProd,
+} from "./s3";
 
 const execFileAsync = promisify(execFile);
 
@@ -78,6 +85,8 @@ let activeJob: EncodeJob | null = null;
 let activeJobClaim: string | null = null;
 let activeJobCommitted = false;
 let jobRelinquished = false;
+let activeJobAbortController: AbortController | null = null;
+let leaseHeartbeatTimer: NodeJS.Timeout | null = null;
 
 // Bound the graceful drain so a stalled job/callback cannot hang SIGTERM.
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 30_000;
@@ -92,7 +101,87 @@ const jobShutdownAbort = new AbortController();
 
 // Claims older than JOB_TIMEOUT + margin belong to a worker that died
 // mid-job (SIGKILL, crash) — live jobs are bounded by the job timeout.
-const PROCESSING_JOB_LEASE_MS = JOB_TIMEOUT_SECONDS * 1000 + 15 * 60 * 1000;
+const PROCESSING_JOB_LEASE_MS = 5 * 60 * 1000;
+const PROCESSING_JOB_HEARTBEAT_MS = 30 * 1000;
+let reaperInFlight = false;
+
+const finalizeCommittedClaim = async (
+  member: string,
+  job: EncodeJob,
+  completion: { contentUrl: string; duration?: number },
+): Promise<void> => {
+  await setEncodeProgress(job.movieId, {
+    status: "completed",
+    progress: 100,
+    duration: completion.duration,
+  });
+  const result = await sendCallback({
+    movieId: job.movieId,
+    variantId: "original",
+    status: "success",
+    s3Key: job.s3Key,
+    contentUrl: completion.contentUrl,
+    duration: completion.duration,
+  });
+  if (result === "rejected") {
+    await deleteFromProd(job.s3Key).catch((error) =>
+      console.error(
+        `Failed to remove rejected output: movieId=${job.movieId}`,
+        error,
+      ),
+    );
+    await setEncodeProgress(job.movieId, { status: "failed" });
+    await sendCallback({
+      movieId: job.movieId,
+      variantId: "original",
+      status: "failed",
+      s3Key: job.s3Key,
+    });
+  }
+  await finishProcessingJob(member, job);
+};
+
+const runReaper = async (): Promise<void> => {
+  if (reaperInFlight || isShuttingDown) return;
+  reaperInFlight = true;
+  try {
+    await reapStaleProcessingJobs();
+  } finally {
+    reaperInFlight = false;
+  }
+};
+
+const startLeaseHeartbeat = (member: string): void => {
+  let inFlight = false;
+  leaseHeartbeatTimer = setInterval(async () => {
+    if (inFlight || activeJobClaim !== member || jobRelinquished) return;
+    inFlight = true;
+    try {
+      const refreshed = await refreshProcessingJob(member);
+      if (!refreshed && activeJobClaim === member) {
+        console.error(
+          `Processing claim was lost: movieId=${activeJob?.movieId}`,
+        );
+        jobRelinquished = true;
+        activeJobAbortController?.abort(new Error("Processing claim lost"));
+      }
+    } catch (error) {
+      console.error(
+        `Failed to refresh processing lease: movieId=${activeJob?.movieId}`,
+        error,
+      );
+    } finally {
+      inFlight = false;
+    }
+  }, PROCESSING_JOB_HEARTBEAT_MS);
+  leaseHeartbeatTimer.unref();
+};
+
+const stopLeaseHeartbeat = (): void => {
+  if (!leaseHeartbeatTimer) return;
+  clearInterval(leaseHeartbeatTimer);
+  leaseHeartbeatTimer = null;
+};
 
 // Reaper: recover claims whose owner died mid-job. Committed claims carry
 // their outcome (input already deleted, so re-encoding is impossible) and
@@ -114,7 +203,7 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
     // The completion record (24h) is authoritative: it outlives the claim
     // lease, so a committed outcome is never re-queued as an encode job.
     const completion =
-      (await getJobCompletion(job.movieId).catch(() => null)) ??
+      (await getJobCompletion(job.movieId, job.s3Key).catch(() => null)) ??
       claim.completion;
     if (!completion) {
       const progress = await getEncodeProgress(job.movieId).catch(() => null);
@@ -124,15 +213,10 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
       }
       if (progress?.status === "completed") {
         try {
-          await sendCallback({
-            movieId: job.movieId,
-            variantId: "original",
-            status: "success",
-            s3Key: job.s3Key,
+          await finalizeCommittedClaim(member, job, {
             contentUrl: getVodContentUrl(job.s3Key),
             duration: progress.duration,
           });
-          await finishProcessingJob(member, job.movieId);
           console.log(
             `Finalized completed job from stale claim: movieId=${job.movieId}`,
           );
@@ -147,20 +231,7 @@ const reapStaleProcessingJobs = async (): Promise<void> => {
     }
     if (completion) {
       try {
-        await setEncodeProgress(job.movieId, {
-          status: "completed",
-          progress: 100,
-          duration: completion.duration,
-        });
-        await sendCallback({
-          movieId: job.movieId,
-          variantId: "original",
-          status: "success",
-          s3Key: job.s3Key,
-          contentUrl: completion.contentUrl,
-          duration: completion.duration,
-        });
-        await finishProcessingJob(member, job.movieId);
+        await finalizeCommittedClaim(member, job, completion);
         console.log(`Finalized job from stale claim: movieId=${job.movieId}`);
       } catch (err) {
         // Leave the claim in place so a later reap retries it.
@@ -257,7 +328,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     const retryCount = job.retryCount || 0;
     if (retryCount < 3) {
       try {
-        await addJobToRetryQueue(job);
+        await addJobToRetryQueue(job, activeJobClaim ?? undefined);
         await setEncodeProgress(job.movieId, {
           status: "retrying",
         });
@@ -310,6 +381,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
 
   // Create abort controller for timeout management
   const abortController = new AbortController();
+  activeJobAbortController = abortController;
   const onShutdownAbort = () => abortController.abort();
   if (jobShutdownAbort.signal.aborted) {
     abortController.abort();
@@ -363,7 +435,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
           `Scheduling retry for job: movieId=${job.movieId}, retryCount=${retryCount + 1}`,
         );
         try {
-          await addJobToRetryQueue(job);
+          await addJobToRetryQueue(job, activeJobClaim ?? undefined);
           await setEncodeProgress(job.movieId, {
             status: "retrying",
           });
@@ -434,7 +506,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     });
 
     // Send success callback
-    await sendCallback({
+    const callbackResult = await sendCallback({
       movieId: job.movieId,
       variantId: "original",
       status: "success",
@@ -443,10 +515,41 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
       duration: result.duration,
     });
 
+    if (callbackResult === "rejected") {
+      await deleteFromProd(job.s3Key).catch((error) =>
+        console.error(
+          `Failed to remove rejected output: movieId=${job.movieId}`,
+          error,
+        ),
+      );
+      await setEncodeProgress(job.movieId, { status: "failed" });
+      await sendCallback({
+        movieId: job.movieId,
+        variantId: "original",
+        status: "failed",
+        s3Key: job.s3Key,
+      });
+      return "failed";
+    }
+
     console.log(`Job completed successfully: movieId=${job.movieId}`);
     return "completed";
   } catch (error) {
     if (jobRelinquished) {
+      return "relinquished";
+    }
+    if (
+      jobShutdownAbort.signal.aborted &&
+      !committedOutcome &&
+      activeJobClaim
+    ) {
+      jobRelinquished = true;
+      const requeued = await requeueProcessingJob(activeJobClaim, job);
+      if (!requeued) {
+        console.warn(
+          `Shutdown claim already handed off: movieId=${job.movieId}`,
+        );
+      }
       return "relinquished";
     }
     if (committedOutcome) {
@@ -462,7 +565,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
           progress: 100,
           duration: committedOutcome.duration,
         });
-        await sendCallback({
+        const callbackResult = await sendCallback({
           movieId: job.movieId,
           variantId: "original",
           status: "success",
@@ -470,6 +573,17 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
           contentUrl: committedOutcome.contentUrl,
           duration: committedOutcome.duration,
         });
+        if (callbackResult === "rejected") {
+          await deleteFromProd(job.s3Key).catch(() => {});
+          await setEncodeProgress(job.movieId, { status: "failed" });
+          await sendCallback({
+            movieId: job.movieId,
+            variantId: "original",
+            status: "failed",
+            s3Key: job.s3Key,
+          });
+          return "failed";
+        }
         return "completed";
       } catch (finalizeError) {
         console.error(
@@ -503,7 +617,7 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
         `Scheduling retry for job: movieId=${job.movieId}, retryCount=${retryCount + 1}`,
       );
       try {
-        await addJobToRetryQueue(job);
+        await addJobToRetryQueue(job, activeJobClaim ?? undefined);
         await setEncodeProgress(job.movieId, {
           status: "retrying",
         });
@@ -544,6 +658,9 @@ const processJob = async (job: EncodeJob): Promise<JobResult> => {
     // Clear timeout if job completed before timeout
     clearTimeout(timeoutId);
     jobShutdownAbort.signal.removeEventListener("abort", onShutdownAbort);
+    if (activeJobAbortController === abortController) {
+      activeJobAbortController = null;
+    }
     cleanup(filesToCleanup);
   }
 };
@@ -561,7 +678,7 @@ const pollForJobs = async (): Promise<void> => {
         console.error("Error processing retry queue:", error);
       }
       try {
-        await reapStaleProcessingJobs();
+        await runReaper();
       } catch (error) {
         console.error("Error reaping stale processing jobs:", error);
       }
@@ -582,129 +699,92 @@ const pollForJobs = async (): Promise<void> => {
 
   // Recover claims left behind by workers that died mid-job.
   try {
-    await reapStaleProcessingJobs();
+    await runReaper();
   } catch (error) {
     console.error("Error reaping stale processing jobs at startup:", error);
   }
 
   while (!isShuttingDown) {
     try {
-      // Use blocking pop with 5 second timeout
-      const job = await getEncodeJobBlocking(5);
-      if (job) {
-        const jobStartedAt = performance.now();
-        activeJob = job;
-        jobRelinquished = false;
-        try {
-          activeJobClaim = await claimProcessingJob(job);
-        } catch (claimError) {
-          console.error(
-            `Failed to record processing claim: movieId=${job.movieId}`,
-            claimError,
-          );
-        }
-        // The job may already have a recorded outcome (input deleted, then
-        // requeued by a stale claim): finalize instead of re-encoding.
-        const priorCompletion = await getJobCompletion(job.movieId).catch(
-          () => null,
-        );
+      const claim = await claimNextEncodeJob();
+      if (!claim) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        continue;
+      }
+
+      const job = claim.job;
+      const jobStartedAt = performance.now();
+      activeJob = job;
+      activeJobClaim = claim.member;
+      activeJobCommitted = false;
+      jobRelinquished = false;
+      startLeaseHeartbeat(claim.member);
+
+      let result: JobResult = "error";
+      try {
+        // The same input may already have a committed output. Finish its
+        // callback instead of encoding a potentially deleted temp object.
+        const priorCompletion = await getJobCompletion(
+          job.movieId,
+          job.s3Key,
+        ).catch(() => null);
         if (priorCompletion) {
           activeJobCommitted = true;
-          try {
-            await setEncodeProgress(job.movieId, {
-              status: "completed",
-              progress: 100,
-              duration: priorCompletion.duration,
-            });
-            await sendCallback({
-              movieId: job.movieId,
-              variantId: "original",
-              status: "success",
-              s3Key: job.s3Key,
-              contentUrl: priorCompletion.contentUrl,
-              duration: priorCompletion.duration,
-            });
-          } catch (finalizeError) {
-            console.error(
-              `Failed to finalize already-completed job: movieId=${job.movieId}`,
-              finalizeError,
-            );
-          }
-          if (activeJobClaim) {
-            try {
-              await finishProcessingJob(activeJobClaim, job.movieId);
-            } catch (finishError) {
-              console.error(
-                `Failed to release processing claim: movieId=${job.movieId}`,
-                finishError,
-              );
-            }
-          }
-          encodeJobs.add(1, { result: "completed" });
-          encodeJobDuration.record((performance.now() - jobStartedAt) / 1000, {
-            result: "completed",
-          });
-          activeJob = null;
-          activeJobClaim = null;
-          activeJobCommitted = false;
-          continue;
-        }
-        let result: JobResult = "error";
-        try {
+          await finalizeCommittedClaim(claim.member, job, priorCompletion);
+          result = "completed";
+        } else {
           result = await processJob(job);
-        } catch (error) {
+        }
+      } catch (error) {
+        console.error(
+          `Job processing threw unexpectedly: movieId=${job.movieId}`,
+          error,
+        );
+        try {
+          await setEncodeProgress(job.movieId, { status: "failed" });
+          await sendCallback({
+            movieId: job.movieId,
+            variantId: "original",
+            status: "failed",
+            s3Key: job.s3Key,
+          });
+        } catch (notifyError) {
           console.error(
-            `Job processing threw unexpectedly: movieId=${job.movieId}`,
-            error,
+            `Failed to report job failure: movieId=${job.movieId}`,
+            notifyError,
           );
-          // Best-effort terminal notification so the backend does not wait
-          // on "processing" forever; the job is already out of the queue.
+        }
+        result = "error";
+      } finally {
+        stopLeaseHeartbeat();
+        const claimResolved =
+          !jobRelinquished &&
+          (!activeJobCommitted ||
+            result === "completed" ||
+            result === "failed");
+        if (claimResolved) {
           try {
-            await setEncodeProgress(job.movieId, { status: "failed" });
-            await sendCallback({
-              movieId: job.movieId,
-              variantId: "original",
-              status: "failed",
-              s3Key: job.s3Key,
-            });
-          } catch (notifyError) {
+            if (activeJobCommitted || result === "completed") {
+              await finishProcessingJob(claim.member, job);
+            } else {
+              await releaseProcessingJob(claim.member);
+            }
+          } catch (releaseError) {
             console.error(
-              `Failed to report job failure: movieId=${job.movieId}`,
-              notifyError,
+              `Failed to release processing claim: movieId=${job.movieId}`,
+              releaseError,
             );
           }
-          result = "error";
-        } finally {
-          // Relinquished claims are owned by the queue again: releasing
-          // them here could delete a claim another worker just took. A
-          // committed job that failed to finalize keeps its claim so the
-          // reaper can finish it instead of losing an uploaded video.
-          const claimResolved =
-            !jobRelinquished && (!activeJobCommitted || result === "completed");
-          if (activeJobClaim && claimResolved) {
-            try {
-              if (result === "completed") {
-                await finishProcessingJob(activeJobClaim, job.movieId);
-              } else {
-                await releaseProcessingJob(activeJobClaim);
-              }
-            } catch (releaseError) {
-              console.error(
-                `Failed to release processing claim: movieId=${job.movieId}`,
-                releaseError,
-              );
-            }
-          }
-          activeJob = null;
-          activeJobClaim = null;
-          activeJobCommitted = false;
         }
-        encodeJobs.add(1, { result });
-        encodeJobDuration.record((performance.now() - jobStartedAt) / 1000, {
-          result,
-        });
+        activeJob = null;
+        activeJobClaim = null;
+        activeJobAbortController = null;
+        activeJobCommitted = false;
       }
-      // If no job, brPop will timeout and return null, then loop continues
+      encodeJobs.add(1, { result });
+      encodeJobDuration.record((performance.now() - jobStartedAt) / 1000, {
+        result,
+      });
     } catch (error) {
       console.error("Error polling for jobs:", error);
       // On error, wait a bit before retrying to avoid tight error loop
@@ -740,21 +820,25 @@ const shutdown = async (): Promise<void> => {
       new Promise((resolve) => setTimeout(resolve, SHUTDOWN_SETTLE_TIMEOUT_MS)),
     ]);
   }
-  // Last resort: the job did not settle even after abort (e.g. stuck in a
-  // non-abortable await). Relinquish it — its remaining terminal writes are
-  // skipped — and expire the claim so another worker's reaper hands it off:
-  // committed claims are finalized via callback, others are requeued.
+  // Last resort: the job did not settle even after abort. Atomically hand an
+  // uncommitted job back to the main queue; committed claims go to the reaper
+  // so their already-uploaded output is finalized instead of re-encoded.
   if (activeJob) {
     console.warn(
       `Relinquishing in-flight job on shutdown: movieId=${activeJob.movieId}`,
     );
     jobRelinquished = true;
+    stopLeaseHeartbeat();
     if (activeJobClaim) {
       try {
-        await expireProcessingJob(activeJobClaim);
+        if (activeJobCommitted) {
+          await expireProcessingJob(activeJobClaim);
+        } else {
+          await requeueProcessingJob(activeJobClaim, activeJob);
+        }
       } catch (err) {
         console.error(
-          `Failed to expire processing claim: movieId=${activeJob.movieId}`,
+          `Failed to hand off processing claim: movieId=${activeJob.movieId}`,
           err,
         );
       }

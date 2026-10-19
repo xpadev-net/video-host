@@ -13,7 +13,11 @@ export interface CallbackPayload {
   thumbnailUrl?: string;
 }
 
-export const sendCallback = async (payload: CallbackPayload) => {
+export type CallbackResult = "accepted" | "stale" | "deleted" | "rejected";
+
+export const sendCallback = async (
+  payload: CallbackPayload,
+): Promise<CallbackResult> => {
   try {
     const res = await fetch(callbackUrl, {
       method: "POST",
@@ -36,7 +40,7 @@ export const sendCallback = async (payload: CallbackPayload) => {
       // The backend has already moved this variant on or the upload key has
       // changed; retrying this callback cannot make the old job current again.
       console.warn(`Stale encode callback ignored for ID ${payload.movieId}`);
-      return;
+      return "stale";
     }
     if (res.status === 410) {
       // The movie was deleted while this encode was running. Do not leave its
@@ -44,7 +48,7 @@ export const sendCallback = async (payload: CallbackPayload) => {
       if (payload.status === "success") {
         await deleteFromProd(payload.s3Key);
       }
-      return;
+      return "deleted";
     }
     if (res.status === 400) {
       const body = (await res.json().catch(() => null)) as {
@@ -59,14 +63,23 @@ export const sendCallback = async (payload: CallbackPayload) => {
         if (payload.status === "success") {
           await deleteFromProd(payload.s3Key);
         }
-        return;
+        return "deleted";
       }
+    }
+    if (res.status >= 400 && res.status < 500) {
+      // A client error will not become valid on the next reap. Treat it as a
+      // terminal callback outcome instead of retaining the claim forever.
+      console.error(
+        `Permanent callback rejection: ${res.status} ${res.statusText}`,
+      );
+      return "rejected";
     }
     if (!res.ok) {
       console.error(`Failed to send callback: ${res.statusText}`);
       throw new Error(`Failed to send callback: ${res.statusText}`);
     }
     console.log(`Callback sent for ID ${payload.movieId}: ${payload.status}`);
+    return "accepted";
   } catch (error) {
     console.error("Error sending callback:", error);
     throw error;
