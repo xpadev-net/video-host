@@ -12,6 +12,20 @@ env:
   NODE_VERSION: '22.12.x'
 
 jobs:
+  kubernetes-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.32.0
+
+      - name: Render production Kubernetes manifests
+        run: kubectl kustomize k8s/overlays/prod > /dev/null
+
   # Replaying migrations against a temporary MySQL shadow DB catches schema drift.
   schema-drift:
     runs-on: ubuntu-latest

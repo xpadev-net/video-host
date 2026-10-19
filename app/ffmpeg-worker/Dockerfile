@@ -38,4 +38,5 @@ COPY app/ffmpeg-worker/ ./app/ffmpeg-worker/
 WORKDIR /app/app/ffmpeg-worker
 
 # Start worker
+USER node
 CMD ["pnpm", "start"]

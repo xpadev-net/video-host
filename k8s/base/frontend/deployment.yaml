@@ -7,6 +7,11 @@ metadata:
     app.kubernetes.io/component: web
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: frontend
@@ -16,9 +21,20 @@ spec:
         app.kubernetes.io/name: frontend
         app.kubernetes.io/component: web
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: frontend
-          image: ghcr.io/xpadev-net/video-host/frontend:latest
+          image: ghcr.io/xpadev-net/video-host/frontend:v0.0.56
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           ports:
             - containerPort: 3000
               protocol: TCP
@@ -55,6 +71,12 @@ spec:
                   name: frontend-config
                   key: otel-endpoint
                   optional: true
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: otel-metrics-endpoint
+                  optional: true
             - name: OTEL_SERVICE_NAME
               valueFrom:
                 configMapKeyRef:
@@ -69,12 +91,23 @@ spec:
               memory: "512Mi"
               cpu: "500m"
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/healthz
               port: 3000
-            initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/healthz
               port: 3000
-            initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 30

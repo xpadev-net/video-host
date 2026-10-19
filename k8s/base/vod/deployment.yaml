@@ -7,6 +7,11 @@ metadata:
     app.kubernetes.io/component: streaming
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: vod
@@ -16,14 +21,25 @@ spec:
         app.kubernetes.io/name: vod
         app.kubernetes.io/component: streaming
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         - name: prepare-nginx-config
-          image: alpine:3.23
+          image: nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           command:
             - /bin/sh
             - -c
             - |
-              apk add --no-cache ca-certificates gettext
               cp /etc/ssl/cert.pem /etc/nginx/ssl/ca-certificates.crt
               DNS_RESOLVER="$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf)"
               if [ -z "$DNS_RESOLVER" ]; then
@@ -107,9 +123,14 @@ spec:
               mountPath: /etc/nginx/rendered
       containers:
         - name: vod
-          image: ghcr.io/xpadev-net/nginx-vod-module-docker:latest
+          image: ghcr.io/xpadev-net/nginx-vod-module-docker@sha256:f6adc8d8c94ee38726d3c2ffdcb637f3622f2404bbc4654242da4025970aa5ff
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           ports:
-            - containerPort: 80
+            - containerPort: 8080
               protocol: TCP
           env:
             - name: VOD_INTERNAL_SECRET
@@ -125,6 +146,8 @@ spec:
             - name: ca-certificates
               mountPath: /etc/nginx/ssl
               readOnly: true
+            - name: nginx-tmp
+              mountPath: /tmp
           resources:
             requests:
               memory: "256Mi"
@@ -135,13 +158,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: 8080
             initialDelaySeconds: 10
             periodSeconds: 20
       volumes:
@@ -151,5 +174,7 @@ spec:
         - name: nginx-config-rendered
           emptyDir: {}
         - name: ca-certificates
+          emptyDir: {}
+        - name: nginx-tmp
           emptyDir: {}
 

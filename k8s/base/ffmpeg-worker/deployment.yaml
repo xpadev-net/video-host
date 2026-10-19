@@ -7,6 +7,11 @@ metadata:
     app.kubernetes.io/component: worker
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: ffmpeg-worker
@@ -16,9 +21,22 @@ spec:
         app.kubernetes.io/name: ffmpeg-worker
         app.kubernetes.io/component: worker
     spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: ffmpeg-worker
-          image: ghcr.io/xpadev-net/video-host/ffmpeg-worker:latest
+          image: ghcr.io/xpadev-net/video-host/ffmpeg-worker:v0.0.11
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           env:
             # Redis
             - name: REDIS_URL
@@ -133,6 +151,12 @@ spec:
                   name: ffmpeg-worker-config
                   key: otel-endpoint
                   optional: true
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: otel-metrics-endpoint
+                  optional: true
             - name: OTEL_SERVICE_NAME
               valueFrom:
                 configMapKeyRef:
@@ -146,9 +170,23 @@ spec:
             requests:
               memory: "512Mi"
               cpu: "500m"
+              ephemeral-storage: "12Gi"
             limits:
               memory: "2Gi"
               cpu: "2000m"
+              ephemeral-storage: "16Gi"
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "kill -0 1"]
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "kill -0 1"]
+            periodSeconds: 30
+            timeoutSeconds: 2
+            failureThreshold: 3
       volumes:
         - name: temp-storage
           emptyDir:

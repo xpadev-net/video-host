@@ -36,14 +36,16 @@ LABEL org.opencontainers.image.source=https://github.com/xpadev-net/video-host
 WORKDIR /app
 
 # Nitro's output is standalone and includes the public client assets.
-COPY --from=builder /app/app/frontend/.output ./app/frontend/.output
-COPY --from=builder /app/app/frontend/start.sh ./
+COPY --from=builder --chown=node:node /app/app/frontend/.output ./app/frontend/.output
+COPY --from=builder --chown=node:node /app/app/frontend/start.sh ./
 
-COPY app/frontend/docker/env-replacer.sh ./
+COPY --chown=node:node app/frontend/docker/env-replacer.sh ./
 
 RUN chmod +x ./env-replacer.sh
 RUN chmod +x ./start.sh
 ENTRYPOINT [ "/app/env-replacer.sh" ]
 EXPOSE 3000
+
+USER node
 
 CMD ["./start.sh"]
