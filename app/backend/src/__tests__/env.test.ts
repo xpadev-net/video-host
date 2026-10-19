@@ -1,5 +1,7 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEV_DEFAULTS, EnvSchema } from "../env";
+import { BackendEnvSchema, DEV_DEFAULTS, EnvSchema } from "../env";
 
 const production = (changes: Record<string, string | undefined> = {}) => ({
   NODE_ENV: "production",
@@ -18,6 +20,58 @@ const oidc = {
 };
 
 describe("authentication environment", () => {
+  it("keeps the backend environment example in sync with the schema", () => {
+    const backendExamplePath = resolve(
+      process.cwd(),
+      "app/backend/.env.example",
+    );
+    const examplePath = existsSync(backendExamplePath)
+      ? backendExamplePath
+      : resolve(process.cwd(), ".env.example");
+    const example = readFileSync(examplePath, "utf8");
+    const documentedKeys = new Set(
+      example
+        .split(/\r?\n/)
+        .map((line) => line.match(/^([A-Z][A-Z0-9_]*)=/)?.[1])
+        .filter((key): key is string => key !== undefined),
+    );
+    const schemaKeys = new Set(Object.keys(BackendEnvSchema.shape));
+
+    // Prisma reads DATABASE_URL directly; it is not part of the runtime Zod schema.
+    schemaKeys.add("DATABASE_URL");
+    expect([...documentedKeys].sort()).toEqual([...schemaKeys].sort());
+
+    const workspaceRoot = existsSync(
+      resolve(process.cwd(), "pnpm-workspace.yaml"),
+    )
+      ? process.cwd()
+      : resolve(process.cwd(), "../..");
+    const rootPath = resolve(workspaceRoot, ".env.example");
+    const rootExample = readFileSync(rootPath, "utf8");
+    const rootKeys = new Set(
+      rootExample
+        .split(/\r?\n/)
+        .map((line) => line.match(/^([A-Z][A-Z0-9_]*)=/)?.[1])
+        .filter((key): key is string => key !== undefined),
+    );
+    expect([...schemaKeys].every((key) => rootKeys.has(key))).toBe(true);
+
+    const rootValues = new Map(
+      rootExample
+        .split(/\r?\n/)
+        .map((line) => line.match(/^([A-Z][A-Z0-9_]*)=(.*)$/))
+        .filter((match): match is RegExpMatchArray => match !== null)
+        .map((match) => [match[1], match[2]]),
+    );
+    const frontendExample = readFileSync(
+      resolve(workspaceRoot, "app/frontend/.env.example"),
+      "utf8",
+    );
+    for (const line of frontendExample.split(/\r?\n/)) {
+      const match = line.match(/^(API_UPSTREAM_URL|VITE_[A-Z0-9_]+)=(.*)$/);
+      if (match) expect(rootValues.get(match[1])).toBe(match[2]);
+    }
+  });
   it("accepts complete production configuration", () => {
     expect(EnvSchema.safeParse(production()).success).toBe(true);
   });

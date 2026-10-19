@@ -7,7 +7,7 @@ data:
   nginx.conf: |
     user root;
     worker_processes auto;
-    error_log /dev/stderr debug;
+    error_log /dev/stderr warn;
     pid /tmp/nginx.pid;
 
     events {
@@ -75,7 +75,7 @@ data:
         aio on;
 
         # Resolver for Kubernetes DNS
-        resolver kube-dns.kube-system.svc.cluster.local valid=10s;
+        resolver ${DNS_RESOLVER} valid=10s;
 
         server {
             listen 80;
@@ -94,8 +94,7 @@ data:
                 # REPLACE_BACKEND_URL: バックエンドのサービス名を設定
                 proxy_pass http://backend:3000/api/v4/vod/mapping/;
                 proxy_set_header Host $http_host;
-                # VOD_INTERNAL_SECRETは環境変数から取得するか、ここに直接設定
-                proxy_set_header X-Vod-Internal-Secret "vod-internal-secret";
+                proxy_set_header X-Vod-Internal-Secret "${VOD_INTERNAL_SECRET}";
             }
 
             # Remote proxy for presigned S3 URLs
@@ -112,18 +111,25 @@ data:
 
                 # %3F が無ければそのまま、あれば ?qs を付ける
                 # REPLACE_S3_HOST: S3/MinIOホストを設定 (例: minio:9000)
-                set $s3_host "minio:9000";
+                # $backend_uri preserves bucket/key for path-style URLs; virtual-hosted URLs put the bucket in $s3_host.
+                set $s3_scheme "${S3_PROXY_SCHEME}";
+                set $s3_host "${S3_PROXY_HOST}";
                 
                 if ($qs_part = "") {
-                    proxy_pass http://$s3_host/$backend_uri;
+                    proxy_pass $s3_scheme://$s3_host/$backend_uri;
                 }
                 if ($qs_part != "") {
-                    proxy_pass http://$s3_host/$path_part?$qs_part;
+                    proxy_pass $s3_scheme://$s3_host/$path_part?$qs_part;
                 }
 
                 proxy_set_header Cookie "";
                 proxy_set_header Authorization "";
                 proxy_set_header Host $s3_host;
+                proxy_ssl_server_name on;
+                proxy_ssl_name $s3_host;
+                proxy_ssl_verify on;
+                proxy_ssl_trusted_certificate /etc/nginx/ssl/ca-certificates.crt;
+                proxy_ssl_verify_depth 5;
             }
 
             # VOD HLS endpoint

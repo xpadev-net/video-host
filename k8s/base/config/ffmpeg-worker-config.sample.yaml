@@ -12,12 +12,12 @@ data:
   s3-tmp-bucket: "video-tmp"
   s3-prod-bucket: "video-prod"
   s3-region: "ap-northeast-1"
-  s3-endpoint: ""
-  s3-force-path-style: "false"
+  s3-endpoint: "http://minio:9000"
+  s3-force-path-style: "true"
   # Callback
   backend-callback-url: "http://backend:3000/api/internal/video/callback"
   # VOD
-  vod-base-url: "http://vod-server/vod"
+  vod-base-url: "https://your-vod-domain.com"
   # Worker
   poll-interval-ms: "5000"
   min-disk-space-gb: "1"

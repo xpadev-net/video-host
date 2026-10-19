@@ -24,3 +24,16 @@
 > ```bash
 > echo -n 'your-secret-value' | base64
 > ```
+
+## VOD 用 nginx 設定
+
+- `nginx/nginx.conf` はローカルの `docker-compose.yml` が `./nginx` ディレクトリごとコンテナへマウントする HTTP 設定です。ローカル開発用で、Kubernetes には適用しません。
+- `k8s/base/config/vod-nginx-config.sample.yaml` は、base のVOD Deploymentに使うConfigMapテンプレートです。VOD PodとServiceはHTTP/80で通信します。公開HTTPSはIngressで終端し、公開証明書を設定してください。base standaloneでは、`minio:9000`を利用できるS3サービスとbackend Serviceを用意してください。`ffmpeg-worker-config.sample.yaml`の`vod-base-url`は、公開Ingressのorigin（`/vod`なし）に置き換えてください。Ingressは`/vod/*`をVOD Serviceの80番portへ転送する必要があります。
+- 通常の本番 Kustomize 経路では `k8s/overlays/prod/kustomization.yaml` が同じ `vod-nginx-config` を生成し、同じディレクトリの `nginx.conf` を読み込みます。設定はKubernetes Service `backend:3000`へマッピングを転送し、VOD init containerが`backend-config`の`S3_ENDPOINT`、`S3_REGION`、bucket、path-style設定からpresigned URLのupstreamを復元します。AWSのvirtual-hosted URLではbucketをupstream hostnameに加え、path-style URLではbucketをURIに含めます。HTTPSでbucket名にドットがある場合は、AWS SDKがpath-styleへ切り替えるためinit containerもpath-styleを選びます。S3リージョンやendpointを変更するときはbackendとworkerの設定を揃えてください。HTTPS upstreamではVOD init containerからマウントしたCA bundleを使ってTLS証明書を検証します。
+- production overlay の`vod-base-url`は`https://your-vod-domain.com`を公開Ingressのoriginへ置き換えます。末尾に`/vod`を付けず、Ingressは公開TLSを終端して`/vod/*`をVOD Serviceの80番portへ転送してください。これはworkerが保存するURLをブラウザーから到達可能にする設定です。
+
+nginxの設定はinit containerでConfigMapテンプレートから生成します。init containerは`vod-secrets`から`vod-internal-secret`を読み込み、VOD mapping用headerへ埋め込みます。またPodの`/etc/resolv.conf`からDNS resolverを取得し、S3 hostnameを解決します。
+
+本番 overlay を確認するには、リポジトリルートで `kubectl kustomize k8s/overlays/prod` を実行し、生成された `vod-nginx-config` と `vod` Deployment の設定・証明書マウントを一緒に確認してください。ローカル用 HTTP 設定を本番の HTTPS ConfigMap に置き換えたり、sample ConfigMap を overlay 生成物へ重ねて適用したりしないでください。
+
+本番では`backend-secrets`と`vod-secrets`の`vod-internal-secret`へ同じランダム値を設定してください（例: `openssl rand -hex 32`で生成）。init containerは`vod-secrets`から読み込み、nginx設定へ値を埋め込みます。サンプル値や`CHANGE_ME`のまま本番へ適用しないでください。
