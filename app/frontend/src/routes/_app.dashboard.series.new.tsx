@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import { type FormEvent, useState } from "react";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
 
@@ -51,7 +52,7 @@ function NewSeriesPage() {
     }
   };
 
-  if (isLoading) return <div>Loading...</div>;
+  if (isLoading) return <DashboardLoading />;
   if (!user) return <div>ログインしてください</div>;
 
   return (
@@ -104,18 +105,6 @@ function NewSeriesPage() {
           </button>
         </form>
       </div>
-      <style>{`
-        .new-series-page h1 { margin-bottom: 2rem; color: var(--text-primary, #fff); }
-        .form { max-width: 600px; display: flex; flex-direction: column; gap: 1.5rem; }
-        .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
-        .form-group label { color: var(--text-secondary, #999); font-size: 0.875rem; }
-        .form-group input, .form-group textarea, .form-group select { padding: 0.75rem; background: var(--background-primary, #0d0d0d); border: 1px solid var(--border-color, #333); border-radius: 8px; color: var(--text-primary, #fff); font-size: 1rem; }
-        .form-group input:focus, .form-group textarea:focus, .form-group select:focus { outline: none; border-color: var(--primary-color, #3b82f6); }
-        .error-message { padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 8px; color: #ef4444; }
-        .submit-button { padding: 0.875rem 1.5rem; background: var(--primary-color, #3b82f6); color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; }
-        .submit-button:hover:not(:disabled) { background: #2563eb; }
-        .submit-button:disabled { opacity: 0.5; cursor: not-allowed; }
-      `}</style>
     </>
   );
 }

@@ -203,7 +203,7 @@ export const AccountSwitcher: FC = () => {
             }
             className="account-switcher-select"
           >
-            <option value="">👤 {user?.name}（自分）</option>
+            <option value="">{user?.name}（自分）</option>
             {systemAccounts.map((account) => (
               <option key={account.id} value={account.id}>
                 🤖 {account.name}

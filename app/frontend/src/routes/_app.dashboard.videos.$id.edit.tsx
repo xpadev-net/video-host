@@ -1,8 +1,4 @@
-import {
-  createFileRoute,
-  useNavigate,
-  useRouter,
-} from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type {
   FilteredUser,
   FormattedMovie,
@@ -16,6 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { ApiEndpoint } from "@/contexts/env";
 import { useUpload } from "@/hooks/useUpload";
@@ -36,10 +33,10 @@ interface EncodeProgress {
 }
 
 function EditVideoPage() {
-  const router = useRouter();
   const navigate = useNavigate();
   const { id } = Route.useParams();
-  const { data: authSession } = authClient.useSession();
+  const { data: authSession, isPending: sessionPending } =
+    authClient.useSession();
   const session = authSession?.user.id;
 
   const [movie, setMovie] = useState<FormattedMovie | null>(null);
@@ -50,6 +47,7 @@ function EditVideoPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [encodeProgress, setEncodeProgress] = useState<EncodeProgress | null>(
     null,
   );
@@ -57,13 +55,22 @@ function EditVideoPage() {
   const resumeFileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchMovie = useCallback(async () => {
-    if (!session) return;
+    if (sessionPending) return;
+    if (!session) {
+      setLoadError("ログイン状態を確認できませんでした");
+      setIsLoading(false);
+      return;
+    }
 
     try {
       const res = await client.api.v4.movies[":movie"].$get({
         param: { movie: id },
       });
 
+      if (Number(res.status) === 404) {
+        setLoadError("動画が見つかりません");
+        return;
+      }
       if (!res.ok) {
         throw new Error("Failed to fetch");
       }
@@ -76,11 +83,11 @@ function EditVideoPage() {
       setVisibility(movieData.visibility);
       setViewers(movieData.viewers ?? []);
     } catch {
-      setError("動画の取得に失敗しました");
+      setLoadError("動画の取得に失敗しました");
     } finally {
       setIsLoading(false);
     }
-  }, [id, session]);
+  }, [id, session, sessionPending]);
 
   useEffect(() => {
     void fetchMovie();
@@ -221,11 +228,18 @@ function EditVideoPage() {
   };
 
   if (isLoading) {
-    return <div>Loading...</div>;
+    return <DashboardLoading />;
   }
 
   if (!movie) {
-    return <div>動画が見つかりません</div>;
+    return (
+      <section className="space-y-4" role="alert">
+        <p>{loadError ?? "動画が見つかりません"}</p>
+        <Link className="text-primary underline" to="/dashboard/videos">
+          動画一覧へ戻る
+        </Link>
+      </section>
+    );
   }
 
   const variant = movie.variants?.[0];
@@ -384,7 +398,7 @@ function EditVideoPage() {
           <div className="form-actions">
             <button
               type="button"
-              onClick={() => router.history.back()}
+              onClick={() => void navigate({ to: "/dashboard/videos" })}
               className="cancel-button"
             >
               キャンセル
@@ -399,123 +413,6 @@ function EditVideoPage() {
           </div>
         </form>
       </div>
-      <style>{`
-        .edit-page h1 {
-          margin-bottom: 2rem;
-          color: var(--text-primary, #fff);
-        }
-        .edit-form {
-          max-width: 600px;
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        .form-group label {
-          color: var(--text-secondary, #999);
-          font-size: 0.875rem;
-        }
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-          padding: 0.75rem;
-          background: var(--background-primary, #0d0d0d);
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
-          color: var(--text-primary, #fff);
-          font-size: 1rem;
-        }
-        .form-group input:focus,
-        .form-group textarea:focus,
-        .form-group select:focus {
-          outline: none;
-          border-color: var(--primary-color, #3b82f6);
-        }
-        .error-message {
-          padding: 0.75rem;
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid #ef4444;
-          border-radius: 8px;
-          color: #ef4444;
-        }
-        .form-actions {
-          display: flex;
-          gap: 1rem;
-        }
-        .cancel-button {
-          padding: 0.875rem 1.5rem;
-          background: transparent;
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
-          color: var(--text-primary, #fff);
-          cursor: pointer;
-        }
-        .cancel-button:hover {
-          background: var(--background-tertiary, #252525);
-        }
-        .submit-button {
-          padding: 0.875rem 1.5rem;
-          background: var(--primary-color, #3b82f6);
-          color: white;
-          border: none;
-          border-radius: 8px;
-          font-size: 1rem;
-          font-weight: 500;
-          cursor: pointer;
-        }
-        .submit-button:hover:not(:disabled) {
-          background: #2563eb;
-        }
-        .submit-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-        .encoding-progress {
-          padding: 1.5rem;
-          background: rgba(59, 130, 246, 0.1);
-          border: 1px solid rgba(59, 130, 246, 0.3);
-          border-radius: 12px;
-          margin-bottom: 1.5rem;
-          max-width: 600px;
-        }
-        .progress-header {
-          margin-bottom: 0.75rem;
-        }
-        .progress-status {
-          color: #3b82f6;
-          font-weight: 500;
-        }
-        .progress-bar-container {
-          height: 8px;
-          background: rgba(59, 130, 246, 0.2);
-          border-radius: 4px;
-          overflow: hidden;
-          margin-bottom: 0.5rem;
-        }
-        .progress-bar-fill {
-          height: 100%;
-          background: #3b82f6;
-          border-radius: 4px;
-          transition: width 0.3s ease;
-        }
-        .progress-time {
-          font-size: 0.875rem;
-          color: var(--text-secondary, #999);
-        }
-        .encode-failed {
-          padding: 1rem;
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid #ef4444;
-          border-radius: 8px;
-          color: #ef4444;
-          margin-bottom: 1.5rem;
-          max-width: 600px;
-        }
-      `}</style>
     </>
   );
 }

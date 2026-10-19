@@ -1,10 +1,7 @@
-import {
-  createFileRoute,
-  useNavigate,
-  useRouter,
-} from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { BasicVisibility, FormattedMovie } from "@video-host/backend";
 import { type FormEvent, useEffect, useState } from "react";
+import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { MovieManager } from "@/components/Dashboard/MovieManager";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
@@ -20,10 +17,10 @@ interface SeriesMovie {
 }
 
 function EditSeriesPage() {
-  const router = useRouter();
   const navigate = useNavigate();
   const { id } = Route.useParams();
-  const { data: authSession } = authClient.useSession();
+  const { data: authSession, isPending: sessionPending } =
+    authClient.useSession();
   const session = authSession?.user.id;
 
   const [title, setTitle] = useState("");
@@ -33,15 +30,22 @@ function EditSeriesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!session) return;
+    if (sessionPending) return;
+    if (!session) {
+      setLoadError("ログイン状態を確認できませんでした");
+      setIsLoading(false);
+      return;
+    }
     const fetchSeries = async () => {
       try {
         const res = await client.api.v4.series[":series"].$get({
           param: { series: id },
         });
 
+        if (Number(res.status) === 404) throw new Error("not-found");
         if (!res.ok) throw new Error("Failed to fetch");
 
         const json = await res.json();
@@ -53,14 +57,18 @@ function EditSeriesPage() {
           (movie, index) => ({ movie, order: index + 1 }),
         );
         setMovies(seriesMovies);
-      } catch {
-        setError("シリーズの取得に失敗しました");
+      } catch (cause) {
+        setLoadError(
+          cause instanceof Error && cause.message === "not-found"
+            ? "シリーズが見つかりません"
+            : "シリーズの取得に失敗しました",
+        );
       } finally {
         setIsLoading(false);
       }
     };
     fetchSeries();
-  }, [id, session]);
+  }, [id, session, sessionPending]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -88,7 +96,17 @@ function EditSeriesPage() {
     }
   };
 
-  if (isLoading) return <div>Loading...</div>;
+  if (isLoading) return <DashboardLoading />;
+  if (loadError) {
+    return (
+      <section className="space-y-4" role="alert">
+        <p>{loadError}</p>
+        <Link className="text-primary underline" to="/dashboard/series">
+          シリーズ一覧へ戻る
+        </Link>
+      </section>
+    );
+  }
 
   return (
     <>
@@ -138,7 +156,7 @@ function EditSeriesPage() {
           <div className="form-actions">
             <button
               type="button"
-              onClick={() => router.history.back()}
+              onClick={() => void navigate({ to: "/dashboard/series" })}
               className="cancel-button"
             >
               キャンセル
@@ -153,68 +171,6 @@ function EditSeriesPage() {
           </div>
         </form>
       </div>
-      <style>{`
-        .edit-series-page h1 {
-          margin-bottom: 2rem;
-          color: var(--text-primary, #fff);
-        }
-        .form {
-          max-width: 600px;
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        .form-group label {
-          color: var(--text-secondary, #999);
-          font-size: 0.875rem;
-        }
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-          padding: 0.75rem;
-          background: var(--background-primary, #0d0d0d);
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
-          color: var(--text-primary, #fff);
-          font-size: 1rem;
-        }
-        .error-message {
-          padding: 0.75rem;
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid #ef4444;
-          border-radius: 8px;
-          color: #ef4444;
-        }
-        .form-actions {
-          display: flex;
-          gap: 1rem;
-        }
-        .cancel-button {
-          padding: 0.875rem 1.5rem;
-          background: transparent;
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
-          color: var(--text-primary, #fff);
-          cursor: pointer;
-        }
-        .submit-button {
-          padding: 0.875rem 1.5rem;
-          background: var(--primary-color, #3b82f6);
-          color: white;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-        }
-        .submit-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      `}</style>
     </>
   );
 }

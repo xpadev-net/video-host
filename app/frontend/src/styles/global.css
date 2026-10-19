@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./dashboard.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -159,13 +160,13 @@ body {
 @layer components {
   .account-switcher {
     padding: 1rem;
-    border-bottom: 1px solid var(--border-color, #333);
+    border-bottom: 1px solid var(--border, #333);
   }
 
   .account-switcher-label {
     display: block;
     margin-bottom: 0.5rem;
-    color: var(--text-tertiary, #666);
+    color: var(--muted-foreground, #666);
     font-size: 0.75rem;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -174,29 +175,29 @@ body {
   .account-switcher-select {
     width: 100%;
     padding: 0.5rem;
-    border: 1px solid var(--border-color, #333);
+    border: 1px solid var(--border, #333);
     border-radius: 6px;
-    background: var(--background-primary, #0d0d0d);
-    color: var(--text-primary, #fff);
+    background: var(--background, #0d0d0d);
+    color: var(--foreground, #fff);
     font-size: 0.875rem;
     cursor: pointer;
   }
 
   .account-switcher-select:focus {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary, #3b82f6);
     outline: none;
   }
 
   .account-switcher-note {
     margin-top: 0.5rem;
-    color: var(--text-secondary, #999);
+    color: var(--muted-foreground, #999);
     font-size: 0.75rem;
   }
 
   .dashboard-layout {
     display: flex;
     min-height: 100vh;
-    background: var(--background-secondary, #1a1a1a);
+    background: var(--secondary, #1a1a1a);
   }
 
   .dashboard-sidebar {
@@ -204,23 +205,23 @@ body {
     width: 240px;
     flex: 0 0 240px;
     flex-direction: column;
-    border-right: 1px solid var(--border-color, #333);
-    background: var(--background-primary, #0d0d0d);
+    border-right: 1px solid var(--border, #333);
+    background: var(--background, #0d0d0d);
   }
 
   .dashboard-sidebar-header {
     padding: 1rem;
-    border-bottom: 1px solid var(--border-color, #333);
+    border-bottom: 1px solid var(--border, #333);
   }
 
   .dashboard-logo {
-    color: var(--text-secondary, #999);
+    color: var(--muted-foreground, #999);
     font-size: 0.875rem;
     text-decoration: none;
   }
 
   .dashboard-logo:hover {
-    color: var(--text-primary, #fff);
+    color: var(--foreground, #fff);
   }
 
   .dashboard-nav {
@@ -236,19 +237,19 @@ body {
     gap: 0.75rem;
     padding: 0.75rem 1rem;
     border-radius: 8px;
-    color: var(--text-secondary, #999);
+    color: var(--muted-foreground, #999);
     text-decoration: none;
     transition: all 0.2s;
   }
 
   .dashboard-nav-item:hover {
-    background: var(--background-tertiary, #252525);
-    color: var(--text-primary, #fff);
+    background: var(--muted, #252525);
+    color: var(--foreground, #fff);
   }
 
   .dashboard-nav-item.active {
-    background: var(--primary-color, #3b82f6);
-    color: white;
+    background: var(--primary, #3b82f6);
+    color: var(--primary-foreground);
   }
 
   .dashboard-nav-icon {
@@ -258,12 +259,12 @@ body {
   .dashboard-nav-divider {
     height: 1px;
     margin: 0.5rem 0;
-    background: var(--border-color, #333);
+    background: var(--border, #333);
   }
 
   .dashboard-nav-section {
     padding: 0.5rem 1rem;
-    color: var(--text-tertiary, #666);
+    color: var(--muted-foreground, #666);
     font-size: 0.75rem;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -284,7 +285,7 @@ body {
     .dashboard-sidebar {
       width: 100%;
       border-right: 0;
-      border-bottom: 1px solid var(--border-color, #333);
+      border-bottom: 1px solid var(--border, #333);
     }
 
     .dashboard-sidebar-header,
@@ -332,7 +333,7 @@ body {
 
   .movie-manager h3 {
     margin-bottom: 1rem;
-    color: var(--text-primary, #fff);
+    color: var(--foreground, #fff);
   }
 
   .add-movie-section {
@@ -344,18 +345,18 @@ body {
   .movie-select {
     flex: 1;
     padding: 0.5rem;
-    border: 1px solid var(--border-color, #333);
+    border: 1px solid var(--border, #333);
     border-radius: 6px;
-    background: var(--background-primary, #0d0d0d);
-    color: var(--text-primary, #fff);
+    background: var(--background, #0d0d0d);
+    color: var(--foreground, #fff);
   }
 
   .add-btn {
     padding: 0.5rem 1rem;
     border: none;
     border-radius: 6px;
-    background: var(--primary-color, #3b82f6);
-    color: white;
+    background: var(--primary, #3b82f6);
+    color: var(--primary-foreground);
     cursor: pointer;
   }
 
@@ -369,7 +370,7 @@ body {
   }
 
   .no-movies {
-    color: var(--text-secondary, #999);
+    color: var(--muted-foreground, #999);
   }
 
   .movies-list {
@@ -383,16 +384,16 @@ body {
     align-items: center;
     gap: 0.75rem;
     padding: 0.75rem;
-    border: 1px solid var(--border-color, #333);
+    border: 1px solid var(--border, #333);
     border-radius: 8px;
-    background: var(--background-primary, #0d0d0d);
-    color: var(--text-primary, #fff);
+    background: var(--background, #0d0d0d);
+    color: var(--foreground, #fff);
     cursor: grab;
     transition: all 0.2s;
   }
 
   .movie-item:hover {
-    border-color: var(--primary-color, #3b82f6);
+    border-color: var(--primary, #3b82f6);
   }
 
   .movie-item.dragging {
@@ -402,7 +403,7 @@ body {
 
   .movie-order {
     width: 24px;
-    color: var(--text-secondary, #999);
+    color: var(--muted-foreground, #999);
     font-size: 0.875rem;
     text-align: center;
   }
@@ -423,17 +424,17 @@ body {
     width: 28px;
     height: 28px;
     padding: 0;
-    border: 1px solid var(--border-color, #333);
+    border: 1px solid var(--border, #333);
     border-radius: 4px;
     background: transparent;
-    color: var(--text-secondary, #999);
+    color: var(--muted-foreground, #999);
     font-size: 0.875rem;
     cursor: pointer;
   }
 
   .move-btn:hover:not(:disabled) {
-    border-color: var(--text-primary, #fff);
-    color: var(--text-primary, #fff);
+    border-color: var(--foreground, #fff);
+    color: var(--foreground, #fff);
   }
 
   .move-btn:disabled {

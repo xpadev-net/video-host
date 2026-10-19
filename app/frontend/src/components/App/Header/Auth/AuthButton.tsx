@@ -4,6 +4,7 @@ import { LogIn, LogOut } from "lucide-react";
 import { useRef, useState } from "react";
 import { useSWRConfig } from "swr";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { useNotify } from "@/components/Feedback/FeedbackProvider";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 
@@ -17,13 +18,12 @@ const AuthButton = () => {
   const { mutate } = useSWRConfig();
   const signingOut = useRef(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const notify = useNotify();
 
   const signOut = async () => {
     if (signingOut.current) return;
     signingOut.current = true;
     setLoading(true);
-    setError("");
     try {
       const { error } = await authClient.signOut();
       if (error) throw new Error(error.message);
@@ -31,7 +31,7 @@ const AuthButton = () => {
       await mutate(() => true, undefined, { revalidate: false });
       await navigate({ to: "/" });
     } catch {
-      setError("ログアウトに失敗しました。もう一度お試しください");
+      notify("ログアウトに失敗しました。もう一度お試しください");
     } finally {
       signingOut.current = false;
       setLoading(false);
@@ -40,7 +40,7 @@ const AuthButton = () => {
 
   if (session) {
     return (
-      <>
+      <div className="flex items-center justify-end gap-1">
         <Button
           size="icon"
           variant="ghost"
@@ -51,12 +51,7 @@ const AuthButton = () => {
         >
           <LogOut />
         </Button>
-        {error && (
-          <span role="alert" className="text-sm text-destructive">
-            {error}
-          </span>
-        )}
-      </>
+      </div>
     );
   }
   return (
