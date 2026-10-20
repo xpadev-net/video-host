@@ -227,10 +227,9 @@ jobs:
         run: |
           set -euo pipefail
           COMMIT_SHA="$(git rev-parse HEAD)"
-          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${COMMIT_SHA:0:12}" >> "$GITHUB_OUTPUT"
 
           if [ "$EVENT_NAME" = workflow_dispatch ] && [ "$RECOVER_EXISTING_RELEASE" = true ]; then
+            RELEASE_SHA=""
             for entry in "backend:$RELEASE_BACKEND:app/backend/package.json" "frontend:$RELEASE_FRONTEND:app/frontend/package.json" "worker:$RELEASE_WORKER:app/ffmpeg-worker/package.json"; do
               PACKAGE="${entry%%:*}"
               REST="${entry#*:}"
@@ -246,15 +245,25 @@ jobs:
                 if [ -z "$TAG_SHA" ]; then
                   TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG" | awk 'NR == 1 { print $1 }')"
                 fi
-                if [ "$TAG_SHA" != "$COMMIT_SHA" ]; then
-                  echo "Release tag $TAG points to ${TAG_SHA:-<missing>}, expected $COMMIT_SHA" >&2
+                if [ -z "$TAG_SHA" ] || { [ -n "$RELEASE_SHA" ] && [ "$TAG_SHA" != "$RELEASE_SHA" ]; }; then
+                  echo "Release tag $TAG points to ${TAG_SHA:-<missing>}, expected ${RELEASE_SHA:-an existing release commit}" >&2
                   exit 1
                 fi
+                RELEASE_SHA="$TAG_SHA"
                 echo "${PACKAGE}_version=$VERSION" >> "$GITHUB_OUTPUT"
               fi
             done
+            if [ -z "$RELEASE_SHA" ]; then
+              echo "Select at least one package to recover" >&2
+              exit 1
+            fi
+            echo "commit_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+            echo "short_sha=${RELEASE_SHA:0:12}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${COMMIT_SHA:0:12}" >> "$GITHUB_OUTPUT"
 
           if [ "$EVENT_NAME" = push ]; then
             case "$TAG_NAME" in
