@@ -24,6 +24,11 @@ on:
         required: true
         default: false
         type: boolean
+      recover_existing_release:
+        description: Republish selected versions already reserved on the current commit
+        required: true
+        default: false
+        type: boolean
   pull_request:
     branches: [master]
     types: [closed]
@@ -48,6 +53,7 @@ jobs:
   bump-versions:
     if: >-
       github.event_name == 'workflow_dispatch' &&
+      !inputs.recover_existing_release &&
       (inputs.release_backend || inputs.release_frontend || inputs.release_ffmpeg_worker)
     runs-on: ubuntu-latest
     permissions:
@@ -136,6 +142,7 @@ jobs:
       github.event.pull_request.user.login == 'github-actions[bot]' &&
       startsWith(github.event.pull_request.head.ref, 'release/versions-') &&
       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'workflow_dispatch' && inputs.recover_existing_release) ||
       github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -211,6 +218,10 @@ jobs:
         id: release
         env:
           EVENT_NAME: ${{ github.event_name }}
+          RECOVER_EXISTING_RELEASE: ${{ inputs.recover_existing_release }}
+          RELEASE_BACKEND: ${{ inputs.release_backend }}
+          RELEASE_FRONTEND: ${{ inputs.release_frontend }}
+          RELEASE_WORKER: ${{ inputs.release_ffmpeg_worker }}
           TAG_NAME: ${{ github.ref_name }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
@@ -218,6 +229,32 @@ jobs:
           COMMIT_SHA="$(git rev-parse HEAD)"
           echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
           echo "short_sha=${COMMIT_SHA:0:12}" >> "$GITHUB_OUTPUT"
+
+          if [ "$EVENT_NAME" = workflow_dispatch ] && [ "$RECOVER_EXISTING_RELEASE" = true ]; then
+            for entry in "backend:$RELEASE_BACKEND:app/backend/package.json" "frontend:$RELEASE_FRONTEND:app/frontend/package.json" "worker:$RELEASE_WORKER:app/ffmpeg-worker/package.json"; do
+              PACKAGE="${entry%%:*}"
+              REST="${entry#*:}"
+              SELECTED="${REST%%:*}"
+              FILE="${REST#*:}"
+              echo "$PACKAGE=$SELECTED" >> "$GITHUB_OUTPUT"
+              if [ "$SELECTED" = true ]; then
+                VERSION="v$(node -p "require('./$FILE').version")"
+                TAG_PACKAGE="$PACKAGE"
+                [ "$PACKAGE" != worker ] || TAG_PACKAGE=ffmpeg-worker
+                TAG="$TAG_PACKAGE-$VERSION"
+                TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG^{}" | awk 'NR == 1 { print $1 }')"
+                if [ -z "$TAG_SHA" ]; then
+                  TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG" | awk 'NR == 1 { print $1 }')"
+                fi
+                if [ "$TAG_SHA" != "$COMMIT_SHA" ]; then
+                  echo "Release tag $TAG points to ${TAG_SHA:-<missing>}, expected $COMMIT_SHA" >&2
+                  exit 1
+                fi
+                echo "${PACKAGE}_version=$VERSION" >> "$GITHUB_OUTPUT"
+              fi
+            done
+            exit 0
+          fi
 
           if [ "$EVENT_NAME" = push ]; then
             case "$TAG_NAME" in
@@ -353,7 +390,6 @@ jobs:
             NODE_VERSION=${{ steps.node-image.outputs.version }}
             COMMIT_HASH=${{ needs.prepare-release.outputs.commit_sha }}
           cache-from: type=gha,scope=release-backend
-          cache-to: type=gha,scope=release-backend,mode=min
           sbom: true
           provenance: mode=max
 
@@ -408,7 +444,6 @@ jobs:
             NODE_VERSION=${{ steps.node-image.outputs.version }}
             COMMIT_HASH=${{ needs.prepare-release.outputs.commit_sha }}
           cache-from: type=gha,scope=release-frontend
-          cache-to: type=gha,scope=release-frontend,mode=min
           sbom: true
           provenance: mode=max
 
@@ -463,7 +498,6 @@ jobs:
             NODE_VERSION=${{ steps.node-image.outputs.version }}
             COMMIT_HASH=${{ needs.prepare-release.outputs.commit_sha }}
           cache-from: type=gha,scope=release-ffmpeg-worker
-          cache-to: type=gha,scope=release-ffmpeg-worker,mode=min
           sbom: true
           provenance: mode=max
 
