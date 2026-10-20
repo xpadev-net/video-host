@@ -30,6 +30,8 @@ export const AccountSwitcher: FC = () => {
     selectedProfileIdAtom,
   );
   const selectedAccountIdRef = useRef(selectedAccountId);
+  const selectedProfileIdRef = useRef(selectedProfileId);
+  const selectionGenerationRef = useRef(0);
   const refreshingUnknownProfilesRef = useRef(new Set<string>());
   const [newName, setNewName] = useState("");
   const [newUsername, setNewUsername] = useState("");
@@ -39,8 +41,12 @@ export const AccountSwitcher: FC = () => {
   const profileList = profiles ?? [];
 
   useLayoutEffect(() => {
+    if (selectedProfileIdRef.current !== selectedProfileId) {
+      selectedProfileIdRef.current = selectedProfileId;
+      selectionGenerationRef.current += 1;
+    }
     selectedAccountIdRef.current = selectedAccountId;
-  }, [selectedAccountId]);
+  }, [selectedAccountId, selectedProfileId]);
 
   useEffect(() => {
     if (!selectedProfileId || !profiles) return;
@@ -104,6 +110,7 @@ export const AccountSwitcher: FC = () => {
   const handleCreateProfile = async (event: React.FormEvent) => {
     event.preventDefault();
     const accountIdAtStart = selectedAccountIdRef.current;
+    const selectionGenerationAtStart = selectionGenerationRef.current;
     setProfileError(null);
     setIsCreatingProfile(true);
     try {
@@ -122,7 +129,10 @@ export const AccountSwitcher: FC = () => {
       });
       setNewName("");
       setNewUsername("");
-      if (selectedAccountIdRef.current === accountIdAtStart)
+      if (
+        selectedAccountIdRef.current === accountIdAtStart &&
+        selectionGenerationRef.current === selectionGenerationAtStart
+      )
         setSelectedProfileId(profile.id);
     } catch {
       setProfileError("プロフィールを作成できませんでした。");

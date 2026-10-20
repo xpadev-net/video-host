@@ -256,7 +256,9 @@ export const useUpload = (): UseUploadResult => {
           await completeUpload(movieId);
           return true;
         } catch (error) {
-          fail(error, "アップロードの完了処理に失敗しました");
+          if (sessionUserIdRef.current === currentSessionId) {
+            fail(error, "アップロードの完了処理に失敗しました");
+          }
           return false;
         }
       }
