@@ -1,85 +1,92 @@
 import type { InferResponseType } from "hono";
 import { useAtom } from "jotai";
-import { type FC, useEffect, useState } from "react";
+import { type FC, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   selectedAccountIdAtom,
   selectedProfileIdAtom,
 } from "@/atoms/SelectedAccount";
 import { useSystemAccounts } from "@/hooks/useDashboard";
+import { useProfiles } from "@/hooks/useProfiles";
 import { useSelf } from "@/hooks/useUser";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
 type SystemAccount = InferResponseType<
   (typeof client.api.v4)["system-accounts"]["$get"]
 >["data"][number];
-type Profile = InferResponseType<
-  typeof client.api.v4.users.profiles.$get
->["data"][number];
 
 export const AccountSwitcher: FC = () => {
   const { data: user } = useSelf();
+  const { data: authSession } = authClient.useSession();
+  const sessionUserId = authSession?.user.id;
   const isAdmin = user && "role" in user && user.role === "ADMIN";
-  const { data: accounts } = useSystemAccounts();
+  const { data: accounts } = useSystemAccounts(Boolean(isAdmin));
+  const {
+    data: profiles,
+    error: profilesLoadError,
+    mutate: mutateProfiles,
+  } = useProfiles();
   const [selectedAccountId, setSelectedAccountId] = useAtom(
     selectedAccountIdAtom,
   );
   const [selectedProfileId, setSelectedProfileId] = useAtom(
     selectedProfileIdAtom,
   );
-  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const selectedAccountIdRef = useRef(selectedAccountId);
+  const selectedProfileIdRef = useRef(selectedProfileId);
+  const selectionGenerationRef = useRef(0);
+  const sessionUserIdRef = useRef(sessionUserId);
+  const refreshingUnknownProfilesRef = useRef(new Set<string>());
   const [newName, setNewName] = useState("");
   const [newUsername, setNewUsername] = useState("");
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [profilesLoadError, setProfilesLoadError] = useState(false);
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadProfiles = async () => {
-      try {
-        const res = await client.api.v4.users.profiles.$get();
-        if (!res.ok) throw new Error("Profile request failed");
-        const json = await res.json();
-        if (!cancelled) {
-          setProfiles(json.data);
-          setProfilesLoadError(false);
-        }
-      } catch {
-        if (!cancelled) setProfilesLoadError(true);
-      }
-    };
-    void loadProfiles();
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === "dashboard-selected-profile") window.location.reload();
-    };
-    window.addEventListener("storage", onStorage);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("storage", onStorage);
-    };
-  }, []);
+  const profileList = profiles ?? [];
 
-  const retryLoadProfiles = async () => {
-    try {
-      const res = await client.api.v4.users.profiles.$get();
-      if (!res.ok) throw new Error("Profile request failed");
-      const json = await res.json();
-      setProfiles(json.data);
-      setProfilesLoadError(false);
-    } catch {
-      setProfilesLoadError(true);
+  useLayoutEffect(() => {
+    if (sessionUserIdRef.current !== sessionUserId) {
+      sessionUserIdRef.current = sessionUserId;
+      selectionGenerationRef.current += 1;
+      setProfileError(null);
+      setIsCreatingProfile(false);
     }
-  };
+    if (selectedProfileIdRef.current !== selectedProfileId) {
+      selectedProfileIdRef.current = selectedProfileId;
+      selectionGenerationRef.current += 1;
+    }
+    selectedAccountIdRef.current = selectedAccountId;
+  }, [selectedAccountId, selectedProfileId, sessionUserId]);
 
   useEffect(() => {
-    if (
-      profiles.length > 0 &&
-      selectedProfileId &&
-      !profiles.some((profile) => profile.id === selectedProfileId)
-    ) {
+    if (!selectedProfileId || !profiles) return;
+    const selectedProfile = profiles.find(
+      (profile) => profile.id === selectedProfileId,
+    );
+    if (selectedProfile?.isDefault) {
       setSelectedProfileId(null);
+      return;
     }
-  }, [profiles, selectedProfileId, setSelectedProfileId]);
+    if (selectedProfile) return;
+    if (refreshingUnknownProfilesRef.current.has(selectedProfileId)) return;
+    refreshingUnknownProfilesRef.current.add(selectedProfileId);
+    void mutateProfiles()
+      .then((refreshedProfiles) => {
+        if (
+          refreshedProfiles?.some((profile) => profile.id === selectedProfileId)
+        )
+          return;
+        setSelectedProfileId((current) =>
+          current === selectedProfileId ? null : current,
+        );
+      })
+      .catch(() => {
+        // Keep the stored selection when a refresh fails; it may be valid.
+      })
+      .finally(() => {
+        refreshingUnknownProfilesRef.current.delete(selectedProfileId);
+      });
+  }, [profiles, selectedProfileId, setSelectedProfileId, mutateProfiles]);
 
   useEffect(() => {
     if (user && !isAdmin) {
@@ -98,15 +105,23 @@ export const AccountSwitcher: FC = () => {
   const selectedAccount = selectedAccountId
     ? systemAccounts.find((account) => account.id === selectedAccountId)
     : null;
+  const selectedProfile = profileList.find(
+    (profile) => profile.id === selectedProfileId,
+  );
+  const profileSelectValue =
+    selectedProfile && !selectedProfile.isDefault ? selectedProfile.id : "";
 
   const handleProfileChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const value = event.target.value;
-    setSelectedProfileId(value || null);
-    window.location.reload();
+    const nextProfileId = value || null;
+    setSelectedProfileId(nextProfileId);
   };
 
   const handleCreateProfile = async (event: React.FormEvent) => {
     event.preventDefault();
+    const accountIdAtStart = selectedAccountIdRef.current;
+    const selectionGenerationAtStart = selectionGenerationRef.current;
+    const sessionUserIdAtStart = sessionUserIdRef.current;
     setProfileError(null);
     setIsCreatingProfile(true);
     try {
@@ -114,21 +129,32 @@ export const AccountSwitcher: FC = () => {
         json: { name: newName, username: newUsername },
       });
       if (!res.ok) {
-        setProfileError(
-          "作成できませんでした。ユーザー名の重複がないか確認してください。",
-        );
+        if (sessionUserIdRef.current === sessionUserIdAtStart) {
+          setProfileError(
+            "作成できませんでした。ユーザー名の重複がないか確認してください。",
+          );
+        }
         return;
       }
       const profile = (await res.json()).data;
-      setProfiles((current) => [...current, profile]);
+      if (sessionUserIdRef.current !== sessionUserIdAtStart) return;
+      await mutateProfiles((current) => [...(current ?? []), profile], {
+        revalidate: false,
+      });
+      if (sessionUserIdRef.current !== sessionUserIdAtStart) return;
       setNewName("");
       setNewUsername("");
-      setSelectedProfileId(profile.id);
-      window.location.reload();
+      if (
+        selectedAccountIdRef.current === accountIdAtStart &&
+        selectionGenerationRef.current === selectionGenerationAtStart
+      )
+        setSelectedProfileId(profile.id);
     } catch {
-      setProfileError("プロフィールを作成できませんでした。");
+      if (sessionUserIdRef.current === sessionUserIdAtStart)
+        setProfileError("プロフィールを作成できませんでした。");
     } finally {
-      setIsCreatingProfile(false);
+      if (sessionUserIdRef.current === sessionUserIdAtStart)
+        setIsCreatingProfile(false);
     }
   };
 
@@ -136,24 +162,24 @@ export const AccountSwitcher: FC = () => {
     <div className="account-switcher">
       {profilesLoadError && (
         <p role="alert">
-          プロフィールを読み込めませんでした。{" "}
-          <button type="button" onClick={retryLoadProfiles}>
+          プロフィールを更新できませんでした。{" "}
+          <button type="button" onClick={() => void mutateProfiles()}>
             再試行
           </button>
         </p>
       )}
-      {profiles.length > 0 && (
+      {profileList.length > 0 && (
         <>
           <label htmlFor="profile-select" className="account-switcher-label">
             プロフィール
           </label>
           <select
             id="profile-select"
-            value={selectedProfileId || ""}
+            value={profileSelectValue}
             onChange={handleProfileChange}
             className="account-switcher-select"
           >
-            {profiles.map((profile) => (
+            {profileList.map((profile) => (
               <option
                 key={profile.id}
                 value={profile.isDefault ? "" : profile.id}
@@ -198,9 +224,10 @@ export const AccountSwitcher: FC = () => {
           <select
             id="account-select"
             value={selectedAccountId || ""}
-            onChange={(event) =>
-              setSelectedAccountId(event.target.value || null)
-            }
+            onChange={(event) => {
+              setSelectedAccountId(event.target.value || null);
+              setSelectedProfileId(null);
+            }}
             className="account-switcher-select"
           >
             <option value="">{user?.name}（自分）</option>

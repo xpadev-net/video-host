@@ -1,8 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useAtomValue } from "jotai";
-import { type FormEvent, useState } from "react";
-import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { type FormEvent, useRef, useState } from "react";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
+import { useProfileSelectionGeneration } from "@/hooks/useProfileSelectionGeneration";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
 
@@ -13,7 +12,6 @@ export const Route = createFileRoute("/_app/dashboard/playlists/new")({
 
 function NewPlaylistPage() {
   const navigate = useNavigate();
-  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const { data: user, isLoading } = useSelf();
 
   const [title, setTitle] = useState("");
@@ -23,6 +21,18 @@ function NewPlaylistPage() {
   >("PUBLIC");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submissionIdRef = useRef(0);
+  const {
+    selectedAccountId,
+    selectedProfileId,
+    generationRef: selectionGenerationRef,
+  } = useProfileSelectionGeneration(() => {
+    setTitle("");
+    setDescription("");
+    setVisibility("PUBLIC");
+    setError(null);
+    setIsSubmitting(false);
+  });
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -30,25 +40,35 @@ function NewPlaylistPage() {
 
     setIsSubmitting(true);
     setError(null);
+    const selectionGeneration = selectionGenerationRef.current;
+    const submissionId = ++submissionIdRef.current;
 
     try {
-      const res = await client.api.v4.playlists.$post({
-        json: {
-          title: title.trim(),
-          description: description.trim(),
-          visibility,
-          asUserId: selectedAccountId || undefined,
+      const res = await client.api.v4.playlists.$post(
+        {
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+            asUserId: selectedAccountId || undefined,
+          },
         },
-      });
+        {
+          headers: { "X-Profile-Id": selectedProfileId ?? "" },
+        },
+      );
 
       if (!res.ok) {
         throw new Error("作成に失敗しました");
       }
 
-      await navigate({ to: "/dashboard/playlists" });
+      if (selectionGenerationRef.current === selectionGeneration)
+        await navigate({ to: "/dashboard/playlists" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "作成に失敗しました");
-      setIsSubmitting(false);
+      if (selectionGenerationRef.current === selectionGeneration)
+        setError(err instanceof Error ? err.message : "作成に失敗しました");
+    } finally {
+      if (submissionIdRef.current === submissionId) setIsSubmitting(false);
     }
   };
 

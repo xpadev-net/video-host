@@ -1,8 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { BasicVisibility, FormattedMovie } from "@video-host/backend";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { MovieManager } from "@/components/Dashboard/MovieManager";
+import { useProfileSelectionGeneration } from "@/hooks/useProfileSelectionGeneration";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
@@ -22,7 +23,8 @@ function EditSeriesPage() {
   const { data: authSession, isPending: sessionPending } =
     authClient.useSession();
   const session = authSession?.user.id;
-
+  const fetchGenerationRef = useRef(0);
+  const submissionIdRef = useRef(0);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<BasicVisibility>("PUBLIC");
@@ -32,7 +34,23 @@ function EditSeriesPage() {
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const { selectedProfileId, generationRef: selectionGenerationRef } =
+    useProfileSelectionGeneration(() => {
+      fetchGenerationRef.current += 1;
+      setIsLoading(true);
+      setLoadError(null);
+      setTitle("");
+      setDescription("");
+      setVisibility("PUBLIC");
+      setMovies([]);
+      setIsSubmitting(false);
+      setError(null);
+    });
+
   useEffect(() => {
+    const generation = ++fetchGenerationRef.current;
+    setIsLoading(true);
+    setLoadError(null);
     if (sessionPending) return;
     if (!session) {
       setLoadError("ログイン状態を確認できませんでした");
@@ -41,15 +59,19 @@ function EditSeriesPage() {
     }
     const fetchSeries = async () => {
       try {
-        const res = await client.api.v4.series[":series"].$get({
-          query: {},
-          param: { series: id },
-        });
+        const res = await client.api.v4.series[":series"].$get(
+          {
+            query: {},
+            param: { series: id },
+          },
+          { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+        );
 
         if (Number(res.status) === 404) throw new Error("not-found");
         if (!res.ok) throw new Error("Failed to fetch");
 
         const json = await res.json();
+        if (generation !== fetchGenerationRef.current) return;
         const data = json.data;
         setTitle(data.title);
         setDescription(data.description || "");
@@ -59,17 +81,21 @@ function EditSeriesPage() {
         );
         setMovies(seriesMovies);
       } catch (cause) {
+        if (generation !== fetchGenerationRef.current) return;
         setLoadError(
           cause instanceof Error && cause.message === "not-found"
             ? "シリーズが見つかりません"
             : "シリーズの取得に失敗しました",
         );
       } finally {
-        setIsLoading(false);
+        if (generation === fetchGenerationRef.current) setIsLoading(false);
       }
     };
-    fetchSeries();
-  }, [id, session, sessionPending]);
+    void fetchSeries();
+    return () => {
+      fetchGenerationRef.current += 1;
+    };
+  }, [id, session, sessionPending, selectedProfileId]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -77,23 +103,31 @@ function EditSeriesPage() {
 
     setIsSubmitting(true);
     setError(null);
+    const selectionGeneration = selectionGenerationRef.current;
+    const submissionId = ++submissionIdRef.current;
 
     try {
-      const res = await client.api.v4.series[":series"].$patch({
-        param: { series: id },
-        json: {
-          title: title.trim(),
-          description: description.trim(),
-          visibility,
+      const res = await client.api.v4.series[":series"].$patch(
+        {
+          param: { series: id },
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+          },
         },
-      });
+        { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+      );
 
       if (!res.ok) throw new Error("Failed to update");
 
-      await navigate({ to: "/dashboard/series" });
+      if (selectionGenerationRef.current === selectionGeneration)
+        await navigate({ to: "/dashboard/series" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "更新に失敗しました");
-      setIsSubmitting(false);
+      if (selectionGenerationRef.current === selectionGeneration)
+        setError(err instanceof Error ? err.message : "更新に失敗しました");
+    } finally {
+      if (submissionIdRef.current === submissionId) setIsSubmitting(false);
     }
   };
 

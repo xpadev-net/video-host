@@ -21,9 +21,10 @@ import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { useConfirm } from "@/components/Feedback/FeedbackProvider";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { ApiEndpoint } from "@/contexts/env";
+import { useProfileSelectionGeneration } from "@/hooks/useProfileSelectionGeneration";
 import { useUpload } from "@/hooks/useUpload";
 import { authClient } from "@/lib/auth-client";
-import { client, getSelectedProfileId } from "@/lib/client";
+import { client } from "@/lib/client";
 
 export const Route = createFileRoute("/_app/dashboard/videos/$id/edit")({
   head: () => ({ meta: [{ title: "動画を編集" }] }),
@@ -70,12 +71,21 @@ function EditVideoPage() {
   const { resume, state: uploadState } = useUpload();
   const resumeFileInputRef = useRef<HTMLInputElement>(null);
   const resumeActiveRef = useRef(false);
+  const fetchGenerationRef = useRef(0);
   const isResuming =
     uploadState.phase === "uploading" ||
     uploadState.phase === "completing" ||
     uploadState.phase === "creating";
   const hasMovie = movie !== null;
   const movieVariantStatus = movie?.variants?.[0]?.status;
+  const { selectedProfileId, generationRef: selectionGenerationRef } =
+    useProfileSelectionGeneration(() => {
+      fetchGenerationRef.current += 1;
+      setMovie(null);
+      setIsLoading(true);
+      setIsSubmitting(false);
+      setError(null);
+    });
 
   useBlocker({
     shouldBlockFn: async () =>
@@ -91,6 +101,7 @@ function EditVideoPage() {
 
   const fetchMovie = useCallback(
     async (options?: { preserveForm?: boolean }) => {
+      const generation = ++fetchGenerationRef.current;
       if (sessionPending) return;
       if (!session) {
         setLoadError("ログイン状態を確認できませんでした");
@@ -99,12 +110,14 @@ function EditVideoPage() {
       }
 
       try {
-        const res = await client.api.v4.movies[":movie"].$get({
-          param: { movie: id },
-        });
+        const res = await client.api.v4.movies[":movie"].$get(
+          { param: { movie: id } },
+          { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+        );
 
         if (Number(res.status) === 404) {
-          setLoadError("動画が見つかりません");
+          if (generation === fetchGenerationRef.current)
+            setLoadError("動画が見つかりません");
           return;
         }
         if (!res.ok) {
@@ -112,6 +125,7 @@ function EditVideoPage() {
         }
 
         const json = await res.json();
+        if (generation !== fetchGenerationRef.current) return;
         const movieData = json.data;
         setMovie(movieData);
         if (!options?.preserveForm) {
@@ -121,16 +135,20 @@ function EditVideoPage() {
           setViewers(movieData.viewers ?? []);
         }
       } catch {
-        setLoadError("動画の取得に失敗しました");
+        if (generation === fetchGenerationRef.current)
+          setLoadError("動画の取得に失敗しました");
       } finally {
-        setIsLoading(false);
+        if (generation === fetchGenerationRef.current) setIsLoading(false);
       }
     },
-    [id, session, sessionPending],
+    [id, session, sessionPending, selectedProfileId],
   );
 
   useEffect(() => {
     void fetchMovie();
+    return () => {
+      fetchGenerationRef.current += 1;
+    };
   }, [fetchMovie]);
 
   const handleResumeFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -166,7 +184,7 @@ function EditVideoPage() {
       const { EventSourcePlus } = await import("event-source-plus");
       if (controller.signal.aborted) return;
 
-      const selectedProfileId = getSelectedProfileId();
+      const profileId = selectedProfileId;
       const url = new URL(
         `${ApiEndpoint}/api/v4/progress/${encodeURIComponent(id)}`,
         window.location.origin,
@@ -174,7 +192,7 @@ function EditVideoPage() {
 
       const eventSource = new EventSourcePlus(url, {
         credentials: "include",
-        headers: selectedProfileId ? { "X-Profile-Id": selectedProfileId } : {},
+        headers: profileId ? { "X-Profile-Id": profileId } : {},
         signal: controller.signal,
       });
 
@@ -200,9 +218,10 @@ function EditVideoPage() {
               controller?.abort();
               // Refresh movie data
               client.api.v4.movies[":movie"]
-                .$get({
-                  param: { movie: id },
-                })
+                .$get(
+                  { param: { movie: id } },
+                  { headers: { "X-Profile-Id": profileId ?? "" } },
+                )
                 .then(async (res) => {
                   if (!disposed && res.ok) {
                     const json = await res.json();
@@ -242,7 +261,7 @@ function EditVideoPage() {
       disposed = true;
       controller.abort();
     };
-  }, [hasMovie, id, movieVariantStatus, session]);
+  }, [hasMovie, id, movieVariantStatus, selectedProfileId, session]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -250,27 +269,36 @@ function EditVideoPage() {
 
     setIsSubmitting(true);
     setError(null);
+    const selectionGeneration = selectionGenerationRef.current;
 
     try {
-      const res = await client.api.v4.movies[":movie"].$patch({
-        param: { movie: id },
-        json: {
-          title: title.trim(),
-          description: description.trim(),
-          visibility,
-          viewerIds:
-            visibility === "LIMITED" ? viewers.map((viewer) => viewer.id) : [],
+      const res = await client.api.v4.movies[":movie"].$patch(
+        {
+          param: { movie: id },
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+            viewerIds:
+              visibility === "LIMITED"
+                ? viewers.map((viewer) => viewer.id)
+                : [],
+          },
         },
-      });
+        { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+      );
 
       if (!res.ok) {
         throw new Error("Failed to update");
       }
 
-      await navigate({ to: "/dashboard/videos" });
+      if (selectionGenerationRef.current === selectionGeneration)
+        await navigate({ to: "/dashboard/videos" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "更新に失敗しました");
-      setIsSubmitting(false);
+      if (selectionGenerationRef.current === selectionGeneration) {
+        setError(err instanceof Error ? err.message : "更新に失敗しました");
+        setIsSubmitting(false);
+      }
     }
   };
 

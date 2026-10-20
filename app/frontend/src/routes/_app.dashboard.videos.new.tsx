@@ -7,6 +7,7 @@ import {
   type FormEvent,
   type MouseEvent,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -16,6 +17,7 @@ import { useConfirm } from "@/components/Feedback/FeedbackProvider";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { useUpload } from "@/hooks/useUpload";
 import { useSelf } from "@/hooks/useUser";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
 export const Route = createFileRoute("/_app/dashboard/videos/new")({
@@ -27,6 +29,8 @@ function NewVideoPage() {
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const confirm = useConfirm();
   const { data: user, isLoading: isUserLoading } = useSelf();
+  const { data: authSession } = authClient.useSession();
+  const sessionUserId = authSession?.user.id;
   const {
     init,
     upload,
@@ -52,6 +56,9 @@ function NewVideoPage() {
   const uploadActiveRef = useRef(false);
   const uploadOperationRef = useRef(0);
   const cancelDeleteMovieIdRef = useRef<string | null>(null);
+  const movieProfileIdRef = useRef<string | null>(null);
+  const movieSessionUserIdRef = useRef<string | null>(null);
+  const currentSessionUserIdRef = useRef(sessionUserId);
 
   // Latest form values for the auto-save that fires when the upload lands;
   // the .then callback registered at file-select time would otherwise save
@@ -92,8 +99,14 @@ function NewVideoPage() {
 
   const doSaveMetadata = async (): Promise<boolean> => {
     const id = movieIdRef.current;
+    const sessionId = movieSessionUserIdRef.current;
     const current = metadataRef.current;
     if (!id) return false;
+    if (!sessionId || sessionId !== currentSessionUserIdRef.current) {
+      throw new Error(
+        "ログイン状態が変わりました。アップロードをやり直してください",
+      );
+    }
     if (!current.title.trim()) {
       setError("タイトルを入力してから保存してください");
       return false;
@@ -104,13 +117,17 @@ function NewVideoPage() {
       visibility: current.visibility,
       viewerIds: current.viewers.map((viewer) => viewer.id),
     };
-    const res = await client.api.v4.movies[":movie"].$patch({
-      param: { movie: id },
-      json: submitted,
-    });
+    const res = await client.api.v4.movies[":movie"].$patch(
+      {
+        param: { movie: id },
+        json: submitted,
+      },
+      { headers: { "X-Profile-Id": movieProfileIdRef.current ?? "" } },
+    );
     if (!res.ok) {
       throw new Error("メタデータの保存に失敗しました");
     }
+    if (currentSessionUserIdRef.current !== sessionId) return false;
     const latest = metadataRef.current;
     setSaved(
       submitted.title === latest.title.trim() &&
@@ -126,6 +143,32 @@ function NewVideoPage() {
   // auto-save could otherwise land first and let the stale request finish
   // last, silently reverting the user's newest edits.
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  useLayoutEffect(() => {
+    if (currentSessionUserIdRef.current === sessionUserId) return;
+    currentSessionUserIdRef.current = sessionUserId;
+    cancel();
+    resetUpload();
+    uploadOperationRef.current += 1;
+    uploadActiveRef.current = false;
+    movieIdRef.current = null;
+    movieProfileIdRef.current = null;
+    movieSessionUserIdRef.current = null;
+    cancelDeleteMovieIdRef.current = null;
+    saveQueueRef.current = Promise.resolve();
+    setFile(null);
+    setMovieId(null);
+    setTitle("");
+    setDescription("");
+    setVisibility("PUBLIC");
+    setViewers([]);
+    setIsSaving(false);
+    setSaved(false);
+    setSavePending(false);
+    setCancelDeleteFailed(false);
+    setCancelDeletePending(false);
+    setError(null);
+  }, [sessionUserId, cancel, resetUpload]);
+
   const saveMetadata = (): Promise<boolean> => {
     const task = saveQueueRef.current.then(() => doSaveMetadata());
     saveQueueRef.current = task.then(
@@ -140,11 +183,16 @@ function NewVideoPage() {
     const selectedFile = e.target.files?.[0];
     input.value = "";
     if (!selectedFile || uploadActiveRef.current || savePending) return;
+    const startingSessionId = currentSessionUserIdRef.current;
+    if (!startingSessionId) return;
     uploadActiveRef.current = true;
     const operation = ++uploadOperationRef.current;
 
     setFile(selectedFile);
     setMovieId(null);
+    movieIdRef.current = null;
+    movieProfileIdRef.current = null;
+    movieSessionUserIdRef.current = null;
     setSaved(false);
     setError(null);
     resetUpload();
@@ -158,9 +206,12 @@ function NewVideoPage() {
       uploadActiveRef.current = false;
       return; // uploadState.error is shown below
     }
+    if (currentSessionUserIdRef.current !== startingSessionId) return;
 
     movieIdRef.current = result.movieId;
     setMovieId(result.movieId);
+    movieProfileIdRef.current = result.profileId;
+    movieSessionUserIdRef.current = startingSessionId;
     metadataRef.current = { ...metadataRef.current, title: result.title };
     setTitle(result.title);
 
@@ -170,16 +221,28 @@ function NewVideoPage() {
     // page and the movie would stay PRIVATE.
     void upload(result.movieId, result.uploadUrl, selectedFile)
       .then(async (succeeded) => {
-        if (succeeded) {
+        if (
+          succeeded &&
+          currentSessionUserIdRef.current === startingSessionId &&
+          movieSessionUserIdRef.current === startingSessionId
+        ) {
           setSavePending(true);
           try {
             await saveMetadata();
           } catch {
-            setError(
-              "メタデータの保存に失敗しました。「保存」で再度お試しください",
-            );
+            if (
+              currentSessionUserIdRef.current === startingSessionId &&
+              movieSessionUserIdRef.current === startingSessionId
+            )
+              setError(
+                "メタデータの保存に失敗しました。「保存」で再度お試しください",
+              );
           } finally {
-            setSavePending(false);
+            if (
+              currentSessionUserIdRef.current === startingSessionId &&
+              movieSessionUserIdRef.current === startingSessionId
+            )
+              setSavePending(false);
           }
         }
       })
@@ -193,15 +256,25 @@ function NewVideoPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!movieId || !title.trim()) return;
+    const sessionId = currentSessionUserIdRef.current;
+    if (!sessionId || movieSessionUserIdRef.current !== sessionId) return;
 
     setIsSaving(true);
     setError(null);
     try {
       await saveMetadata();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存に失敗しました");
+      if (
+        currentSessionUserIdRef.current === sessionId &&
+        movieSessionUserIdRef.current === sessionId
+      )
+        setError(err instanceof Error ? err.message : "保存に失敗しました");
     } finally {
-      setIsSaving(false);
+      if (
+        currentSessionUserIdRef.current === sessionId &&
+        movieSessionUserIdRef.current === sessionId
+      )
+        setIsSaving(false);
     }
   };
 
@@ -215,6 +288,12 @@ function NewVideoPage() {
 
   const handleRetryUpload = async () => {
     if (!file || uploadActiveRef.current || savePending) return;
+    const sessionId = currentSessionUserIdRef.current;
+    if (
+      !sessionId ||
+      (movieId !== null && movieSessionUserIdRef.current !== sessionId)
+    )
+      return;
     uploadActiveRef.current = true;
     const operation = ++uploadOperationRef.current;
     setError(null);
@@ -226,8 +305,11 @@ function NewVideoPage() {
               asUserId: selectedAccountId || undefined,
             });
             if (!result) return false;
+            if (currentSessionUserIdRef.current !== sessionId) return false;
             movieIdRef.current = result.movieId;
             setMovieId(result.movieId);
+            movieProfileIdRef.current = result.profileId;
+            movieSessionUserIdRef.current = sessionId;
             metadataRef.current = {
               ...metadataRef.current,
               title: result.title,
@@ -235,16 +317,28 @@ function NewVideoPage() {
             setTitle(result.title);
             return upload(result.movieId, result.uploadUrl, file);
           })();
-      if (succeeded) {
+      if (
+        succeeded &&
+        currentSessionUserIdRef.current === sessionId &&
+        movieSessionUserIdRef.current === sessionId
+      ) {
         setSavePending(true);
         try {
           await saveMetadata();
         } catch {
-          setError(
-            "メタデータの保存に失敗しました。「保存」で再度お試しください",
-          );
+          if (
+            currentSessionUserIdRef.current === sessionId &&
+            movieSessionUserIdRef.current === sessionId
+          )
+            setError(
+              "メタデータの保存に失敗しました。「保存」で再度お試しください",
+            );
         } finally {
-          setSavePending(false);
+          if (
+            currentSessionUserIdRef.current === sessionId &&
+            movieSessionUserIdRef.current === sessionId
+          )
+            setSavePending(false);
         }
       }
     } finally {
@@ -260,29 +354,52 @@ function NewVideoPage() {
     setFile(null);
     setMovieId(null);
     movieIdRef.current = null;
+    movieProfileIdRef.current = null;
+    movieSessionUserIdRef.current = null;
     setTitle("");
     setDescription("");
     resetUpload();
     uploadActiveRef.current = false;
   };
 
-  const deleteCanceledMovie = async (id: string) => {
+  const deleteCanceledMovie = async (
+    id: string,
+    sessionId: string,
+    profileId: string | null,
+  ) => {
     setCancelDeletePending(true);
     setError(null);
     try {
-      const res = await client.api.v4.movies[":movie"].$delete({
-        param: { movie: id },
-      });
+      const res = await client.api.v4.movies[":movie"].$delete(
+        { param: { movie: id } },
+        { headers: { "X-Profile-Id": profileId ?? "" } },
+      );
       if (!res.ok && Number(res.status) !== 404) {
         throw new Error("Failed to delete canceled upload");
       }
+      if (
+        currentSessionUserIdRef.current !== sessionId ||
+        movieSessionUserIdRef.current !== sessionId ||
+        movieIdRef.current !== id
+      )
+        return;
       clearCanceledUpload();
     } catch {
-      setCancelDeleteFailed(true);
-      setError("動画の削除に失敗しました。キャンセルを再試行してください。");
-      uploadActiveRef.current = false;
+      if (
+        currentSessionUserIdRef.current === sessionId &&
+        movieSessionUserIdRef.current === sessionId &&
+        movieIdRef.current === id
+      ) {
+        setCancelDeleteFailed(true);
+        setError("動画の削除に失敗しました。キャンセルを再試行してください。");
+        uploadActiveRef.current = false;
+      }
     } finally {
-      setCancelDeletePending(false);
+      if (
+        currentSessionUserIdRef.current === sessionId &&
+        movieSessionUserIdRef.current === sessionId
+      )
+        setCancelDeletePending(false);
     }
   };
 
@@ -291,20 +408,27 @@ function NewVideoPage() {
     // encode; deleting the movie here would race that completion, so cancel
     // is only offered while bytes are still in flight.
     if (uploadState.phase !== "uploading") return;
+    const sessionId = currentSessionUserIdRef.current;
+    const movieIdAtStart = movieId;
+    const profileId = movieProfileIdRef.current;
+    if (!sessionId || movieSessionUserIdRef.current !== sessionId) return;
     if (!cancel()) return;
     uploadOperationRef.current += 1;
-    if (movieId) {
-      cancelDeleteMovieIdRef.current = movieId;
-      await deleteCanceledMovie(movieId);
+    if (movieIdAtStart) {
+      cancelDeleteMovieIdRef.current = movieIdAtStart;
+      await deleteCanceledMovie(movieIdAtStart, sessionId, profileId);
       return;
     }
+    if (currentSessionUserIdRef.current !== sessionId) return;
     clearCanceledUpload();
   };
 
   const handleRetryCancelDelete = async () => {
     const id = cancelDeleteMovieIdRef.current;
     if (!id || cancelDeletePending) return;
-    await deleteCanceledMovie(id);
+    const sessionId = currentSessionUserIdRef.current;
+    if (!sessionId || movieSessionUserIdRef.current !== sessionId) return;
+    await deleteCanceledMovie(id, sessionId, movieProfileIdRef.current);
   };
 
   const handleStartNextUpload = () => {

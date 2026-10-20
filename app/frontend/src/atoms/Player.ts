@@ -19,6 +19,34 @@ const CurrentMovieAtom = atom<FormattedMovie | null>(null);
 const WrapperRefAtom = atom<HTMLElement | null>(null);
 const VideoRefAtom = atom<HTMLVideoElement | null>(null);
 const HlsRefAtom = atom<Hls | null>(null);
+const StopPlayerAtom = atom(null, (get, set) => {
+  const video = get(VideoRefAtom);
+  video?.pause();
+  if (video) {
+    video.removeAttribute("src");
+    video.srcObject = null;
+    video.load();
+  }
+  get(HlsRefAtom)?.destroy();
+  set(HlsRefAtom, null);
+  set(VideoRefAtom, null);
+  set(CurrentMovieAtom, null);
+  // The route component owns the portal target and clears it on unmount. Keep
+  // it registered while stopping media so a still-mounted Player can reuse it.
+  set(PlayerStateAtom, {
+    paused: false,
+    isLoading: true,
+    isSetting: false,
+    isFullscreen: false,
+    error: null,
+  });
+  set(VideoMetadataAtom, { currentTime: 0, duration: 0 });
+  set(AudioTracksAtom, []);
+  set(AudioTrackIdAtom, -1);
+  set(PlayerSettingAtom, ["main"]);
+  set(PlayerSeekNotificationAtom, null);
+  set(PlayerPlayPauseNotificationAtom, null);
+});
 const AudioTracksAtom = atom<PlayerAudioTrack[]>([]);
 const AudioTrackIdAtom = atom<number>(-1);
 const VideoMetadataAtom = atom<VideoMetadata>({ currentTime: 0, duration: 0 });
@@ -130,6 +158,7 @@ export {
   PlayerSettingAtom,
   PlayerStateAtom,
   PlayerVolumeAtom,
+  StopPlayerAtom,
   VideoMetadataAtom,
   VideoRefAtom,
   WrapperRefAtom,

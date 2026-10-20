@@ -1,9 +1,21 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
+import { RESET } from "jotai/utils";
 import { LogIn, LogOut } from "lucide-react";
 import { useRef, useState } from "react";
 import { useSWRConfig } from "swr";
-import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import {
+  PlayerConfigAtom,
+  PlayerMutedAtom,
+  PlayerPlaybackRateAtom,
+  PlayerVolumeAtom,
+  StopPlayerAtom,
+} from "@/atoms/Player";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
+import { watchedHistoryAtom } from "@/atoms/WatchedHistory";
 import { useNotify } from "@/components/Feedback/FeedbackProvider";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
@@ -15,6 +27,13 @@ const AuthButton = () => {
     select: (state) => state.location.pathname,
   });
   const setSelectedAccount = useSetAtom(selectedAccountIdAtom);
+  const setSelectedProfile = useSetAtom(selectedProfileIdAtom);
+  const setWatchedHistory = useSetAtom(watchedHistoryAtom);
+  const resetPlayerConfig = useSetAtom(PlayerConfigAtom);
+  const resetMuted = useSetAtom(PlayerMutedAtom);
+  const resetPlaybackRate = useSetAtom(PlayerPlaybackRateAtom);
+  const resetVolume = useSetAtom(PlayerVolumeAtom);
+  const stopPlayer = useSetAtom(StopPlayerAtom);
   const { mutate } = useSWRConfig();
   const signingOut = useRef(false);
   const [loading, setLoading] = useState(false);
@@ -27,7 +46,14 @@ const AuthButton = () => {
     try {
       const { error } = await authClient.signOut();
       if (error) throw new Error(error.message);
+      stopPlayer();
       setSelectedAccount(null);
+      setSelectedProfile(null);
+      setWatchedHistory({});
+      resetPlayerConfig(RESET);
+      resetMuted(RESET);
+      resetPlaybackRate(RESET);
+      resetVolume(RESET);
       await mutate(() => true, undefined, { revalidate: false });
       await navigate({ to: "/" });
     } catch {

@@ -1,8 +1,13 @@
+import { useAtomValue } from "jotai";
 import type { SeriesListResponse } from "@/@types/api";
+import { selectedProfileIdAtom } from "@/atoms/SelectedAccount";
 import { useStickySWR } from "@/hooks/useStickySWR";
 import { client } from "@/lib/client";
 
-const fetcher = async (key: string): Promise<SeriesListResponse> => {
+const fetcher = async ([key, profileId]: readonly [
+  string,
+  string | null,
+]): Promise<SeriesListResponse> => {
   if (key.length < 2) {
     return {
       status: "ok",
@@ -21,12 +26,15 @@ const fetcher = async (key: string): Promise<SeriesListResponse> => {
     };
   }
 
-  const res = await client.api.v4.series.$get({
-    query: {
-      query: key,
-      suggest: "1",
+  const res = await client.api.v4.series.$get(
+    {
+      query: {
+        query: key,
+        suggest: "1",
+      },
     },
-  });
+    { headers: { "X-Profile-Id": profileId ?? "" } },
+  );
 
   return await res.json();
 };
@@ -36,5 +44,10 @@ type Props = {
 };
 
 export const useSeriesSuggest = (data?: Props) => {
-  return useStickySWR(data?.query, fetcher, {});
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
+  return useStickySWR(
+    data ? ([data.query, selectedProfileId] as const) : null,
+    fetcher,
+    {},
+  );
 };

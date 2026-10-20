@@ -1,12 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { type SetStateAction, useCallback, useState } from "react";
-import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { type SetStateAction, useCallback, useEffect, useState } from "react";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { PaginationControls } from "@/components/Dashboard/PaginationControls";
 import { useConfirm, useNotify } from "@/components/Feedback/FeedbackProvider";
 import { useMyPlaylists } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 import { visibility2str } from "@/utils/visibility2str";
 
@@ -17,31 +21,56 @@ export const Route = createFileRoute("/_app/dashboard/playlists/")({
 
 function PlaylistsPage() {
   const { data: user, isLoading: isUserLoading } = useSelf();
+  const { data: authSession } = authClient.useSession();
+  const sessionUserId = authSession?.user.id;
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   const [pagination, setPagination] = useState({
     accountId: selectedAccountId,
+    profileId: selectedProfileId,
+    sessionUserId,
     page: 1,
   });
-  const page = pagination.accountId === selectedAccountId ? pagination.page : 1;
+  useEffect(() => {
+    setPagination({
+      accountId: selectedAccountId,
+      profileId: selectedProfileId,
+      sessionUserId,
+      page: 1,
+    });
+  }, [selectedAccountId, selectedProfileId, sessionUserId]);
+  const page =
+    pagination.accountId === selectedAccountId &&
+    pagination.profileId === selectedProfileId &&
+    pagination.sessionUserId === sessionUserId
+      ? pagination.page
+      : 1;
   const setPage = useCallback(
     (nextPage: SetStateAction<number>) => {
       setPagination((current) => {
         const currentPage =
-          current.accountId === selectedAccountId ? current.page : 1;
+          current.accountId === selectedAccountId &&
+          current.profileId === selectedProfileId &&
+          current.sessionUserId === sessionUserId
+            ? current.page
+            : 1;
         return {
           accountId: selectedAccountId,
+          profileId: selectedProfileId,
+          sessionUserId,
           page:
             typeof nextPage === "function" ? nextPage(currentPage) : nextPage,
         };
       });
     },
-    [selectedAccountId],
+    [selectedAccountId, selectedProfileId, sessionUserId],
   );
   const { data: playlistsData, error, mutate } = useMyPlaylists(page);
   const confirm = useConfirm();
   const notify = useNotify();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const handleDelete = async (id: string) => {
+    const profileId = selectedProfileId;
     if (
       !(await confirm({
         title: "プレイリストを削除しますか？",
@@ -53,9 +82,10 @@ function PlaylistsPage() {
       return;
     setDeletingId(id);
     try {
-      const res = await client.api.v4.playlists[":playlist"].$delete({
-        param: { playlist: id },
-      });
+      const res = await client.api.v4.playlists[":playlist"].$delete(
+        { param: { playlist: id } },
+        { headers: { "X-Profile-Id": profileId ?? "" } },
+      );
 
       if (!res.ok) {
         throw new Error("Failed to delete");

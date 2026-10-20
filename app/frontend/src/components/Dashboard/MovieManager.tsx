@@ -5,13 +5,17 @@ import {
   type FC,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
-import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
 import { useNotify } from "@/components/Feedback/FeedbackProvider";
 import { authClient } from "@/lib/auth-client";
-import { client } from "@/lib/client";
+import { client, getSelectedProfileId } from "@/lib/client";
 
 type Movie = Pick<FormattedMovie, "id" | "title" | "thumbnailUrl">;
 
@@ -36,6 +40,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const { data: authSession } = authClient.useSession();
   const session = authSession?.user.id;
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
   const notify = useNotify();
   const [availableMovies, setAvailableMovies] = useState<Movie[]>([]);
   const [availablePage, setAvailablePage] = useState(1);
@@ -48,8 +53,32 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const orderingRef = useRef(false);
   const membershipActionRef = useRef(false);
+  const orderingMutationIdRef = useRef(0);
+  const membershipMutationIdRef = useRef(0);
+  const profileIdRef = useRef(selectedProfileId);
+  const profileGenerationRef = useRef(0);
+  const sessionUserIdRef = useRef(session);
+  const previousSelectionRef = useRef({
+    session,
+    selectedAccountId,
+    selectedProfileId,
+  });
+  const dragContextRef = useRef<{
+    sessionId: string | undefined;
+    profileId: string | null;
+    generation: number;
+  } | null>(null);
   const dragStartMoviesRef = useRef<MovieItem[]>([]);
   const availableRequestGenerationRef = useRef(0);
+  const isCurrentProfileMutation = (
+    sessionId: string | undefined,
+    profileId: string | null,
+    generation: number,
+  ) =>
+    sessionUserIdRef.current === sessionId &&
+    profileIdRef.current === profileId &&
+    getSelectedProfileId() === profileId &&
+    profileGenerationRef.current === generation;
 
   // Fetch available movies for selection
   const fetchAvailableMovies = useCallback(
@@ -61,14 +90,17 @@ export const MovieManager: FC<MovieManagerProps> = ({
       if (!session) return;
       setIsLoadingMovies(true);
       try {
-        const res = await client.api.v4.movies.$get({
-          query: {
-            page: String(page),
-            limit: "100",
-            author: selectedAccountId || undefined,
-            mine: selectedAccountId ? undefined : "true",
+        const res = await client.api.v4.movies.$get(
+          {
+            query: {
+              page: String(page),
+              limit: "100",
+              author: selectedAccountId || undefined,
+              mine: selectedAccountId ? undefined : "true",
+            },
           },
-        });
+          { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+        );
 
         if (!res.ok) throw new Error("Failed to fetch");
         const json = await res.json();
@@ -92,7 +124,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
         }
       }
     },
-    [session, selectedAccountId],
+    [session, selectedAccountId, selectedProfileId],
   );
 
   useEffect(() => {
@@ -106,6 +138,37 @@ export const MovieManager: FC<MovieManagerProps> = ({
     };
   }, [fetchAvailableMovies]);
 
+  useLayoutEffect(() => {
+    if (
+      previousSelectionRef.current.session === session &&
+      previousSelectionRef.current.selectedAccountId === selectedAccountId &&
+      previousSelectionRef.current.selectedProfileId === selectedProfileId
+    )
+      return;
+    previousSelectionRef.current = {
+      session,
+      selectedAccountId,
+      selectedProfileId,
+    };
+    sessionUserIdRef.current = session;
+    profileIdRef.current = selectedProfileId;
+    profileGenerationRef.current += 1;
+    availableRequestGenerationRef.current += 1;
+    membershipMutationIdRef.current += 1;
+    orderingMutationIdRef.current += 1;
+    membershipActionRef.current = false;
+    orderingRef.current = false;
+    dragContextRef.current = null;
+    setAvailableMovies([]);
+    setAvailablePage(1);
+    setHasMoreAvailableMovies(false);
+    setSelectedMovieId("");
+    setDraggedIndex(null);
+    setIsAdding(false);
+    setIsMembershipPending(false);
+    setIsOrdering(false);
+  }, [session, selectedAccountId, selectedProfileId]);
+
   const handleAddMovie = async () => {
     if (
       !selectedMovieId ||
@@ -117,19 +180,31 @@ export const MovieManager: FC<MovieManagerProps> = ({
     membershipActionRef.current = true;
     setIsMembershipPending(true);
     setIsAdding(true);
+    const sessionId = session;
+    const profileId = selectedProfileId;
+    const profileGeneration = profileGenerationRef.current;
+    const mutationId = ++membershipMutationIdRef.current;
     try {
       const res =
         entityType === "series"
-          ? await client.api.v4.series[":series"].movies.$post({
-              param: { series: entityId },
-              json: { movieId: selectedMovieId },
-            })
-          : await client.api.v4.playlists[":playlist"].movies.$post({
-              param: { playlist: entityId },
-              json: { movieId: selectedMovieId },
-            });
+          ? await client.api.v4.series[":series"].movies.$post(
+              {
+                param: { series: entityId },
+                json: { movieId: selectedMovieId },
+              },
+              { headers: { "X-Profile-Id": profileId ?? "" } },
+            )
+          : await client.api.v4.playlists[":playlist"].movies.$post(
+              {
+                param: { playlist: entityId },
+                json: { movieId: selectedMovieId },
+              },
+              { headers: { "X-Profile-Id": profileId ?? "" } },
+            );
 
       if (!res.ok) throw new Error("Failed to add");
+      if (!isCurrentProfileMutation(sessionId, profileId, profileGeneration))
+        return;
 
       // Find the movie and add it to the list
       const movie = availableMovies.find((m) => m.id === selectedMovieId);
@@ -142,11 +217,14 @@ export const MovieManager: FC<MovieManagerProps> = ({
       }
       setSelectedMovieId("");
     } catch {
-      notify("動画の追加に失敗しました");
+      if (isCurrentProfileMutation(sessionId, profileId, profileGeneration))
+        notify("動画の追加に失敗しました");
     } finally {
-      setIsAdding(false);
-      membershipActionRef.current = false;
-      setIsMembershipPending(false);
+      if (membershipMutationIdRef.current === mutationId) {
+        setIsAdding(false);
+        membershipActionRef.current = false;
+        setIsMembershipPending(false);
+      }
     }
   };
 
@@ -154,26 +232,37 @@ export const MovieManager: FC<MovieManagerProps> = ({
     if (!session || orderingRef.current || membershipActionRef.current) return;
     membershipActionRef.current = true;
     setIsMembershipPending(true);
+    const sessionId = session;
+    const profileId = selectedProfileId;
+    const profileGeneration = profileGenerationRef.current;
+    const mutationId = ++membershipMutationIdRef.current;
     try {
       const res =
         entityType === "series"
-          ? await client.api.v4.series[":series"].movies[":movie"].$delete({
-              param: { series: entityId, movie: movieId },
-            })
+          ? await client.api.v4.series[":series"].movies[":movie"].$delete(
+              { param: { series: entityId, movie: movieId } },
+              { headers: { "X-Profile-Id": profileId ?? "" } },
+            )
           : await client.api.v4.playlists[":playlist"].movies[":movie"].$delete(
               {
                 param: { playlist: entityId, movie: movieId },
               },
+              { headers: { "X-Profile-Id": profileId ?? "" } },
             );
 
       if (!res.ok) throw new Error("Failed to remove");
+      if (!isCurrentProfileMutation(sessionId, profileId, profileGeneration))
+        return;
 
       onMoviesChange(movies.filter((m) => m.movie.id !== movieId));
     } catch {
-      notify("動画の削除に失敗しました");
+      if (isCurrentProfileMutation(sessionId, profileId, profileGeneration))
+        notify("動画の削除に失敗しました");
     } finally {
-      membershipActionRef.current = false;
-      setIsMembershipPending(false);
+      if (membershipMutationIdRef.current === mutationId) {
+        membershipActionRef.current = false;
+        setIsMembershipPending(false);
+      }
     }
   };
 
@@ -185,6 +274,11 @@ export const MovieManager: FC<MovieManagerProps> = ({
     e.dataTransfer.setData("text/plain", movies[index].movie.id);
     e.dataTransfer.effectAllowed = "move";
     dragStartMoviesRef.current = movies;
+    dragContextRef.current = {
+      sessionId: session,
+      profileId: selectedProfileId,
+      generation: profileGenerationRef.current,
+    };
     setDraggedIndex(index);
   };
 
@@ -204,39 +298,75 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const updateServerOrder = async (
     ids: string[],
     rollbackMovies: MovieItem[],
+    sessionId: string | undefined,
+    profileId: string | null,
+    profileGeneration: number,
   ) => {
-    if (!session || orderingRef.current || membershipActionRef.current) return;
+    if (
+      !session ||
+      orderingRef.current ||
+      membershipActionRef.current ||
+      !isCurrentProfileMutation(sessionId, profileId, profileGeneration)
+    )
+      return;
     orderingRef.current = true;
     setIsOrdering(true);
+    const mutationId = ++orderingMutationIdRef.current;
     try {
       const res =
         entityType === "series"
-          ? await client.api.v4.series[":series"].movies.$patch({
-              param: { series: entityId },
-              json: {
-                movieIds: ids,
+          ? await client.api.v4.series[":series"].movies.$patch(
+              {
+                param: { series: entityId },
+                json: {
+                  movieIds: ids,
+                },
               },
-            })
-          : await client.api.v4.playlists[":playlist"].movies.$patch({
-              param: { playlist: entityId },
-              json: {
-                movieIds: ids,
+              { headers: { "X-Profile-Id": profileId ?? "" } },
+            )
+          : await client.api.v4.playlists[":playlist"].movies.$patch(
+              {
+                param: { playlist: entityId },
+                json: {
+                  movieIds: ids,
+                },
               },
-            });
+              { headers: { "X-Profile-Id": profileId ?? "" } },
+            );
       if (!res.ok) throw new Error("Failed to update order");
+      if (!isCurrentProfileMutation(sessionId, profileId, profileGeneration))
+        return;
     } catch {
+      if (!isCurrentProfileMutation(sessionId, profileId, profileGeneration))
+        return;
       notify("並び替えに失敗しました");
       onMoviesChange(rollbackMovies);
     } finally {
-      orderingRef.current = false;
-      setIsOrdering(false);
+      if (orderingMutationIdRef.current === mutationId) {
+        orderingRef.current = false;
+        setIsOrdering(false);
+      }
     }
   };
 
   const handleDragEnd = async () => {
-    if (draggedIndex === null || !session || orderingRef.current) return;
+    const dragContext = dragContextRef.current;
+    if (
+      draggedIndex === null ||
+      !session ||
+      orderingRef.current ||
+      !dragContext
+    )
+      return;
     const movieIds = movies.map((m) => m.movie.id);
-    await updateServerOrder(movieIds, dragStartMoviesRef.current);
+    dragContextRef.current = null;
+    await updateServerOrder(
+      movieIds,
+      dragStartMoviesRef.current,
+      dragContext.sessionId,
+      dragContext.profileId,
+      dragContext.generation,
+    );
     setDraggedIndex(null);
   };
 
@@ -260,7 +390,13 @@ export const MovieManager: FC<MovieManagerProps> = ({
     ];
     onMoviesChange(newMovies);
     const movieIds = newMovies.map((m) => m.movie.id);
-    await updateServerOrder(movieIds, previousMovies);
+    await updateServerOrder(
+      movieIds,
+      previousMovies,
+      session,
+      selectedProfileId,
+      profileGenerationRef.current,
+    );
   };
 
   const handleMoveDown = async (index: number) => {
@@ -279,7 +415,13 @@ export const MovieManager: FC<MovieManagerProps> = ({
     ];
     onMoviesChange(newMovies);
     const movieIds = newMovies.map((m) => m.movie.id);
-    await updateServerOrder(movieIds, previousMovies);
+    await updateServerOrder(
+      movieIds,
+      previousMovies,
+      session,
+      selectedProfileId,
+      profileGenerationRef.current,
+    );
   };
 
   const movieIdsInList = new Set(movies.map((item) => item.movie.id));
