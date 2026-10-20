@@ -1,6 +1,6 @@
 {
   "name": "@video-host/backend",
-  "version": "0.0.38",
+  "version": "0.0.39",
   "private": true,
   "license": "MIT",
   "files": [
