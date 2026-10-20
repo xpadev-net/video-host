@@ -6,6 +6,7 @@ import { useRef, useState } from "react";
 import { useSWRConfig } from "swr";
 import {
   PlayerConfigAtom,
+  PlayerMutedAtom,
   PlayerPlaybackRateAtom,
   PlayerVolumeAtom,
   StopPlayerAtom,
@@ -29,6 +30,7 @@ const AuthButton = () => {
   const setSelectedProfile = useSetAtom(selectedProfileIdAtom);
   const setWatchedHistory = useSetAtom(watchedHistoryAtom);
   const resetPlayerConfig = useSetAtom(PlayerConfigAtom);
+  const resetMuted = useSetAtom(PlayerMutedAtom);
   const resetPlaybackRate = useSetAtom(PlayerPlaybackRateAtom);
   const resetVolume = useSetAtom(PlayerVolumeAtom);
   const stopPlayer = useSetAtom(StopPlayerAtom);
@@ -49,6 +51,7 @@ const AuthButton = () => {
       setSelectedProfile(null);
       setWatchedHistory({});
       resetPlayerConfig(RESET);
+      resetMuted(RESET);
       resetPlaybackRate(RESET);
       resetVolume(RESET);
       await mutate(() => true, undefined, { revalidate: false });

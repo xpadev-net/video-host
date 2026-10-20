@@ -36,6 +36,13 @@ function EditPlaylistPage() {
 
   const { selectedProfileId, generationRef: selectionGenerationRef } =
     useProfileSelectionGeneration(() => {
+      fetchGenerationRef.current += 1;
+      setIsLoading(true);
+      setLoadError(null);
+      setTitle("");
+      setDescription("");
+      setVisibility("PUBLIC");
+      setMovies([]);
       setIsSubmitting(false);
       setError(null);
     });

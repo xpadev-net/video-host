@@ -57,17 +57,25 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const membershipMutationIdRef = useRef(0);
   const profileIdRef = useRef(selectedProfileId);
   const profileGenerationRef = useRef(0);
-  const previousSelectionRef = useRef({ selectedAccountId, selectedProfileId });
+  const sessionUserIdRef = useRef(session);
+  const previousSelectionRef = useRef({
+    session,
+    selectedAccountId,
+    selectedProfileId,
+  });
   const dragContextRef = useRef<{
+    sessionId: string | undefined;
     profileId: string | null;
     generation: number;
   } | null>(null);
   const dragStartMoviesRef = useRef<MovieItem[]>([]);
   const availableRequestGenerationRef = useRef(0);
   const isCurrentProfileMutation = (
+    sessionId: string | undefined,
     profileId: string | null,
     generation: number,
   ) =>
+    sessionUserIdRef.current === sessionId &&
     profileIdRef.current === profileId &&
     getSelectedProfileId() === profileId &&
     profileGenerationRef.current === generation;
@@ -132,11 +140,17 @@ export const MovieManager: FC<MovieManagerProps> = ({
 
   useLayoutEffect(() => {
     if (
+      previousSelectionRef.current.session === session &&
       previousSelectionRef.current.selectedAccountId === selectedAccountId &&
       previousSelectionRef.current.selectedProfileId === selectedProfileId
     )
       return;
-    previousSelectionRef.current = { selectedAccountId, selectedProfileId };
+    previousSelectionRef.current = {
+      session,
+      selectedAccountId,
+      selectedProfileId,
+    };
+    sessionUserIdRef.current = session;
     profileIdRef.current = selectedProfileId;
     profileGenerationRef.current += 1;
     availableRequestGenerationRef.current += 1;
@@ -153,7 +167,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
     setIsAdding(false);
     setIsMembershipPending(false);
     setIsOrdering(false);
-  }, [selectedAccountId, selectedProfileId]);
+  }, [session, selectedAccountId, selectedProfileId]);
 
   const handleAddMovie = async () => {
     if (
@@ -166,6 +180,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
     membershipActionRef.current = true;
     setIsMembershipPending(true);
     setIsAdding(true);
+    const sessionId = session;
     const profileId = selectedProfileId;
     const profileGeneration = profileGenerationRef.current;
     const mutationId = ++membershipMutationIdRef.current;
@@ -188,7 +203,8 @@ export const MovieManager: FC<MovieManagerProps> = ({
             );
 
       if (!res.ok) throw new Error("Failed to add");
-      if (!isCurrentProfileMutation(profileId, profileGeneration)) return;
+      if (!isCurrentProfileMutation(sessionId, profileId, profileGeneration))
+        return;
 
       // Find the movie and add it to the list
       const movie = availableMovies.find((m) => m.id === selectedMovieId);
@@ -201,7 +217,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
       }
       setSelectedMovieId("");
     } catch {
-      if (isCurrentProfileMutation(profileId, profileGeneration))
+      if (isCurrentProfileMutation(sessionId, profileId, profileGeneration))
         notify("動画の追加に失敗しました");
     } finally {
       if (membershipMutationIdRef.current === mutationId) {
@@ -216,6 +232,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
     if (!session || orderingRef.current || membershipActionRef.current) return;
     membershipActionRef.current = true;
     setIsMembershipPending(true);
+    const sessionId = session;
     const profileId = selectedProfileId;
     const profileGeneration = profileGenerationRef.current;
     const mutationId = ++membershipMutationIdRef.current;
@@ -234,11 +251,12 @@ export const MovieManager: FC<MovieManagerProps> = ({
             );
 
       if (!res.ok) throw new Error("Failed to remove");
-      if (!isCurrentProfileMutation(profileId, profileGeneration)) return;
+      if (!isCurrentProfileMutation(sessionId, profileId, profileGeneration))
+        return;
 
       onMoviesChange(movies.filter((m) => m.movie.id !== movieId));
     } catch {
-      if (isCurrentProfileMutation(profileId, profileGeneration))
+      if (isCurrentProfileMutation(sessionId, profileId, profileGeneration))
         notify("動画の削除に失敗しました");
     } finally {
       if (membershipMutationIdRef.current === mutationId) {
@@ -257,6 +275,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
     e.dataTransfer.effectAllowed = "move";
     dragStartMoviesRef.current = movies;
     dragContextRef.current = {
+      sessionId: session,
       profileId: selectedProfileId,
       generation: profileGenerationRef.current,
     };
@@ -279,6 +298,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
   const updateServerOrder = async (
     ids: string[],
     rollbackMovies: MovieItem[],
+    sessionId: string | undefined,
     profileId: string | null,
     profileGeneration: number,
   ) => {
@@ -286,7 +306,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
       !session ||
       orderingRef.current ||
       membershipActionRef.current ||
-      !isCurrentProfileMutation(profileId, profileGeneration)
+      !isCurrentProfileMutation(sessionId, profileId, profileGeneration)
     )
       return;
     orderingRef.current = true;
@@ -314,9 +334,11 @@ export const MovieManager: FC<MovieManagerProps> = ({
               { headers: { "X-Profile-Id": profileId ?? "" } },
             );
       if (!res.ok) throw new Error("Failed to update order");
-      if (!isCurrentProfileMutation(profileId, profileGeneration)) return;
+      if (!isCurrentProfileMutation(sessionId, profileId, profileGeneration))
+        return;
     } catch {
-      if (!isCurrentProfileMutation(profileId, profileGeneration)) return;
+      if (!isCurrentProfileMutation(sessionId, profileId, profileGeneration))
+        return;
       notify("並び替えに失敗しました");
       onMoviesChange(rollbackMovies);
     } finally {
@@ -341,6 +363,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
     await updateServerOrder(
       movieIds,
       dragStartMoviesRef.current,
+      dragContext.sessionId,
       dragContext.profileId,
       dragContext.generation,
     );
@@ -370,6 +393,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
     await updateServerOrder(
       movieIds,
       previousMovies,
+      session,
       selectedProfileId,
       profileGenerationRef.current,
     );
@@ -394,6 +418,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
     await updateServerOrder(
       movieIds,
       previousMovies,
+      session,
       selectedProfileId,
       profileGenerationRef.current,
     );

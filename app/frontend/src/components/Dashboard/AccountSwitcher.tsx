@@ -8,6 +8,7 @@ import {
 import { useSystemAccounts } from "@/hooks/useDashboard";
 import { useProfiles } from "@/hooks/useProfiles";
 import { useSelf } from "@/hooks/useUser";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
 type SystemAccount = InferResponseType<
@@ -16,6 +17,8 @@ type SystemAccount = InferResponseType<
 
 export const AccountSwitcher: FC = () => {
   const { data: user } = useSelf();
+  const { data: authSession } = authClient.useSession();
+  const sessionUserId = authSession?.user.id;
   const isAdmin = user && "role" in user && user.role === "ADMIN";
   const { data: accounts } = useSystemAccounts(Boolean(isAdmin));
   const {
@@ -32,6 +35,7 @@ export const AccountSwitcher: FC = () => {
   const selectedAccountIdRef = useRef(selectedAccountId);
   const selectedProfileIdRef = useRef(selectedProfileId);
   const selectionGenerationRef = useRef(0);
+  const sessionUserIdRef = useRef(sessionUserId);
   const refreshingUnknownProfilesRef = useRef(new Set<string>());
   const [newName, setNewName] = useState("");
   const [newUsername, setNewUsername] = useState("");
@@ -41,12 +45,18 @@ export const AccountSwitcher: FC = () => {
   const profileList = profiles ?? [];
 
   useLayoutEffect(() => {
+    if (sessionUserIdRef.current !== sessionUserId) {
+      sessionUserIdRef.current = sessionUserId;
+      selectionGenerationRef.current += 1;
+      setProfileError(null);
+      setIsCreatingProfile(false);
+    }
     if (selectedProfileIdRef.current !== selectedProfileId) {
       selectedProfileIdRef.current = selectedProfileId;
       selectionGenerationRef.current += 1;
     }
     selectedAccountIdRef.current = selectedAccountId;
-  }, [selectedAccountId, selectedProfileId]);
+  }, [selectedAccountId, selectedProfileId, sessionUserId]);
 
   useEffect(() => {
     if (!selectedProfileId || !profiles) return;
@@ -111,6 +121,7 @@ export const AccountSwitcher: FC = () => {
     event.preventDefault();
     const accountIdAtStart = selectedAccountIdRef.current;
     const selectionGenerationAtStart = selectionGenerationRef.current;
+    const sessionUserIdAtStart = sessionUserIdRef.current;
     setProfileError(null);
     setIsCreatingProfile(true);
     try {
@@ -118,15 +129,19 @@ export const AccountSwitcher: FC = () => {
         json: { name: newName, username: newUsername },
       });
       if (!res.ok) {
-        setProfileError(
-          "作成できませんでした。ユーザー名の重複がないか確認してください。",
-        );
+        if (sessionUserIdRef.current === sessionUserIdAtStart) {
+          setProfileError(
+            "作成できませんでした。ユーザー名の重複がないか確認してください。",
+          );
+        }
         return;
       }
       const profile = (await res.json()).data;
+      if (sessionUserIdRef.current !== sessionUserIdAtStart) return;
       await mutateProfiles((current) => [...(current ?? []), profile], {
         revalidate: false,
       });
+      if (sessionUserIdRef.current !== sessionUserIdAtStart) return;
       setNewName("");
       setNewUsername("");
       if (
@@ -135,9 +150,11 @@ export const AccountSwitcher: FC = () => {
       )
         setSelectedProfileId(profile.id);
     } catch {
-      setProfileError("プロフィールを作成できませんでした。");
+      if (sessionUserIdRef.current === sessionUserIdAtStart)
+        setProfileError("プロフィールを作成できませんでした。");
     } finally {
-      setIsCreatingProfile(false);
+      if (sessionUserIdRef.current === sessionUserIdAtStart)
+        setIsCreatingProfile(false);
     }
   };
 
