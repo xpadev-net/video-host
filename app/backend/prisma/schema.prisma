@@ -225,6 +225,6 @@ model MovieVariant {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
-  @@unique([movieId, variantId])
+  @@index([movieId, variantId])
   @@index([movieId, status])
 }
