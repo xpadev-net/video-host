@@ -191,10 +191,12 @@ jobs:
         run: pnpm -F @video-host/ffmpeg-worker test
 
   docker-build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
+        image: [backend, frontend, ffmpeg-worker]
+        arch: [amd64, arm64]
         include:
           - image: backend
             file: app/backend/Dockerfile
@@ -216,9 +218,6 @@ jobs:
           NODE_IMAGE_VERSION: ${{ steps.node-image.outputs.version }}
         run: grep -Fx "ARG NODE_VERSION=$NODE_IMAGE_VERSION" "$DOCKERFILE"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -227,12 +226,12 @@ jobs:
         with:
           context: .
           file: ${{ matrix.file }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/${{ matrix.arch }}
           push: false
           tags: video-host/${{ matrix.image }}:ci
           build-args: NODE_VERSION=${{ steps.node-image.outputs.version }}
-          cache-from: type=gha,scope=ci-${{ matrix.image }}
-          cache-to: type=gha,scope=ci-${{ matrix.image }},mode=max
+          cache-from: type=gha,scope=ci-${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=ci-${{ matrix.image }}-${{ matrix.arch }},mode=max
 
   docker-start-smoke:
     runs-on: ubuntu-latest
@@ -269,7 +268,7 @@ jobs:
           load: true
           tags: video-host/${{ matrix.image }}:start-smoke
           build-args: NODE_VERSION=${{ steps.node-image.outputs.version }}
-          cache-from: type=gha,scope=ci-${{ matrix.image }}
+          cache-from: type=gha,scope=ci-${{ matrix.image }}-amd64
           cache-to: type=gha,scope=start-smoke-${{ matrix.image }},mode=max
 
       - name: Smoke-test the exec-form startup script
