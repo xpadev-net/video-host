@@ -4,7 +4,7 @@ Video Host is a self-hosted media library. The frontend uses TanStack Start and 
 
 ## Requirements
 
-- Node.js 22.12 (see `.nvmrc`) and pnpm 10.25.0 (the repository's package manager version)
+- Node.js 22.23.4 (see `.nvmrc`) and pnpm 10.25.0 (the repository's package manager version)
 - Docker Compose for MySQL 8.4, Redis, SeaweedFS's S3 API and the VOD server
 - If running the worker directly on the host, `ffmpeg` and `ffprobe` on `PATH` (the worker image includes them)
 
