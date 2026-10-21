@@ -6,7 +6,7 @@ This is the Japanese home media server frontend. It uses TanStack Start with Rea
 
 ## Runtime requirements
 
-- Node.js 22.12 or newer
+- Node.js 22.23.4 or newer
 - pnpm 10 (the repository pins the package-manager version)
 
 Run commands from the repository root. Build the backend declarations before frontend type checking or builds.

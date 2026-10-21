@@ -1,10 +1,10 @@
 # Video Host backend
 
-Hono/Node.js 22.12, Prisma 6, MySQL 8, and Better Auth 1.7.7. Browser authentication uses database-backed HttpOnly cookies. Redis remains for video jobs/progress, not authentication sessions or OIDC state.
+Hono/Node.js 22.23.4, Prisma 6, MySQL 8, and Better Auth 1.7.7. Browser authentication uses database-backed HttpOnly cookies. Redis remains for video jobs/progress, not authentication sessions or OIDC state.
 
 ## Local development
 
-Use Node 22.12 and the pinned pnpm 10.25.0. Copy `app/backend/.env.example` to `app/backend/.env` and set `DATABASE_URL` to a disposable MySQL database before starting the backend. From the repository root:
+Use Node 22.23.4 and the pinned pnpm 10.25.0. Copy `app/backend/.env.example` to `app/backend/.env` and set `DATABASE_URL` to a disposable MySQL database before starting the backend. From the repository root:
 
     pnpm install --frozen-lockfile
     pnpm -F @video-host/backend prisma:generate
