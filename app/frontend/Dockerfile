@@ -1,4 +1,4 @@
-ARG NODE_VERSION=22.12.0-bookworm-slim
+ARG NODE_VERSION=22.23.4-bookworm-slim
 
 FROM node:${NODE_VERSION} AS builder
 WORKDIR /app

@@ -1,4 +1,4 @@
-ARG NODE_VERSION=22.12.0-bookworm-slim
+ARG NODE_VERSION=22.23.4-bookworm-slim
 ARG FFMPEG_PACKAGE_VERSION=7:5.1.9-0+deb12u1
 
 FROM node:${NODE_VERSION} AS builder

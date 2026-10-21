@@ -4,7 +4,7 @@ The worker reads encoding jobs from Redis, downloads source media from S3-compat
 
 ## Local development
 
-Use Node.js 22.12, pnpm 10.25.0, and FFmpeg with `ffmpeg` and `ffprobe` on `PATH` (for example, install `ffmpeg` with Homebrew on macOS or your distribution's package manager on Linux). From the repository root, start the local dependencies with `docker compose up -d`, then copy `app/ffmpeg-worker/.env.example` to `app/ffmpeg-worker/.env`. Set its `CALLBACK_SECRET` to the same value used by the backend.
+Use Node.js 22.23.4, pnpm 10.25.0, and FFmpeg with `ffmpeg` and `ffprobe` on `PATH` (for example, install `ffmpeg` with Homebrew on macOS or your distribution's package manager on Linux). From the repository root, start the local dependencies with `docker compose up -d`, then copy `app/ffmpeg-worker/.env.example` to `app/ffmpeg-worker/.env`. Set its `CALLBACK_SECRET` to the same value used by the backend.
 
 ```sh
 pnpm install --frozen-lockfile

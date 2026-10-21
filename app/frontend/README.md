@@ -28,7 +28,7 @@ smokes, and runtime environment replacement checks. The proxy and runtime
 checks require a production build. To match CI, copy
 `app/frontend/docker/.env.placeholder` to `app/frontend/.env` before building.
 
-本番ビルドは Nitro のスタンドアロン成果物として `.output` に出力されます。サーバーエントリは `.output/server/index.mjs`、クライアントアセットは `.output/public` です。Node.js 22.12 以上を使用してください。
+本番ビルドは Nitro のスタンドアロン成果物として `.output` に出力されます。サーバーエントリは `.output/server/index.mjs`、クライアントアセットは `.output/public` です。Node.js 22.23.4 以上を使用してください。
 
 ## 環境変数
 
