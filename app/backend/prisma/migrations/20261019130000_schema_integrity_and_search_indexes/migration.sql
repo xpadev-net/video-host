@@ -60,7 +60,7 @@ CREATE INDEX `Movie_seriesId_order_createdAt_idx` ON `Movie`(`seriesId`, `order`
 CREATE INDEX `MovieVariant_movieId_status_idx` ON `MovieVariant`(`movieId`, `status`);
 
 -- CreateIndex
-CREATE UNIQUE INDEX `MovieVariant_movieId_variantId_key` ON `MovieVariant`(`movieId`, `variantId`);
+CREATE INDEX `MovieVariant_movieId_variantId_idx` ON `MovieVariant`(`movieId`, `variantId`);
 
 -- AddForeignKey
 ALTER TABLE `AuthProfile` ADD CONSTRAINT `AuthProfile_authUserId_fkey` FOREIGN KEY (`authUserId`) REFERENCES `AuthUser`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
