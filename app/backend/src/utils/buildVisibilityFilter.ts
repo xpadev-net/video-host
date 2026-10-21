@@ -171,12 +171,12 @@ export const buildVisibilityFilter = <
       OR: [
         {
           title: {
-            search: query,
+            contains: query,
           },
         },
         {
           description: {
-            search: query,
+            contains: query,
           },
         },
       ],

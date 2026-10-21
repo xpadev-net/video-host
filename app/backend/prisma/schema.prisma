@@ -50,8 +50,6 @@ model User {
   viewableMovies    MovieViewer[]
 
   @@index([kind, createdAt])
-  @@fulltext([username])
-  @@fulltext([name])
 }
 
 // Better Auth owns credentials, provider identities and sessions. Domain User
@@ -155,8 +153,6 @@ model Series {
 
   @@index([visibility, updatedAt])
   @@index([authorId, updatedAt])
-  @@fulltext([title])
-  @@fulltext([description])
 }
 
 model Playlist {
@@ -172,8 +168,6 @@ model Playlist {
 
   @@index([visibility, updatedAt])
   @@index([authorId, updatedAt])
-  @@fulltext([title])
-  @@fulltext([description])
 }
 
 model MovieViewer {
@@ -217,8 +211,6 @@ model Movie {
 
   @@index([visibility, createdAt])
   @@index([seriesId, order, createdAt])
-  @@fulltext([title])
-  @@fulltext([description])
 }
 
 model MovieVariant {

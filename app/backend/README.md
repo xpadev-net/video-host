@@ -46,7 +46,7 @@ GROUP BY `movieId`, `variantId`
 HAVING COUNT(*) > 1;
 ```
 
-List search uses MySQL full-text token search rather than substring matching. It matches indexed words and follows MySQL's minimum token length and stop-word rules. The client generator provider is explicitly `prisma-client-js` while the Prisma CLI and client are pinned to the same Prisma 6 release; keep the provider explicit when changing Prisma versions.
+List search uses substring matching so it works on both MySQL and TiDB. The client generator provider is explicitly `prisma-client-js` while the Prisma CLI and client are pinned to the same Prisma 6 release; keep the provider explicit when changing Prisma versions.
 
 CI applies migrations to a disposable MySQL 8 database and checks that the migration history matches `schema.prisma` by replaying migrations into a disposable shadow database. Run `pnpm -F @video-host/backend exec prisma migrate deploy` and `pnpm -F @video-host/backend prisma:schema-check` locally with `DATABASE_URL` and `SHADOW_DATABASE_URL` pointed at disposable databases.
 
