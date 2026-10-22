@@ -39,6 +39,11 @@ spec:
             - containerPort: 3000
               protocol: TCP
           env:
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: frontend-url
             - name: API_UPSTREAM_URL
               valueFrom:
                 configMapKeyRef:
