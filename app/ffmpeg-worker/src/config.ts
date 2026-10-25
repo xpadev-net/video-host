@@ -31,6 +31,10 @@ const optionalText = z
   .string()
   .optional()
   .transform((value) => value?.trim() || undefined);
+const optionalSecret = z
+  .string()
+  .optional()
+  .transform((value) => (value === "" ? undefined : value));
 
 const integer = (minimum: number, fallback: number) =>
   z.preprocess(
@@ -70,8 +74,8 @@ export const WorkerEnvSchema = z.object({
   REDIS_URL: text("redis://localhost:6379"),
   REDIS_SENTINEL_HOSTS: optionalText,
   REDIS_SENTINEL_NAME: optionalText,
-  REDIS_SENTINEL_PASSWORD: optionalText,
-  REDIS_NODE_PASSWORD: optionalText,
+  REDIS_SENTINEL_PASSWORD: optionalSecret,
+  REDIS_NODE_PASSWORD: optionalSecret,
   S3_TMP_BUCKET: text("video-tmp"),
   S3_PROD_BUCKET: text("video-prod"),
   S3_REGION: text("ap-northeast-1"),
