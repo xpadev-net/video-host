@@ -9,6 +9,11 @@ export const DEV_DEFAULTS = {
   VOD_INTERNAL_SECRET: "dev-vod-internal-secret",
 } as const;
 
+const optionalSecret = z
+  .string()
+  .optional()
+  .transform((value) => (value === "" ? undefined : value));
+
 const flag = (fallback: boolean) =>
   z
     .string()
@@ -159,7 +164,8 @@ export const BackendEnvSchema = z.object({
   REDIS_URL: z.string().default("redis://localhost:6379"),
   REDIS_SENTINEL_HOSTS: z.string().optional(),
   REDIS_SENTINEL_NAME: z.string().optional(),
-  REDIS_SENTINEL_PASSWORD: z.string().optional(),
+  REDIS_SENTINEL_PASSWORD: optionalSecret,
+  REDIS_NODE_PASSWORD: optionalSecret,
 
   // OpenTelemetry metrics export (disabled when the endpoint is unset)
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
@@ -327,6 +333,7 @@ export const {
   REDIS_SENTINEL_HOSTS,
   REDIS_SENTINEL_NAME,
   REDIS_SENTINEL_PASSWORD,
+  REDIS_NODE_PASSWORD,
   CALLBACK_SECRET,
   VOD_INTERNAL_SECRET,
   VOD_ALLOW_UNSIGNED,

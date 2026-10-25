@@ -223,4 +223,16 @@ describe("authentication environment", () => {
       ).success,
     ).toBe(true);
   });
+  it("treats empty Redis passwords as unset and preserves non-empty values", () => {
+    const withoutPasswords = EnvSchema.parse(
+      production({ REDIS_SENTINEL_PASSWORD: "", REDIS_NODE_PASSWORD: "" }),
+    );
+    expect(withoutPasswords.REDIS_SENTINEL_PASSWORD).toBeUndefined();
+    expect(withoutPasswords.REDIS_NODE_PASSWORD).toBeUndefined();
+
+    const withSpacedPassword = EnvSchema.parse(
+      production({ REDIS_NODE_PASSWORD: " node password " }),
+    );
+    expect(withSpacedPassword.REDIS_NODE_PASSWORD).toBe(" node password ");
+  });
 });

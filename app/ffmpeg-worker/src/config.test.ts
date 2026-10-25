@@ -81,6 +81,20 @@ test("whitespace numeric settings use defaults and log level errors name the var
   assert.throws(() => parseLogLevel("verbose"), /LOG_LEVEL/);
 });
 
+test("Redis credentials preserve meaningful surrounding whitespace", () => {
+  const env = parseWorkerEnv(
+    {
+      NODE_ENV: "development",
+      REDIS_SENTINEL_PASSWORD: " sentinel password ",
+      REDIS_NODE_PASSWORD: " node password ",
+    },
+    2,
+  );
+
+  assert.equal(env.REDIS_SENTINEL_PASSWORD, " sentinel password ");
+  assert.equal(env.REDIS_NODE_PASSWORD, " node password ");
+});
+
 test("production requires a callback secret and flags reject unknown values", () => {
   assert.throws(
     () => parseWorkerEnv({ NODE_ENV: "production" }, 2),

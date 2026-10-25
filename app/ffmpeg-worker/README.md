@@ -18,7 +18,7 @@ The root `.env.example` is a combined reference for environment managers that in
 | Variable | Purpose |
 | --- | --- |
 | `REDIS_URL` | Redis queue and progress connection; defaults to local Redis |
-| `REDIS_SENTINEL_HOSTS`, `REDIS_SENTINEL_NAME`, `REDIS_SENTINEL_PASSWORD` | Optional Redis Sentinel configuration |
+| `REDIS_SENTINEL_HOSTS`, `REDIS_SENTINEL_NAME`, `REDIS_SENTINEL_PASSWORD`, `REDIS_NODE_PASSWORD` | Optional Redis Sentinel configuration; Sentinel and data-node credentials are independent |
 | `S3_TMP_BUCKET`, `S3_PROD_BUCKET`, `S3_REGION` | Source and output bucket names and AWS region |
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, `S3_FORCE_PATH_STYLE` | S3-compatible credentials and endpoint; endpoint/path-style settings support the local SeaweedFS S3 API |
 | `BACKEND_BASE_URL`, `CALLBACK_SECRET` | Backend base URL (including any deployment path prefix) and shared machine secret for completion callbacks |
