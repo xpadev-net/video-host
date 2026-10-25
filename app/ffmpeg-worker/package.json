@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "test": "node --import tsx --test tests/redis-client-options.test.cjs",
     "typecheck": "tsc --noEmit --skipLibCheck --pretty --noErrorTruncation --skipDefaultLibCheck --project tsconfig.json"
   },
   "dependencies": {

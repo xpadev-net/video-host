@@ -124,7 +124,7 @@ describe("transport-bound auth client IP", () => {
                 hostname: "127.0.0.1",
                 port,
                 path: "/api/auth/get-session",
-                localAddress: "127.0.0.2",
+                localAddress: "127.0.0.1",
                 headers: {
                   "x-forwarded-for": "198.51.100.99",
                   "x-real-ip": "198.51.100.88",
@@ -142,7 +142,7 @@ describe("transport-bound auth client IP", () => {
             .on("error", reject);
         },
       );
-      expect(result[AUTH_CLIENT_IP_HEADER]).toBe("127.0.0.2");
+      expect(result[AUTH_CLIENT_IP_HEADER]).toBe("127.0.0.1");
       expect(result["x-forwarded-for"]).toBeUndefined();
       expect(
         (await app.request("http://localhost/api/auth/get-session")).status,

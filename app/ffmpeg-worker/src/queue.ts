@@ -14,21 +14,34 @@ interface SentinelNode {
   port: number;
 }
 
+export const buildSentinelClientOptions = (
+  name: string,
+  hosts: string,
+  password?: string,
+) => {
+  const sentinelRootNodes: SentinelNode[] = hosts.split(",").map((host) => {
+    const [hostname, port] = host.trim().split(":");
+    return { host: hostname, port: parseInt(port || "26379", 10) };
+  });
+
+  return {
+    name,
+    sentinelRootNodes,
+    sentinelClientOptions: { password },
+    nodeClientOptions: { password },
+  };
+};
+
 const createRedisClient = (): RedisClientType | RedisSentinelType => {
   // If Sentinel is configured, use Sentinel mode
   if (REDIS_SENTINEL_HOSTS && REDIS_SENTINEL_NAME) {
-    const sentinels: SentinelNode[] = REDIS_SENTINEL_HOSTS.split(",").map((host) => {
-      const [hostname, port] = host.trim().split(":");
-      return { host: hostname, port: parseInt(port || "26379", 10) };
-    });
-
-    return createSentinel({
-      name: REDIS_SENTINEL_NAME,
-      sentinelRootNodes: sentinels,
-      sentinelClientOptions: {
-        password: REDIS_SENTINEL_PASSWORD,
-      },
-    });
+    return createSentinel(
+      buildSentinelClientOptions(
+        REDIS_SENTINEL_NAME,
+        REDIS_SENTINEL_HOSTS,
+        REDIS_SENTINEL_PASSWORD,
+      ),
+    );
   }
 
   // Otherwise, use standard connection
