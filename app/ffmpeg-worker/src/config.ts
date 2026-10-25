@@ -71,6 +71,7 @@ export const WorkerEnvSchema = z.object({
   REDIS_SENTINEL_HOSTS: optionalText,
   REDIS_SENTINEL_NAME: optionalText,
   REDIS_SENTINEL_PASSWORD: optionalText,
+  REDIS_NODE_PASSWORD: optionalText,
   S3_TMP_BUCKET: text("video-tmp"),
   S3_PROD_BUCKET: text("video-prod"),
   S3_REGION: text("ap-northeast-1"),

@@ -62,6 +62,11 @@ spec:
                 secretKeyRef:
                   name: ffmpeg-worker-secrets
                   key: redis-sentinel-password
+            - name: REDIS_NODE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ffmpeg-worker-secrets
+                  key: redis-node-password
                   optional: true
             # S3
             - name: S3_TMP_BUCKET

@@ -10,7 +10,8 @@ test("Sentinel options authenticate both Sentinel and data-node clients", () => 
     buildSentinelClientOptions(
       "myprimary",
       "valkey-a:26379, valkey-b, valkey-c:26380",
-      "shared-test-password",
+      "sentinel-test-password",
+      "node-test-password",
     ),
     {
       name: "myprimary",
@@ -19,8 +20,8 @@ test("Sentinel options authenticate both Sentinel and data-node clients", () => 
         { host: "valkey-b", port: 26379 },
         { host: "valkey-c", port: 26380 },
       ],
-      sentinelClientOptions: { password: "shared-test-password" },
-      nodeClientOptions: { password: "shared-test-password" },
+      sentinelClientOptions: { password: "sentinel-test-password" },
+      nodeClientOptions: { password: "node-test-password" },
     },
   );
 });

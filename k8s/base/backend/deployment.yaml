@@ -229,6 +229,11 @@ spec:
                 secretKeyRef:
                   name: backend-secrets
                   key: redis-sentinel-password
+            - name: REDIS_NODE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secrets
+                  key: redis-node-password
                   optional: true
             - name: CALLBACK_SECRET
               valueFrom:

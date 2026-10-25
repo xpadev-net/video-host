@@ -11,6 +11,7 @@ import {
   type RedisSentinelType,
 } from "redis";
 import {
+  REDIS_NODE_PASSWORD,
   REDIS_SENTINEL_HOSTS,
   REDIS_SENTINEL_NAME,
   REDIS_SENTINEL_PASSWORD,
@@ -27,7 +28,8 @@ interface SentinelNode {
 export const buildSentinelClientOptions = (
   name: string,
   hosts: string,
-  password?: string,
+  sentinelPassword?: string,
+  nodePassword?: string,
 ) => {
   const sentinelRootNodes: SentinelNode[] = hosts.split(",").map((host) => {
     const [hostname, port] = host.trim().split(":");
@@ -37,8 +39,8 @@ export const buildSentinelClientOptions = (
   return {
     name,
     sentinelRootNodes,
-    sentinelClientOptions: { password },
-    nodeClientOptions: { password },
+    sentinelClientOptions: { password: sentinelPassword },
+    nodeClientOptions: { password: nodePassword },
   };
 };
 
@@ -50,6 +52,7 @@ const createRedisClient = (): RedisClientType | RedisSentinelType => {
         REDIS_SENTINEL_NAME,
         REDIS_SENTINEL_HOSTS,
         REDIS_SENTINEL_PASSWORD,
+        REDIS_NODE_PASSWORD,
       ),
     );
   }
