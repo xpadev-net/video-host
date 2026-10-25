@@ -1,7 +1,6 @@
-import { Skeleton } from "@radix-ui/themes";
-
 import { MovieListSkeleton } from "@/components/MovieList/MovieListSkeleton";
 import { UserSkeleton } from "@/components/User/UserSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const SeriesPageSkeleton = () => {
   return (

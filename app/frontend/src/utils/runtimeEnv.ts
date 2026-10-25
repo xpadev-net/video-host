@@ -12,3 +12,11 @@ export function resolveApiEndpoint(value: string | undefined): string {
 export function resolveRuntimeFlag(value: string | undefined): boolean {
   return /^true$/i.test(value ?? "");
 }
+
+/** Resolve an optional public string while preserving runtime placeholder replacement. */
+export function resolveRuntimeString(
+  value: string | undefined,
+  fallback: string,
+): string {
+  return value?.trim() && !/^_VITE_[A-Z0-9_]+_$/.test(value) ? value : fallback;
+}

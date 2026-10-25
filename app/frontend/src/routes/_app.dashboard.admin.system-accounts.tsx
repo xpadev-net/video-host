@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
+import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
+import { useConfirm, useNotify } from "@/components/Feedback/FeedbackProvider";
 import { useSystemAccounts } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
@@ -17,10 +19,10 @@ interface SystemAccount {
 }
 
 function SystemAccountsPage() {
-  const { data: response, isLoading: isUserLoading } = useSelf();
-  // biome-ignore lint/suspicious/noExplicitAny: complex type inference
-  const user = response?.status === "ok" ? (response as any).data : null;
+  const { data: user, isLoading: isUserLoading } = useSelf();
   const { data: accounts, mutate } = useSystemAccounts();
+  const confirm = useConfirm();
+  const notify = useNotify();
   const [username, setUsername] = useState("");
   const [name, setName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,9 +55,12 @@ function SystemAccountsPage() {
 
   const handleDelete = async (id: string) => {
     if (
-      !confirm(
-        "このシステムアカウントを削除しますか？関連するコンテンツも削除されます。",
-      )
+      !(await confirm({
+        title: "システムアカウントを削除しますか？",
+        description: "このアカウントと関連するコンテンツも削除されます。",
+        confirmLabel: "削除",
+        destructive: true,
+      }))
     )
       return;
 
@@ -69,13 +74,13 @@ function SystemAccountsPage() {
 
       mutate();
     } catch {
-      alert("削除に失敗しました");
+      notify("削除に失敗しました");
     } finally {
       setDeletingId(null);
     }
   };
 
-  if (isUserLoading) return <div>Loading...</div>;
+  if (isUserLoading) return <DashboardLoading />;
   if (!user || !("role" in user) || user.role !== "ADMIN")
     return <div>管理者権限が必要です</div>;
 
@@ -91,6 +96,7 @@ function SystemAccountsPage() {
           <div className="form-row">
             <input
               type="text"
+              aria-label="ユーザー名"
               placeholder="ユーザー名"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -98,6 +104,7 @@ function SystemAccountsPage() {
             />
             <input
               type="text"
+              aria-label="表示名"
               placeholder="表示名"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -134,24 +141,6 @@ function SystemAccountsPage() {
           )}
         </div>
       </div>
-      <style>{`
-        .system-accounts-page h1 { color: var(--text-primary, #fff); margin-bottom: 2rem; }
-        .create-form { background: var(--background-primary, #0d0d0d); padding: 1.5rem; border-radius: 12px; margin-bottom: 2rem; }
-        .create-form h3 { color: var(--text-primary, #fff); margin: 0 0 1rem; }
-        .form-row { display: flex; gap: 1rem; }
-        .form-row input { flex: 1; padding: 0.75rem; background: var(--background-secondary, #1a1a1a); border: 1px solid var(--border-color, #333); border-radius: 8px; color: var(--text-primary, #fff); }
-        .form-row button { padding: 0.75rem 1.5rem; background: var(--primary-color, #3b82f6); color: white; border: none; border-radius: 8px; cursor: pointer; }
-        .form-row button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .error-message { margin-top: 1rem; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 8px; color: #ef4444; }
-        .accounts-list h3 { color: var(--text-primary, #fff); margin-bottom: 1rem; }
-        .empty { color: var(--text-secondary, #999); }
-        .account-item { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: var(--background-primary, #0d0d0d); border: 1px solid var(--border-color, #333); border-radius: 8px; margin-bottom: 0.5rem; }
-        .account-info { display: flex; flex-direction: column; gap: 0.25rem; }
-        .account-name { color: var(--text-primary, #fff); }
-        .account-username { color: var(--text-secondary, #999); font-size: 0.875rem; }
-        .delete-btn { padding: 0.5rem 1rem; background: transparent; border: 1px solid #ef4444; border-radius: 6px; color: #ef4444; cursor: pointer; }
-        .delete-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      `}</style>
     </>
   );
 }

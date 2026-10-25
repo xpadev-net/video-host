@@ -32,36 +32,55 @@ enum MovieStatus {
 }
 
 model User {
-  id             String        @id @default(uuid())
-  name           String
-  username       String        @unique
-  kind           UserKind      @default(HUMAN)
-  authUserId     String?       @unique
-  authUser       AuthUser?     @relation(fields: [authUserId], references: [id], onDelete: SetNull)
-  role           Role          @default(USER)
-  avatarUrl      String?
-  series         Series[]
-  movies         Movie[]
-  externalId     String?       @unique @db.VarChar(512)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  playlists      Playlist[]
-  viewableMovies MovieViewer[]
+  id                String        @id @default(uuid())
+  name              String
+  username          String        @unique
+  kind              UserKind      @default(HUMAN)
+  authUserId        String?       @unique
+  authUser          AuthUser?     @relation(fields: [authUserId], references: [id], onDelete: SetNull)
+  additionalProfile AuthProfile?
+  role              Role          @default(USER)
+  avatarUrl         String?       @db.Text
+  series            Series[]
+  movies            Movie[]
+  externalId        String?       @unique @db.VarChar(512)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  playlists         Playlist[]
+  viewableMovies    MovieViewer[]
+
+  @@index([kind, createdAt])
 }
 
 // Better Auth owns credentials, provider identities and sessions. Domain User
 // IDs, roles, ownership and visibility relations remain application-owned.
 model AuthUser {
-  id            String        @id
-  name          String
-  email         String        @unique @db.VarChar(320)
-  emailVerified Boolean       @default(false)
-  image         String?       @db.Text
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  sessions      AuthSession[]
-  accounts      AuthAccount[]
-  profile       User?
+  id                 String        @id
+  name               String
+  email              String        @unique @db.VarChar(320)
+  emailVerified      Boolean       @default(false)
+  image              String?       @db.Text
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  sessions           AuthSession[]
+  accounts           AuthAccount[]
+  profile            User?
+  additionalProfiles AuthProfile[]
+}
+
+// The existing User.authUserId relation remains the account's default
+// profile. Additional profiles are linked through this table so existing
+// account/profile rows need no data backfill.
+model AuthProfile {
+  id         String   @id @default(uuid())
+  authUserId String
+  profileId  String   @unique
+  authUser   AuthUser @relation(fields: [authUserId], references: [id], onDelete: Cascade)
+  profile    User     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@index([authUserId])
 }
 
 model AuthSession {
@@ -76,6 +95,7 @@ model AuthSession {
   user      AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([expiresAt])
 }
 
 model AuthAccount {
@@ -107,6 +127,7 @@ model AuthVerification {
   updatedAt  DateTime @updatedAt
 
   @@index([identifier])
+  @@index([expiresAt])
 }
 
 model AuthRateLimit {
@@ -114,31 +135,39 @@ model AuthRateLimit {
   key         String @unique
   count       Int
   lastRequest BigInt
+
+  @@index([lastRequest])
 }
 
 model Series {
   id          String     @id @default(uuid())
   title       String     @db.VarChar(512)
   description String?    @db.Text
-  author      User       @relation(fields: [authorId], references: [id])
+  author      User       @relation(fields: [authorId], references: [id], onDelete: Restrict)
   authorId    String
   movies      Movie[]
   visibility  Visibility @default(PUBLIC)
   externalId  String?    @unique @db.VarChar(512)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+
+  @@index([visibility, updatedAt])
+  @@index([authorId, updatedAt])
 }
 
 model Playlist {
   id          String            @id @default(uuid())
   title       String            @db.VarChar(512)
   description String?           @db.Text
-  author      User              @relation(fields: [authorId], references: [id])
+  author      User              @relation(fields: [authorId], references: [id], onDelete: Restrict)
   authorId    String
   visibility  Visibility        @default(PUBLIC)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   movies      MovieOnPlaylist[]
+
+  @@index([visibility, updatedAt])
+  @@index([authorId, updatedAt])
 }
 
 model MovieViewer {
@@ -152,9 +181,9 @@ model MovieViewer {
 }
 
 model MovieOnPlaylist {
-  playlist   Playlist @relation(fields: [playlistId], references: [id])
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
   playlistId String
-  movie      Movie    @relation(fields: [movieId], references: [id])
+  movie      Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
   movieId    String
   order      Int
 
@@ -165,12 +194,12 @@ model Movie {
   id           String            @id @default(uuid())
   title        String            @db.VarChar(512)
   description  String?           @db.Text
-  author       User              @relation(fields: [authorId], references: [id])
+  author       User              @relation(fields: [authorId], references: [id], onDelete: Restrict)
   authorId     String
   series       Series?           @relation(fields: [seriesId], references: [id])
   seriesId     String?
   duration     Int               @default(0)
-  thumbnailUrl String?
+  thumbnailUrl String?           @db.Text
   visibility   Visibility        @default(PUBLIC)
   externalId   String?           @unique @db.VarChar(512)
   order        Int               @default(0)
@@ -179,17 +208,23 @@ model Movie {
   variants     MovieVariant[]
   playlists    MovieOnPlaylist[]
   viewers      MovieViewer[]
+
+  @@index([visibility, createdAt])
+  @@index([seriesId, order, createdAt])
 }
 
 model MovieVariant {
   id         String      @id @default(uuid())
-  movie      Movie       @relation(fields: [movieId], references: [id])
+  movie      Movie       @relation(fields: [movieId], references: [id], onDelete: Cascade)
   movieId    String
   variantId  String
-  contentUrl String
+  contentUrl String      @db.Text
   s3Key      String?     @db.VarChar(512)
   status     MovieStatus @default(READY)
   externalId String?     @unique @db.VarChar(512)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
+
+  @@index([movieId, variantId])
+  @@index([movieId, status])
 }

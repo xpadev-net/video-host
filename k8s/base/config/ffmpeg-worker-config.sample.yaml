@@ -12,17 +12,20 @@ data:
   s3-tmp-bucket: "video-tmp"
   s3-prod-bucket: "video-prod"
   s3-region: "ap-northeast-1"
-  s3-endpoint: ""
-  s3-force-path-style: "false"
+  s3-endpoint: "http://object-storage:8333"
+  s3-force-path-style: "true"
   # Callback
-  backend-callback-url: "http://backend:3000/api/internal/video/callback"
+  backend-base-url: "http://backend:3000"
   # VOD
-  vod-base-url: "http://vod-server/vod"
+  # Browser-reachable public origin, without a trailing /vod path.
+  vod-base-url: "https://your-frontend-domain.com"
   # Worker
   poll-interval-ms: "5000"
   min-disk-space-gb: "1"
   job-timeout-seconds: "7200"
-  ffmpeg-threads: ""  # Optional: limit FFmpeg CPU threads (empty = use all available)
+  ffmpeg-threads: "2"  # Limit FFmpeg to the worker's 2-core CPU limit
+  log-level: "info"
   # OpenTelemetry (メトリクス送信先。空の場合は無効)
   otel-endpoint: ""  # 例: "http://otel-collector.otel-collector.svc.cluster.local:4318"
+  otel-metrics-endpoint: ""
   otel-service-name: "video-host-ffmpeg-worker"

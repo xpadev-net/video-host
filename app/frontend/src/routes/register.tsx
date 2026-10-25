@@ -1,11 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { AuthForm, AuthLayout, FormField } from "@/components/Auth";
-import { RequireSignupCode, SiteName } from "@/contexts/env";
+import { SiteName } from "@/contexts/env";
 import { getSafeCallback, useAuth } from "@/hooks/useAuth";
+import { useAuthConfig } from "@/hooks/useAuthConfig";
 import { authClient } from "@/lib/auth-client";
-import { type AuthConfig, getAuthConfig } from "@/service/getAuthConfig";
+import { getAuthErrorMessage } from "@/utils/authErrorMessage";
 import {
   validatePassword,
   validatePasswordMatch,
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/register")({
 });
 
 function RegisterRoute() {
+  const navigate = useNavigate();
   const { loading, error, startAuth, handleAuthSuccess, handleAuthError } =
     useAuth();
   const { callback } = Route.useSearch();
@@ -31,17 +33,35 @@ function RegisterRoute() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [signupCode, setSignupCode] = useState("");
-  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
-  const [configLoaded, setConfigLoaded] = useState(false);
-  const requireSignupCode = authConfig?.requireSignupCode ?? RequireSignupCode;
+  const { authConfig, isLoading: isAuthConfigLoading } = useAuthConfig();
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [sessionError, setSessionError] = useState(false);
+  const requireSignupCode = authConfig?.requireSignupCode ?? false;
   const passwordAuthEnabled = authConfig?.passwordAuthEnabled ?? false;
 
   useEffect(() => {
-    void getAuthConfig().then((config) => {
-      setAuthConfig(config);
-      setConfigLoaded(true);
-    });
-  }, []);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const session = await authClient.getSession();
+        if (cancelled) return;
+        if (session.data) {
+          await navigate({
+            to: getSafeCallback(callback ?? null) ?? "/",
+            replace: true,
+          });
+          return;
+        }
+      } catch {
+        if (!cancelled) setSessionError(true);
+      } finally {
+        if (!cancelled) setSessionLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [callback, navigate]);
 
   const handleRegister = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -67,7 +87,8 @@ function RegisterRoute() {
         password,
         ...(requireSignupCode ? { signupCode } : {}),
       });
-      if (error) handleAuthError(error.message || "登録に失敗しました");
+      if (error)
+        handleAuthError(getAuthErrorMessage(error, "登録に失敗しました"));
       else await handleAuthSuccess();
     } catch {
       handleAuthError("ネットワークエラーが発生しました");
@@ -80,12 +101,22 @@ function RegisterRoute() {
     password &&
     confirmPassword &&
     (!requireSignupCode || signupCode);
-  if (!configLoaded) {
+  if (sessionLoading || isAuthConfigLoading) {
     return (
       <AuthLayout title="新規登録" description="読み込み中...">
         <div className="flex justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
+      </AuthLayout>
+    );
+  }
+  if (sessionError) {
+    return (
+      <AuthLayout
+        title="新規登録"
+        description="ログイン状態を確認できませんでした"
+      >
+        <p role="alert">ページを再読み込みしてください。</p>
       </AuthLayout>
     );
   }

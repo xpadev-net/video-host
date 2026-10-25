@@ -1,25 +1,19 @@
 import { useAtomValue } from "jotai";
-import {
-  MdVolumeDown,
-  MdVolumeMute,
-  MdVolumeOff,
-  MdVolumeUp,
-} from "react-icons/md";
+import { Volume1, Volume2, VolumeX } from "lucide-react";
 
-import { PlayerVolumeAtom } from "@/atoms/Player";
+import { PlayerMutedAtom, PlayerVolumeAtom } from "@/atoms/Player";
+import { isSilent } from "@/utils/volume";
 
 const VolumeIcon = () => {
   const volume = useAtomValue(PlayerVolumeAtom);
+  const muted = useAtomValue(PlayerMutedAtom);
+  if (isSilent(volume, muted)) {
+    return <VolumeX aria-hidden="true" />;
+  }
   if (volume > 0.5) {
-    return <MdVolumeUp />;
+    return <Volume2 aria-hidden="true" />;
   }
-  if (volume > 0.1) {
-    return <MdVolumeDown />;
-  }
-  if (volume > 0) {
-    return <MdVolumeMute />;
-  }
-  return <MdVolumeOff />;
+  return <Volume1 aria-hidden="true" />;
 };
 
 export { VolumeIcon };

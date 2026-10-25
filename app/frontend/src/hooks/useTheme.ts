@@ -1,27 +1,39 @@
 import { useAtom } from "jotai";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import { ThemeAtom } from "@/atoms/Theme";
 
 export const useTheme = () => {
-  const [pTheme, setPTheme] = useAtom(ThemeAtom);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [preference, setPreference] = useAtom(ThemeAtom);
+  const systemTheme = useSyncExternalStore(
+    (onChange) => {
+      const media = window.matchMedia("(prefers-color-scheme: dark)");
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    },
+    () =>
+      window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light",
+    () => "light",
+  );
+  const theme = preference === "auto" ? systemTheme : preference;
+  const skipInitialThemeSync = useRef(true);
 
   useEffect(() => {
-    if (pTheme === "auto") {
-      const dark = window.matchMedia("(prefers-color-scheme: dark)");
-      setTheme(dark.matches ? "dark" : "light");
-      const listener = (e: MediaQueryListEvent) => {
-        setTheme(e.matches ? "dark" : "light");
-      };
-      dark.addEventListener("change", listener);
-      return () => {
-        dark.removeEventListener("change", listener);
-      };
-    } else {
-      setTheme(pTheme);
+    // The head bootstrap script has already applied the saved/system theme
+    // before paint. Do not overwrite it with useSyncExternalStore's hydration
+    // snapshot, which intentionally matches the server's light snapshot.
+    if (skipInitialThemeSync.current) {
+      skipInitialThemeSync.current = false;
+      return;
     }
-  }, [pTheme]);
 
-  return { theme, setTheme: setPTheme };
+    const root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    root.dataset.theme = preference;
+    root.style.colorScheme = theme;
+  }, [preference, theme]);
+
+  return { theme, preference, setTheme: setPreference };
 };

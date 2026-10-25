@@ -1,6 +1,6 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
-import { type FC, type KeyboardEvent, useEffect, useRef } from "react";
+import { type FC, useEffect, useRef } from "react";
 import type {
   SettingItem,
   SettingKey,
@@ -14,12 +14,14 @@ import { Switch } from "@/components/Switch/Switch";
 
 type GenericPageProps = MenuProps & {
   config: SettingPageConfig;
+  isActive?: boolean;
 };
 
 const GenericPage: FC<GenericPageProps> = ({
   className,
   updateScale,
   config,
+  isActive = true,
 }) => {
   const setPlayerSetting = useSetAtom(PlayerSettingAtom);
   const state = useAtomValue(PlayerStateAtom);
@@ -54,16 +56,6 @@ const GenericPage: FC<GenericPageProps> = ({
     setPlayerSetting((prev) => prev.filter((page) => page !== targetPage));
   };
 
-  const handleKeyDown = (
-    e: KeyboardEvent<HTMLButtonElement>,
-    action: () => void,
-  ) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      action();
-    }
-  };
-
   const renderItem = (item: SettingItem, index: number) => {
     const baseProps = {
       className:
@@ -71,7 +63,6 @@ const GenericPage: FC<GenericPageProps> = ({
           ? "flex flex-row h-10 leading-10 cursor-pointer justify-between border-b border-white/20 -mt-[5px] pb-[5px] box-content hover:bg-white/10"
           : "flex flex-row h-10 leading-10 cursor-pointer justify-between hover:bg-white/10",
       type: "button" as const,
-      tabIndex: 0,
     };
 
     switch (item.type) {
@@ -82,9 +73,6 @@ const GenericPage: FC<GenericPageProps> = ({
             key={`${item.type}-${index}`}
             {...baseProps}
             onClick={() => handleNavigation(item.targetPage)}
-            onKeyDown={(e) =>
-              handleKeyDown(e, () => handleNavigation(item.targetPage))
-            }
             aria-label={item.ariaLabel || `${item.label}設定を開く`}
           >
             <div className="flex">
@@ -112,7 +100,6 @@ const GenericPage: FC<GenericPageProps> = ({
             key={`${item.type}-${index}`}
             {...baseProps}
             onClick={() => item.onChange(!isChecked)}
-            onKeyDown={(e) => handleKeyDown(e, () => item.onChange(!isChecked))}
             aria-label={
               item.ariaLabel ||
               `${item.label}を${isChecked ? "無効" : "有効"}にする`
@@ -143,11 +130,7 @@ const GenericPage: FC<GenericPageProps> = ({
             key={`${item.id}-${option.value}`}
             className="flex flex-row h-10 leading-10 cursor-pointer justify-between hover:bg-white/10"
             onClick={() => item.onChange(option.value)}
-            onKeyDown={(e) =>
-              handleKeyDown(e, () => item.onChange(option.value))
-            }
             type="button"
-            tabIndex={0}
             aria-label={
               item.ariaLabel || `${item.label}を${option.label}に設定`
             }
@@ -168,9 +151,6 @@ const GenericPage: FC<GenericPageProps> = ({
             key={`${item.type}-${index}`}
             {...baseProps}
             onClick={() => handleBack(item.targetPage)}
-            onKeyDown={(e) =>
-              handleKeyDown(e, () => handleBack(item.targetPage))
-            }
             aria-label="戻る"
           >
             <div className="flex">
@@ -192,6 +172,8 @@ const GenericPage: FC<GenericPageProps> = ({
     <div
       className={`flex flex-col py-2.5 w-fit min-w-[250px] ${className ?? ""}`}
       ref={ref}
+      aria-hidden={!isActive}
+      inert={!isActive}
     >
       {config.map((item, index) => renderItem(item, index))}
     </div>

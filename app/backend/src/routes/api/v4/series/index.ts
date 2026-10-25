@@ -1,46 +1,44 @@
 import { zValidator } from "@hono/zod-validator";
-import type { Prisma } from "@prisma/client"; // Fix: Prisma import
+import type { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import {
-  type FilteredSeries,
+  type FormattedSeries,
   type PaginatedResponse,
   ZBasicVisibility,
 } from "@/@types/models";
 import { filterSeries } from "@/lib/filter";
+import { formatSeries } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
+import { getDistinctSuggestPage } from "@/lib/suggest";
 import { seriesDetailRoute } from "@/routes/api/v4/series/[series]";
 import {
   buildMovieAccessWhere,
   buildVisibilityFilter,
 } from "@/utils/buildVisibilityFilter";
-import { badRequest, unauthorized } from "@/utils/response";
+import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
+import { resolveAuthorId } from "@/utils/movieAuth";
+import { MAX_RELATION_MOVIES, paginationQuerySchema } from "@/utils/pagination";
+import { unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
-const DEFAULT_PAGE_SIZE = 100;
-const MAX_PAGE_SIZE = 200;
-
-const QuerySchema = z.object({
-  page: z
-    .string()
-    .optional()
-    .default("1")
-    .transform((v) => parseInt(v, 10)),
-  limit: z
-    .string()
-    .optional()
-    .default(DEFAULT_PAGE_SIZE.toString())
-    .transform((v) => Math.min(parseInt(v, 10), MAX_PAGE_SIZE)),
+const QuerySchema = paginationQuerySchema().extend({
   query: z.string().optional(),
-  suggest: z.string().optional(), // boolean check on length? "suggest" query param usually has no value if present? or "true"? Original: `c.req.queries("suggest")?.length ?? 0) > 0`. So simply presence.
+  suggest: z
+    .string()
+    .optional()
+    .transform((value) => value !== undefined),
   author: z.string().optional(),
-  mine: z.string().optional(),
+  mine: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 const PostSeriesSchema = z.object({
-  title: z.string(),
-  description: z.string(),
+  title: TitleSchema,
+  description: DescriptionSchema,
   visibility: ZBasicVisibility.optional().default("PUBLIC"),
   asUserId: z.string().optional(),
 });
@@ -50,43 +48,78 @@ const app = new Hono<Env>();
 export const seriesRoute = app
   .get("/", zValidator("query", QuerySchema), async (c) => {
     const user = c.get("user");
-    const { page, limit, query, author } = c.req.valid("query");
-    const suggest = c.req.query("suggest") !== undefined; // Check presence
+    const { page, limit, query, author, suggest, mine } = c.req.valid("query");
 
-    const where: Prisma.SeriesWhereInput = buildVisibilityFilter(
-      user,
-      query,
-      author,
-    );
+    const where: Prisma.SeriesWhereInput =
+      buildVisibilityFilter<Prisma.SeriesWhereInput>(user, query, author);
+    if (mine) {
+      if (!user) unauthorized("Authentication required");
+      where.authorId = user.role === "ADMIN" && author ? author : user.id;
+    }
 
-    // Get total count for pagination metadata
+    if (suggest) {
+      const authorId = mine
+        ? user?.role === "ADMIN" && author
+          ? author
+          : user?.id
+        : author;
+      const { ids, totalCount } = await getDistinctSuggestPage({
+        table: "Series",
+        user,
+        query,
+        authorId,
+        page,
+        limit,
+      });
+      const rows = ids.length
+        ? await prisma.series.findMany({
+            where: { id: { in: ids } },
+            include: { author: true },
+          })
+        : [];
+      const rowsById = new Map(rows.map((row) => [row.id, row]));
+      const items = ids.flatMap((id) => {
+        const row = rowsById.get(id);
+        return row ? [formatSeries(filterSeries(row))] : [];
+      });
+      const totalPages = Math.ceil(totalCount / limit);
+
+      const response: PaginatedResponse<FormattedSeries> = {
+        items,
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+        },
+      };
+      return ok(c, response);
+    }
+
     const totalCount = await prisma.series.count({ where });
 
     const series = await prisma.series.findMany({
-      include: suggest
-        ? {
-            author: true,
-          }
-        : {
-            movies: {
-              where: buildMovieAccessWhere(user),
-              orderBy: [
-                {
-                  order: "asc",
-                },
-                {
-                  createdAt: "asc",
-                },
-              ],
-              take: 10,
-              include: {
-                author: true,
-                variants: true,
-              },
+      include: {
+        movies: {
+          where: buildMovieAccessWhere(user),
+          orderBy: [
+            {
+              order: "asc",
             },
+            {
+              createdAt: "asc",
+            },
+          ],
+          take: 10,
+          include: {
             author: true,
+            variants: true,
           },
-      distinct: suggest ? ["title"] : undefined,
+        },
+        author: true,
+      },
       where,
       orderBy: {
         updatedAt: "desc",
@@ -99,8 +132,8 @@ export const seriesRoute = app
     const hasNext = page < totalPages;
     const hasPrev = page > 1;
 
-    const response: PaginatedResponse<FilteredSeries> = {
-      items: series.map(filterSeries),
+    const response: PaginatedResponse<FormattedSeries> = {
+      items: series.map((s) => formatSeries(filterSeries(s))),
       pagination: {
         page,
         limit,
@@ -120,24 +153,7 @@ export const seriesRoute = app
     }
     const { title, description, visibility, asUserId } = c.req.valid("json");
 
-    let authorId = user.id;
-    if (asUserId) {
-      if (user.role !== "ADMIN") {
-        unauthorized("Only admins can create series for other users");
-      }
-      // Verify asUserId is a system account (or just allow admins to act as anyone? context implies system accounts)
-      // Reusing logic from other files or just checking existence/system nature
-      const targetUser = await prisma.user.findUnique({
-        where: { id: asUserId },
-      });
-      if (!targetUser) {
-        badRequest("Target user not found");
-      }
-      if (targetUser.kind !== "SYSTEM") {
-        badRequest("Can only create series for system accounts");
-      }
-      authorId = asUserId;
-    }
+    const authorId = await resolveAuthorId(user, asUserId);
 
     const series = await prisma.series.create({
       data: {
@@ -150,6 +166,7 @@ export const seriesRoute = app
         author: true,
         movies: {
           where: buildMovieAccessWhere(user),
+          take: MAX_RELATION_MOVIES,
           include: {
             author: true,
             variants: true,
@@ -157,7 +174,7 @@ export const seriesRoute = app
         },
       },
     });
-    return ok(c, filterSeries(series));
+    return ok(c, formatSeries(filterSeries(series)));
   })
   .route("/", seriesDetailRoute);
 

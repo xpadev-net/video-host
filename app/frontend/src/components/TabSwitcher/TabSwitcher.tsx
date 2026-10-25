@@ -1,4 +1,4 @@
-import { Tabs } from "radix-ui";
+import * as Tabs from "@radix-ui/react-tabs";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";

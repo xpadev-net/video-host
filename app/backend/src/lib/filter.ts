@@ -5,14 +5,20 @@ import type {
   FilteredSeries,
   FilteredUser,
 } from "@/@types/models";
+import { signVodContentUrl, signVodThumbnailUrl } from "@/lib/vod-token";
 
 export const filterUser = (user: FilteredUser): FilteredUser => {
   return {
     id: user.id,
     name: user.name,
-    role: user.role,
+    username: user.username,
     avatarUrl: user.avatarUrl,
   };
+};
+
+/** The requester's own profile: the only place `role` is exposed. */
+export const filterSelf = (user: FilteredUser): FilteredUser => {
+  return { ...filterUser(user), role: user.role };
 };
 
 export const filterSeries = (series: FilteredSeries): FilteredSeries => {
@@ -33,7 +39,7 @@ export const filterMovie = (episode: FilteredMovie): FilteredMovie => {
     description: episode.description,
     duration: episode.duration,
     variants: episode.variants.map(filterMovieVariant),
-    thumbnailUrl: episode.thumbnailUrl,
+    thumbnailUrl: signVodThumbnailUrl(episode.thumbnailUrl),
     visibility: episode.visibility,
     author: filterUser(episode.author),
     series: episode.series ? filterSeries(episode.series) : undefined,
@@ -43,11 +49,13 @@ export const filterMovie = (episode: FilteredMovie): FilteredMovie => {
 };
 
 export const filterMovieVariant = (
-  variant: FilteredMovieVariant,
+  variant: FilteredMovieVariant & { s3Key?: string | null },
 ): FilteredMovieVariant => {
   return {
     variantId: variant.variantId,
-    contentUrl: variant.contentUrl,
+    // Playback URLs carry a short-lived token bound to the stored key; the
+    // VOD mapping endpoint rejects requests without a valid one.
+    contentUrl: signVodContentUrl(variant.contentUrl, variant.s3Key),
     status: variant.status,
   };
 };

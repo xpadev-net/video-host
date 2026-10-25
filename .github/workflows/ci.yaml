@@ -7,100 +7,302 @@ on:
   pull_request:
     branches:
       - master
+  workflow_dispatch:
 
-env:
-  NODE_VERSION: '22.12.x'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
-  # Backend CI
+  workflow-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Lint GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/*.yaml
+
+  kubernetes-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
+        with:
+          version: v1.32.0
+
+      - name: Render and validate production Kubernetes manifests
+        run: |
+          kubectl kustomize k8s/overlays/prod > /tmp/video-host-prod.yaml
+          go run github.com/yannh/kubeconform/cmd/kubeconform@v0.6.7 \
+            -strict -summary -kubernetes-version 1.32.0 /tmp/video-host-prod.yaml
+
   backend-ci:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        task: [lint, format, typecheck, test]
-    
+    services:
+      mysql:
+        image: mysql:8.4.11
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: video_host
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/video_host
+      SHADOW_DATABASE_URL: mysql://root:root@127.0.0.1:3306/video_host_shadow
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          node-version-file: .nvmrc
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run ${{ matrix.task }} (backend)
-        run: pnpm -F @video-host/backend ${{ matrix.task }}
+      - name: Generate Prisma client
+        run: pnpm -F @video-host/backend prisma:generate
 
-  # Frontend CI
-  frontend-ci:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        task: [lint, format:check, typecheck, build, test]
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - name: Validate Prisma schema
+        run: pnpm -F @video-host/backend exec prisma validate
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Create Prisma shadow database
+        run: docker exec "${{ job.services.mysql.id }}" mysql -uroot -proot -e "CREATE DATABASE video_host_shadow;"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+      - name: Apply Prisma migrations to CI database
+        run: pnpm -F @video-host/backend exec prisma migrate deploy
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Check Prisma migration history
+        run: pnpm -F @video-host/backend prisma:schema-check
+
+      - name: Run backend lint
+        run: pnpm -F @video-host/backend lint
+
+      - name: Check backend formatting
+        run: pnpm -F @video-host/backend format:check
+
+      - name: Typecheck backend
+        run: pnpm -F @video-host/backend typecheck
+
+      - name: Test backend
+        run: pnpm -F @video-host/backend test
 
       - name: Build backend
+        run: pnpm -F @video-host/backend build
+
+  frontend-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build backend workspace dependency
         run: pnpm -F @video-host/backend build
 
       - name: Copy env placeholder
         run: cp app/frontend/docker/.env.placeholder app/frontend/.env
 
-      - name: Run ${{ matrix.task }} (frontend)
-        run: pnpm -F @video-host/frontend ${{ matrix.task }}
+      - name: Run frontend lint
+        run: pnpm -F @video-host/frontend lint
 
-      - name: Verify production API proxy
-        if: matrix.task == 'build'
-        run: |
-          pnpm -F @video-host/frontend test:proxy
-          pnpm -F @video-host/frontend test:runtime-env
+      - name: Check frontend formatting
+        run: pnpm -F @video-host/frontend format:check
 
-  # Worker CI
+      - name: Typecheck frontend
+        run: pnpm -F @video-host/frontend typecheck
+
+      - name: Build frontend
+        run: pnpm -F @video-host/frontend build
+
+      - name: Test frontend
+        run: pnpm -F @video-host/frontend test:all
+
   ffmpeg-worker-ci:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        task: [typecheck]
-    
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          node-version-file: .nvmrc
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build backend
-        run: pnpm -F @video-host/backend build
+      - name: Run worker lint
+        run: pnpm -F @video-host/ffmpeg-worker lint
 
-      - name: Run ${{ matrix.task }} (worker)
-        run: pnpm -F @video-host/ffmpeg-worker ${{ matrix.task }}
+      - name: Check worker formatting
+        run: pnpm -F @video-host/ffmpeg-worker format:check
+
+      - name: Typecheck worker
+        run: pnpm -F @video-host/ffmpeg-worker typecheck
+
+      - name: Test worker
+        env:
+          NODE_ENV: test
+          CALLBACK_SECRET: worker-ci-test-secret
+          REDIS_URL: redis://127.0.0.1:6379
+        run: pnpm -F @video-host/ffmpeg-worker test
+
+  docker-build:
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [backend, frontend, ffmpeg-worker]
+        arch: [amd64, arm64]
+        include:
+          - image: backend
+            file: app/backend/Dockerfile
+          - image: frontend
+            file: app/frontend/Dockerfile
+          - image: ffmpeg-worker
+            file: app/ffmpeg-worker/Dockerfile
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read Docker Node image version
+        id: node-image
+        run: echo "version=$(cat .nvmrc)-bookworm-slim" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Dockerfile Node version matches .nvmrc
+        env:
+          DOCKERFILE: ${{ matrix.file }}
+          NODE_IMAGE_VERSION: ${{ steps.node-image.outputs.version }}
+        run: grep -Fx "ARG NODE_VERSION=$NODE_IMAGE_VERSION" "$DOCKERFILE"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image for pull request validation
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/${{ matrix.arch }}
+          push: false
+          tags: video-host/${{ matrix.image }}:ci
+          build-args: NODE_VERSION=${{ steps.node-image.outputs.version }}
+          cache-from: type=gha,scope=ci-${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=ci-${{ matrix.image }}-${{ matrix.arch }},mode=max
+
+  docker-start-smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            file: app/backend/Dockerfile
+            expected-command: ./start.mjs
+            entrypoint-override: ./start.sh
+          - image: frontend
+            file: app/frontend/Dockerfile
+            expected-command: app/frontend/.output/server/index.mjs
+            entrypoint-override: image
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read Docker Node image version
+        id: node-image
+        run: echo "version=$(cat .nvmrc)-bookworm-slim" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build amd64 image for startup smoke
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: video-host/${{ matrix.image }}:start-smoke
+          build-args: NODE_VERSION=${{ steps.node-image.outputs.version }}
+          cache-from: type=gha,scope=ci-${{ matrix.image }}-amd64
+          cache-to: type=gha,scope=start-smoke-${{ matrix.image }},mode=max
+
+      - name: Smoke-test the exec-form startup script
+        env:
+          IMAGE: video-host/${{ matrix.image }}:start-smoke
+          EXPECTED_COMMAND: ${{ matrix.expected-command }}
+          ENTRYPOINT_OVERRIDE: ${{ matrix.entrypoint-override }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/video-host-smoke-bin
+          cat > /tmp/video-host-smoke-bin/node <<'EOF'
+          #!/usr/bin/env sh
+          if [ "$#" -eq 0 ]; then
+            exec /usr/local/bin/node
+          fi
+          printf 'node pid: %s\n' "$$"
+          printf 'node invoked with args:'
+          printf ' %s' "$@"
+          printf '\n'
+          EOF
+          chmod +x /tmp/video-host-smoke-bin/node
+          if [ "$ENTRYPOINT_OVERRIDE" = image ]; then
+            docker run --rm \
+              --env COMMIT_HASH=start-smoke \
+              --env PATH=/smoke-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+              --volume /tmp/video-host-smoke-bin:/smoke-bin:ro \
+              "$IMAGE" | tee /tmp/video-host-start-smoke.log
+          else
+            docker run --rm \
+              --env COMMIT_HASH=start-smoke \
+              --env PATH=/smoke-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+              --volume /tmp/video-host-smoke-bin:/smoke-bin:ro \
+              --entrypoint "$ENTRYPOINT_OVERRIDE" \
+              "$IMAGE" | tee /tmp/video-host-start-smoke.log
+          fi
+          grep -Fx 'node pid: 1' /tmp/video-host-start-smoke.log
+          grep -Fx "node invoked with args: $EXPECTED_COMMAND" /tmp/video-host-start-smoke.log

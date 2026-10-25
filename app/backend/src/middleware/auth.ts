@@ -3,6 +3,7 @@ import type { Env, HonoApp } from "@/@types/hono";
 import { AUTH_TRUSTED_ORIGINS, PUBLIC_ENDPOINTS } from "@/env";
 import { auth } from "@/lib/auth";
 import { isPathWithin, isTrustedMutationOrigin } from "@/lib/auth-policy";
+import { provisionAuthProfile } from "@/lib/auth-profile";
 import { prisma } from "@/lib/prisma";
 import { forbidden, unauthorized } from "@/utils/response";
 
@@ -19,6 +20,7 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
     isPathWithin(path, "/api/v4/callback") ||
     isPathWithin(path, "/api/v4/vod") ||
     path === "/healthz" ||
+    path === "/readyz" ||
     c.req.method === "OPTIONS"
   ) {
     await next();
@@ -43,17 +45,52 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
     c.header("Set-Cookie", cookie, { append: true });
   }
   if (session) {
-    const user = await prisma.user.findUnique({
-      where: { authUserId: session.user.id },
-    });
-    if (user?.kind === "HUMAN") {
-      c.set("user", user);
+    const defaultProfile = await provisionAuthProfile(session.user);
+    const requestedProfileId = c.req.header("x-profile-id");
+    let activeProfile = defaultProfile;
+    if (requestedProfileId && requestedProfileId !== defaultProfile.id) {
+      const membership = await prisma.authProfile.findFirst({
+        where: {
+          authUserId: session.user.id,
+          profileId: requestedProfileId,
+        },
+        include: { profile: true },
+      });
+      if (membership) activeProfile = membership.profile;
+    }
+    if (activeProfile.kind === "HUMAN") {
+      c.set("authUserId", session.user.id);
+      // Account permissions remain available while the selected profile
+      // supplies the identity used for ownership and profile-level sharing.
+      c.set("user", { ...activeProfile, role: defaultProfile.role });
       c.header("Cache-Control", "private, no-store");
     }
   }
-  if (!c.get("user") && !isPublicEndpoint(path)) unauthorized("Unauthorized");
+  if (
+    !c.get("user") &&
+    !isPublicEndpoint(path) &&
+    hasRouteHandler(c.req.matchedRoutes, path)
+  ) {
+    unauthorized("Unauthorized");
+  }
   await next();
 });
+
+// Paths no route handles must answer 404 even to anonymous clients; only
+// real endpoints are worth hiding behind a 401. Catch-all middleware does not
+// count, and trailing-slash / empty-segment variants stay protected because Hono's 404-based
+// redirect (trimTrailingSlash) would otherwise confirm a route exists.
+function hasRouteHandler(
+  routes: readonly { method: string; path: string }[],
+  path: string,
+): boolean {
+  if (path.length > 1 && (path.endsWith("/") || path.includes("//"))) {
+    return true;
+  }
+  return routes.some(
+    (route) => !(route.method === "ALL" && ["*", "/*"].includes(route.path)),
+  );
+}
 
 function isPublicEndpoint(path: string): boolean {
   // Authentication runs before trailing-slash redirects. Allow only this

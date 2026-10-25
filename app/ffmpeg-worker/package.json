@@ -1,27 +1,41 @@
 {
   "name": "@video-host/ffmpeg-worker",
-  "version": "0.0.10",
+  "version": "0.0.14",
+  "private": true,
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
-    "test": "node --import tsx --test tests/redis-client-options.test.cjs",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "biome check .",
+    "lint:fix": "biome check . --write",
+    "test": "tsx --test src/shutdown.test.ts src/job-runner.test.ts src/config.test.ts src/encoder.test.ts src/queue.test.ts tests/redis-client-options.test.cjs",
+    "test:watch": "tsx --test --watch src/shutdown.test.ts src/job-runner.test.ts src/config.test.ts src/encoder.test.ts src/queue.test.ts",
+    "format": "biome format . --write",
+    "format:check": "biome format .",
     "typecheck": "tsc --noEmit --skipLibCheck --pretty --noErrorTruncation --skipDefaultLibCheck --project tsconfig.json"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.952.0",
+    "@aws-sdk/client-s3": "^3.1152.0",
+    "@aws-sdk/lib-storage": "^3.1152.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-metrics-otlp-http": "^0.222.0",
-    "@opentelemetry/resources": "^2.11.0",
-    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@opentelemetry/resources": "^2.12.0",
+    "@opentelemetry/sdk-metrics": "^2.12.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
-    "@video-host/backend": "workspace:*",
-    "dotenv": "^17.2.3",
-    "hono": "^4.12.18",
-    "redis": "^5.10.0"
+    "@video-host/contracts": "workspace:*",
+    "dotenv": "^17.4.2",
+    "hono": "^4.13.13",
+    "pino": "^10.4.0",
+    "redis": "^5.12.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^24.10.4",
-    "tsx": "^4.21.0",
+    "@types/node": "^22.12.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }

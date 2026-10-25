@@ -1,11 +1,9 @@
-import {
-  createFileRoute,
-  useNavigate,
-  useRouter,
-} from "@tanstack/react-router";
-import type { BasicVisibility } from "@video-host/backend";
-import { type FormEvent, useEffect, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import type { BasicVisibility, FormattedMovie } from "@video-host/backend";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { MovieManager } from "@/components/Dashboard/MovieManager";
+import { useProfileSelectionGeneration } from "@/hooks/useProfileSelectionGeneration";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
@@ -14,24 +12,19 @@ export const Route = createFileRoute("/_app/dashboard/series/$id/edit")({
   component: EditSeriesPage,
 });
 
-interface Movie {
-  id: string;
-  title: string;
-  thumbnailUrl?: string;
-}
-
 interface SeriesMovie {
-  movie: Movie;
+  movie: Pick<FormattedMovie, "id" | "title" | "thumbnailUrl">;
   order: number;
 }
 
 function EditSeriesPage() {
-  const router = useRouter();
   const navigate = useNavigate();
   const { id } = Route.useParams();
-  const { data: authSession } = authClient.useSession();
+  const { data: authSession, isPending: sessionPending } =
+    authClient.useSession();
   const session = authSession?.user.id;
-
+  const fetchGenerationRef = useRef(0);
+  const submissionIdRef = useRef(0);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<BasicVisibility>("PUBLIC");
@@ -39,41 +32,70 @@ function EditSeriesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const { selectedProfileId, generationRef: selectionGenerationRef } =
+    useProfileSelectionGeneration(() => {
+      fetchGenerationRef.current += 1;
+      setIsLoading(true);
+      setLoadError(null);
+      setTitle("");
+      setDescription("");
+      setVisibility("PUBLIC");
+      setMovies([]);
+      setIsSubmitting(false);
+      setError(null);
+    });
 
   useEffect(() => {
-    if (!session) return;
+    const generation = ++fetchGenerationRef.current;
+    setIsLoading(true);
+    setLoadError(null);
+    if (sessionPending) return;
+    if (!session) {
+      setLoadError("ログイン状態を確認できませんでした");
+      setIsLoading(false);
+      return;
+    }
     const fetchSeries = async () => {
       try {
-        const res = await client.api.v4.series[":series"].$get({
-          param: { series: id },
-        });
+        const res = await client.api.v4.series[":series"].$get(
+          {
+            query: {},
+            param: { series: id },
+          },
+          { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+        );
 
+        if (Number(res.status) === 404) throw new Error("not-found");
         if (!res.ok) throw new Error("Failed to fetch");
 
         const json = await res.json();
+        if (generation !== fetchGenerationRef.current) return;
         const data = json.data;
         setTitle(data.title);
         setDescription(data.description || "");
         setVisibility(data.visibility as BasicVisibility);
-        // Transform movies array
-        // Backend returns movies as Array<Movie>. We need to wrap them?
-        // Wait, the interface says `data.movies` is used.
-        // Assuming backend returns `movies: Movie[]`.
-        const seriesMovies: SeriesMovie[] = (data.movies || []).map(
-          (m: unknown, index: number) => ({
-            movie: m as Movie,
-            order: index + 1,
-          }),
+        const seriesMovies: SeriesMovie[] = (data.movies ?? []).map(
+          (movie, index) => ({ movie, order: index + 1 }),
         );
         setMovies(seriesMovies);
-      } catch {
-        setError("シリーズの取得に失敗しました");
+      } catch (cause) {
+        if (generation !== fetchGenerationRef.current) return;
+        setLoadError(
+          cause instanceof Error && cause.message === "not-found"
+            ? "シリーズが見つかりません"
+            : "シリーズの取得に失敗しました",
+        );
       } finally {
-        setIsLoading(false);
+        if (generation === fetchGenerationRef.current) setIsLoading(false);
       }
     };
-    fetchSeries();
-  }, [id, session]);
+    void fetchSeries();
+    return () => {
+      fetchGenerationRef.current += 1;
+    };
+  }, [id, session, sessionPending, selectedProfileId]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -81,27 +103,45 @@ function EditSeriesPage() {
 
     setIsSubmitting(true);
     setError(null);
+    const selectionGeneration = selectionGenerationRef.current;
+    const submissionId = ++submissionIdRef.current;
 
     try {
-      const res = await client.api.v4.series[":series"].$patch({
-        param: { series: id },
-        json: {
-          title: title.trim(),
-          description: description.trim(),
-          visibility,
+      const res = await client.api.v4.series[":series"].$patch(
+        {
+          param: { series: id },
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+          },
         },
-      });
+        { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+      );
 
       if (!res.ok) throw new Error("Failed to update");
 
-      await navigate({ to: "/dashboard/series" });
+      if (selectionGenerationRef.current === selectionGeneration)
+        await navigate({ to: "/dashboard/series" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "更新に失敗しました");
-      setIsSubmitting(false);
+      if (selectionGenerationRef.current === selectionGeneration)
+        setError(err instanceof Error ? err.message : "更新に失敗しました");
+    } finally {
+      if (submissionIdRef.current === submissionId) setIsSubmitting(false);
     }
   };
 
-  if (isLoading) return <div>Loading...</div>;
+  if (isLoading) return <DashboardLoading />;
+  if (loadError) {
+    return (
+      <section className="space-y-4" role="alert">
+        <p>{loadError}</p>
+        <Link className="text-primary underline" to="/dashboard/series">
+          シリーズ一覧へ戻る
+        </Link>
+      </section>
+    );
+  }
 
   return (
     <>
@@ -151,7 +191,7 @@ function EditSeriesPage() {
           <div className="form-actions">
             <button
               type="button"
-              onClick={() => router.history.back()}
+              onClick={() => void navigate({ to: "/dashboard/series" })}
               className="cancel-button"
             >
               キャンセル
@@ -166,68 +206,6 @@ function EditSeriesPage() {
           </div>
         </form>
       </div>
-      <style>{`
-        .edit-series-page h1 {
-          margin-bottom: 2rem;
-          color: var(--text-primary, #fff);
-        }
-        .form {
-          max-width: 600px;
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        .form-group label {
-          color: var(--text-secondary, #999);
-          font-size: 0.875rem;
-        }
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-          padding: 0.75rem;
-          background: var(--background-primary, #0d0d0d);
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
-          color: var(--text-primary, #fff);
-          font-size: 1rem;
-        }
-        .error-message {
-          padding: 0.75rem;
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid #ef4444;
-          border-radius: 8px;
-          color: #ef4444;
-        }
-        .form-actions {
-          display: flex;
-          gap: 1rem;
-        }
-        .cancel-button {
-          padding: 0.875rem 1.5rem;
-          background: transparent;
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
-          color: var(--text-primary, #fff);
-          cursor: pointer;
-        }
-        .submit-button {
-          padding: 0.875rem 1.5rem;
-          background: var(--primary-color, #3b82f6);
-          color: white;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-        }
-        .submit-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      `}</style>
     </>
   );
 }

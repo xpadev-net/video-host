@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from "react";
-import { client } from "@/lib/client";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { authClient } from "@/lib/auth-client";
+import { client, getSelectedProfileId } from "@/lib/client";
 
 export type UploadPhase =
   | "idle"
@@ -19,6 +20,7 @@ export interface InitUploadResult {
   movieId: string;
   title: string;
   uploadUrl: string;
+  profileId: string | null;
 }
 
 interface UseUploadResult {
@@ -28,7 +30,7 @@ interface UseUploadResult {
   ) => Promise<InitUploadResult | null>;
   upload: (movieId: string, uploadUrl: string, file: File) => Promise<boolean>;
   resume: (movieId: string, file: File) => Promise<boolean>;
-  cancel: () => void;
+  cancel: () => boolean;
   state: UploadState;
   reset: () => void;
 }
@@ -36,22 +38,52 @@ interface UseUploadResult {
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException && error.name === "AbortError";
 
+// Must match the Content-Type the presigned URL was signed with.
+const contentTypeOf = (file: File): string =>
+  file.type || "application/octet-stream";
+
 export const useUpload = (): UseUploadResult => {
+  const { data: authSession } = authClient.useSession();
+  const sessionUserId = authSession?.user.id;
   const [state, setState] = useState<UploadState>({
     phase: "idle",
     progress: 0,
     error: null,
   });
   const xhrRef = useRef<XMLHttpRequest | null>(null);
+  const uploadedMovieIdRef = useRef<string | null>(null);
+  const uploadedFileRef = useRef<File | null>(null);
+  const profileByMovieIdRef = useRef(new Map<string, string | null>());
+  const sessionByMovieIdRef = useRef(new Map<string, string>());
+  const sessionUserIdRef = useRef(sessionUserId);
+
+  useLayoutEffect(() => {
+    if (sessionUserIdRef.current === sessionUserId) return;
+    sessionUserIdRef.current = sessionUserId;
+    xhrRef.current?.abort();
+    xhrRef.current = null;
+    uploadedMovieIdRef.current = null;
+    uploadedFileRef.current = null;
+    profileByMovieIdRef.current.clear();
+    sessionByMovieIdRef.current.clear();
+    setState({ phase: "idle", progress: 0, error: null });
+  }, [sessionUserId]);
 
   const reset = useCallback(() => {
     xhrRef.current?.abort();
     xhrRef.current = null;
+    uploadedMovieIdRef.current = null;
+    uploadedFileRef.current = null;
+    profileByMovieIdRef.current.clear();
+    sessionByMovieIdRef.current.clear();
     setState({ phase: "idle", progress: 0, error: null });
   }, []);
 
   const cancel = useCallback(() => {
-    xhrRef.current?.abort();
+    const xhr = xhrRef.current;
+    if (!xhr) return false;
+    xhr.abort();
+    return true;
   }, []);
 
   const fail = useCallback((error: unknown, fallback: string) => {
@@ -68,7 +100,7 @@ export const useUpload = (): UseUploadResult => {
         const xhr = new XMLHttpRequest();
         xhrRef.current = xhr;
         xhr.open("PUT", uploadUrl);
-        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.setRequestHeader("Content-Type", contentTypeOf(file));
 
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
@@ -82,13 +114,13 @@ export const useUpload = (): UseUploadResult => {
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve();
           } else {
-            reject(new Error("Upload failed"));
+            reject(new Error("ファイルのアップロードに失敗しました"));
           }
         };
 
         xhr.onerror = () => {
           xhrRef.current = null;
-          reject(new Error("Upload failed"));
+          reject(new Error("ファイルのアップロードに失敗しました"));
         };
         xhr.onabort = () => {
           xhrRef.current = null;
@@ -100,12 +132,32 @@ export const useUpload = (): UseUploadResult => {
   );
 
   const completeUpload = useCallback(async (movieId: string): Promise<void> => {
+    const sessionId = sessionByMovieIdRef.current.get(movieId);
+    if (!sessionId || sessionUserIdRef.current !== sessionId) {
+      throw new DOMException("Upload session changed", "AbortError");
+    }
     setState((prev) => ({ ...prev, phase: "completing", progress: 100 }));
-    const res = await client.api.v4.upload[":movieId"].complete.$post({
-      param: { movieId },
-    });
+    const res = await client.api.v4.upload[":movieId"].complete.$post(
+      { param: { movieId } },
+      {
+        headers: {
+          "X-Profile-Id": profileByMovieIdRef.current.get(movieId) ?? "",
+        },
+      },
+    );
     if (!res.ok) {
-      throw new Error("Failed to finalize upload");
+      if (res.status >= 400 && res.status < 500) {
+        uploadedMovieIdRef.current = null;
+        uploadedFileRef.current = null;
+      }
+      throw new Error("アップロードの完了処理に失敗しました");
+    }
+    if (sessionUserIdRef.current !== sessionId) {
+      throw new DOMException("Upload session changed", "AbortError");
+    }
+    if (uploadedMovieIdRef.current === movieId) {
+      uploadedMovieIdRef.current = null;
+      uploadedFileRef.current = null;
     }
     setState({ phase: "done", progress: 100, error: null });
   }, []);
@@ -115,26 +167,39 @@ export const useUpload = (): UseUploadResult => {
       file: File,
       options?: { asUserId?: string },
     ): Promise<InitUploadResult | null> => {
+      const sessionId = sessionUserIdRef.current;
+      if (!sessionId) return null;
       setState({ phase: "creating", progress: 0, error: null });
+      const profileId = getSelectedProfileId();
       try {
-        const res = await client.api.v4.upload.init.$post({
-          json: {
-            filename: file.name,
-            contentType: file.type,
-            asUserId: options?.asUserId,
+        const res = await client.api.v4.upload.init.$post(
+          {
+            json: {
+              filename: file.name,
+              contentType: contentTypeOf(file),
+              size: file.size,
+              asUserId: options?.asUserId,
+            },
           },
-        });
+          { headers: { "X-Profile-Id": profileId ?? "" } },
+        );
         if (!res.ok) {
-          throw new Error("Failed to create upload");
+          throw new Error("アップロード情報の作成に失敗しました");
         }
         const json = await res.json();
+        if (sessionUserIdRef.current !== sessionId) return null;
+        const movieId = json.data.movie.id;
+        profileByMovieIdRef.current.set(movieId, profileId);
+        sessionByMovieIdRef.current.set(movieId, sessionId);
         return {
-          movieId: json.data.movie.id,
+          movieId,
           title: json.data.movie.title,
           uploadUrl: json.data.uploadUrl,
+          profileId,
         };
       } catch (error) {
-        fail(error, "動画の作成に失敗しました");
+        if (sessionUserIdRef.current === sessionId)
+          fail(error, "動画の作成に失敗しました");
         return null;
       }
     },
@@ -147,12 +212,18 @@ export const useUpload = (): UseUploadResult => {
       uploadUrl: string,
       file: File,
     ): Promise<boolean> => {
+      const sessionId = sessionByMovieIdRef.current.get(movieId);
+      if (!sessionId || sessionUserIdRef.current !== sessionId) return false;
       setState((prev) => ({ ...prev, phase: "uploading", error: null }));
       try {
         await putFile(uploadUrl, file);
+        if (sessionUserIdRef.current !== sessionId) return false;
+        uploadedMovieIdRef.current = movieId;
+        uploadedFileRef.current = file;
         await completeUpload(movieId);
         return true;
       } catch (error) {
+        if (sessionUserIdRef.current !== sessionId) return false;
         if (isAbortError(error)) {
           setState({ phase: "idle", progress: 0, error: null });
           return false;
@@ -166,21 +237,52 @@ export const useUpload = (): UseUploadResult => {
 
   const resume = useCallback(
     async (movieId: string, file: File): Promise<boolean> => {
+      const currentSessionId = sessionUserIdRef.current;
+      if (!currentSessionId) return false;
+      const sessionId =
+        sessionByMovieIdRef.current.get(movieId) ?? currentSessionId;
+      if (sessionId !== currentSessionId) return false;
+      const profileId = profileByMovieIdRef.current.has(movieId)
+        ? (profileByMovieIdRef.current.get(movieId) ?? null)
+        : getSelectedProfileId();
+      profileByMovieIdRef.current.set(movieId, profileId);
+      sessionByMovieIdRef.current.set(movieId, sessionId);
+      if (
+        uploadedMovieIdRef.current === movieId &&
+        uploadedFileRef.current === file
+      ) {
+        setState({ phase: "completing", progress: 100, error: null });
+        try {
+          await completeUpload(movieId);
+          return true;
+        } catch (error) {
+          if (sessionUserIdRef.current === currentSessionId) {
+            fail(error, "アップロードの完了処理に失敗しました");
+          }
+          return false;
+        }
+      }
       setState({ phase: "creating", progress: 0, error: null });
       try {
-        const res = await client.api.v4.upload[":movieId"].url.$post({
-          param: { movieId },
-          json: {
-            filename: file.name,
-            contentType: file.type,
+        const res = await client.api.v4.upload[":movieId"].url.$post(
+          {
+            param: { movieId },
+            json: {
+              filename: file.name,
+              contentType: contentTypeOf(file),
+              size: file.size,
+            },
           },
-        });
+          { headers: { "X-Profile-Id": profileId ?? "" } },
+        );
         if (!res.ok) {
-          throw new Error("Failed to get upload URL");
+          throw new Error("再開用URLの取得に失敗しました");
         }
         const json = await res.json();
+        if (sessionUserIdRef.current !== sessionId) return false;
         return await upload(movieId, json.data.uploadUrl, file);
       } catch (error) {
+        if (sessionUserIdRef.current !== sessionId) return false;
         if (isAbortError(error)) {
           setState({ phase: "idle", progress: 0, error: null });
           return false;
@@ -189,7 +291,7 @@ export const useUpload = (): UseUploadResult => {
         return false;
       }
     },
-    [fail, upload],
+    [completeUpload, fail, upload],
   );
 
   return { init, upload, resume, cancel, state, reset };

@@ -3,7 +3,9 @@ import { z } from "zod";
 export type FilteredUser = {
   id: string;
   name: string;
-  role: "USER" | "ADMIN";
+  username: string;
+  // Only returned to the user themself (GET/PATCH /users/me); other users' roles are not public.
+  role?: "USER" | "ADMIN";
   avatarUrl?: string | null;
 };
 
@@ -44,6 +46,10 @@ export type FilteredMovieVariant = {
   variantId: string;
   contentUrl: string;
   status: "UPLOADING" | "PROCESSING" | "READY" | "FAILED";
+};
+
+export type FormattedPlaylist = Omit<FilteredPlaylist, "movies"> & {
+  movies?: FormattedMovie[];
 };
 
 export type FilteredPlaylist = {

@@ -1,7 +1,8 @@
 import {
   createFileRoute,
+  Link,
+  useBlocker,
   useNavigate,
-  useRouter,
 } from "@tanstack/react-router";
 import type {
   FilteredUser,
@@ -16,8 +17,11 @@ import {
   useRef,
   useState,
 } from "react";
+import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
+import { useConfirm } from "@/components/Feedback/FeedbackProvider";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { ApiEndpoint } from "@/contexts/env";
+import { useProfileSelectionGeneration } from "@/hooks/useProfileSelectionGeneration";
 import { useUpload } from "@/hooks/useUpload";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
@@ -35,11 +39,21 @@ interface EncodeProgress {
   duration?: number;
 }
 
+const isEncodeProgress = (value: unknown): value is EncodeProgress => {
+  if (typeof value !== "object" || value === null || !("status" in value)) {
+    return false;
+  }
+  return ["queued", "processing", "retrying", "completed", "failed"].includes(
+    String(value.status),
+  );
+};
+
 function EditVideoPage() {
-  const router = useRouter();
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const { id } = Route.useParams();
-  const { data: authSession } = authClient.useSession();
+  const { data: authSession, isPending: sessionPending } =
+    authClient.useSession();
   const session = authSession?.user.id;
 
   const [movie, setMovie] = useState<FormattedMovie | null>(null);
@@ -50,60 +64,115 @@ function EditVideoPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [encodeProgress, setEncodeProgress] = useState<EncodeProgress | null>(
     null,
   );
   const { resume, state: uploadState } = useUpload();
   const resumeFileInputRef = useRef<HTMLInputElement>(null);
+  const resumeActiveRef = useRef(false);
+  const fetchGenerationRef = useRef(0);
+  const isResuming =
+    uploadState.phase === "uploading" ||
+    uploadState.phase === "completing" ||
+    uploadState.phase === "creating";
+  const hasMovie = movie !== null;
+  const movieVariantStatus = movie?.variants?.[0]?.status;
+  const { selectedProfileId, generationRef: selectionGenerationRef } =
+    useProfileSelectionGeneration(() => {
+      fetchGenerationRef.current += 1;
+      setMovie(null);
+      setIsLoading(true);
+      setIsSubmitting(false);
+      setError(null);
+    });
 
-  const fetchMovie = useCallback(async () => {
-    if (!session) return;
+  useBlocker({
+    shouldBlockFn: async () =>
+      !(await confirm({
+        title: "アップロード中です",
+        description: "ファイルの再アップロードが完了するまで移動できません。",
+        confirmLabel: "ページを離れる",
+        destructive: true,
+      })),
+    enableBeforeUnload: isResuming,
+    disabled: !isResuming,
+  });
 
-    try {
-      const res = await client.api.v4.movies[":movie"].$get({
-        param: { movie: id },
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to fetch");
+  const fetchMovie = useCallback(
+    async (options?: { preserveForm?: boolean }) => {
+      const generation = ++fetchGenerationRef.current;
+      if (sessionPending) return;
+      if (!session) {
+        setLoadError("ログイン状態を確認できませんでした");
+        setIsLoading(false);
+        return;
       }
 
-      const json = await res.json();
-      // biome-ignore lint/suspicious/noExplicitAny: loose typing
-      const movieData = json.data as any;
-      setMovie(movieData);
-      setTitle(movieData.title);
-      setDescription(movieData.description || "");
-      setVisibility(movieData.visibility);
-      setViewers(movieData.viewers ?? []);
-    } catch {
-      setError("動画の取得に失敗しました");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [id, session]);
+      try {
+        const res = await client.api.v4.movies[":movie"].$get(
+          { param: { movie: id } },
+          { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+        );
+
+        if (Number(res.status) === 404) {
+          if (generation === fetchGenerationRef.current)
+            setLoadError("動画が見つかりません");
+          return;
+        }
+        if (!res.ok) {
+          throw new Error("Failed to fetch");
+        }
+
+        const json = await res.json();
+        if (generation !== fetchGenerationRef.current) return;
+        const movieData = json.data;
+        setMovie(movieData);
+        if (!options?.preserveForm) {
+          setTitle(movieData.title);
+          setDescription(movieData.description || "");
+          setVisibility(movieData.visibility);
+          setViewers(movieData.viewers ?? []);
+        }
+      } catch {
+        if (generation === fetchGenerationRef.current)
+          setLoadError("動画の取得に失敗しました");
+      } finally {
+        if (generation === fetchGenerationRef.current) setIsLoading(false);
+      }
+    },
+    [id, session, sessionPending, selectedProfileId],
+  );
 
   useEffect(() => {
     void fetchMovie();
+    return () => {
+      fetchGenerationRef.current += 1;
+    };
   }, [fetchMovie]);
 
   const handleResumeFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
     const selectedFile = e.target.files?.[0];
-    e.target.value = "";
-    if (!selectedFile || typeof id !== "string") return;
-    const succeeded = await resume(id, selectedFile);
-    if (succeeded) {
-      // Variant flipped to PROCESSING; the SSE effect picks it up.
-      await fetchMovie();
+    input.value = "";
+    if (!selectedFile || typeof id !== "string" || resumeActiveRef.current) {
+      return;
+    }
+    resumeActiveRef.current = true;
+    try {
+      const succeeded = await resume(id, selectedFile);
+      if (succeeded) {
+        // Refresh variant status without overwriting edits made during resume.
+        await fetchMovie({ preserveForm: true });
+      }
+    } finally {
+      resumeActiveRef.current = false;
     }
   };
 
   // SSE for encoding progress with authentication
   useEffect(() => {
-    if (!movie || !session) return;
-
-    const variant = movie.variants?.[0];
-    if (!variant || variant.status !== "PROCESSING") {
+    if (!hasMovie || !session || movieVariantStatus !== "PROCESSING") {
       return;
     }
 
@@ -115,6 +184,7 @@ function EditVideoPage() {
       const { EventSourcePlus } = await import("event-source-plus");
       if (controller.signal.aborted) return;
 
+      const profileId = selectedProfileId;
       const url = new URL(
         `${ApiEndpoint}/api/v4/progress/${encodeURIComponent(id)}`,
         window.location.origin,
@@ -122,13 +192,25 @@ function EditVideoPage() {
 
       const eventSource = new EventSourcePlus(url, {
         credentials: "include",
+        headers: profileId ? { "X-Profile-Id": profileId } : {},
         signal: controller.signal,
       });
 
-      eventSource.listen({
+      // EventSourcePlus overrides options.signal with its own controller, so
+      // cancelling (and stopping its automatic reconnects) has to go through
+      // the controller returned by listen().
+      const stream = eventSource.listen({
         onMessage: (event) => {
+          // The server closes the stream with "end" when there is nothing
+          // to report; abort so the client does not reconnect forever.
+          if (event.event === "end") {
+            controller?.abort();
+            return;
+          }
           try {
-            const data = JSON.parse(event.data) as EncodeProgress;
+            const parsed: unknown = JSON.parse(event.data);
+            if (!isEncodeProgress(parsed)) return;
+            const data = parsed;
             setEncodeProgress(data);
 
             // Reload movie data when completed
@@ -136,14 +218,14 @@ function EditVideoPage() {
               controller?.abort();
               // Refresh movie data
               client.api.v4.movies[":movie"]
-                .$get({
-                  param: { movie: id },
-                })
+                .$get(
+                  { param: { movie: id } },
+                  { headers: { "X-Profile-Id": profileId ?? "" } },
+                )
                 .then(async (res) => {
                   if (!disposed && res.ok) {
                     const json = await res.json();
-                    // biome-ignore lint/suspicious/noExplicitAny: loose typing
-                    setMovie(json.data as any);
+                    setMovie(json.data);
                     setEncodeProgress(null);
                   }
                 })
@@ -160,6 +242,13 @@ function EditVideoPage() {
           controller?.abort();
         },
       });
+      if (controller.signal.aborted) {
+        stream.abort();
+      } else {
+        controller.signal.addEventListener("abort", () => stream.abort(), {
+          once: true,
+        });
+      }
     };
 
     void setupSSE().catch(() => {
@@ -172,53 +261,65 @@ function EditVideoPage() {
       disposed = true;
       controller.abort();
     };
-  }, [id, movie, session]);
+  }, [hasMovie, id, movieVariantStatus, selectedProfileId, session]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || isResuming) return;
 
     setIsSubmitting(true);
     setError(null);
+    const selectionGeneration = selectionGenerationRef.current;
 
     try {
-      const res = await client.api.v4.movies[":movie"].$patch({
-        param: { movie: id },
-        json: {
-          title: title.trim(),
-          description: description.trim(),
-          visibility,
-          viewerIds: viewers.map((viewer) => viewer.id),
+      const res = await client.api.v4.movies[":movie"].$patch(
+        {
+          param: { movie: id },
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+            viewerIds:
+              visibility === "LIMITED"
+                ? viewers.map((viewer) => viewer.id)
+                : [],
+          },
         },
-      });
+        { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+      );
 
       if (!res.ok) {
         throw new Error("Failed to update");
       }
 
-      await navigate({ to: "/dashboard/videos" });
+      if (selectionGenerationRef.current === selectionGeneration)
+        await navigate({ to: "/dashboard/videos" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "更新に失敗しました");
-      setIsSubmitting(false);
+      if (selectionGenerationRef.current === selectionGeneration) {
+        setError(err instanceof Error ? err.message : "更新に失敗しました");
+        setIsSubmitting(false);
+      }
     }
   };
 
   if (isLoading) {
-    return <div>Loading...</div>;
+    return <DashboardLoading />;
   }
 
   if (!movie) {
-    return <div>動画が見つかりません</div>;
+    return (
+      <section className="space-y-4" role="alert">
+        <p>{loadError ?? "動画が見つかりません"}</p>
+        <Link className="text-primary underline" to="/dashboard/videos">
+          動画一覧へ戻る
+        </Link>
+      </section>
+    );
   }
 
   const variant = movie.variants?.[0];
   const isEncoding = variant?.status === "PROCESSING";
   const isUploadPending = variant?.status === "UPLOADING";
-  const isResuming =
-    uploadState.phase === "uploading" ||
-    uploadState.phase === "completing" ||
-    uploadState.phase === "creating";
-
   return (
     <>
       <div className="edit-page">
@@ -290,6 +391,7 @@ function EditVideoPage() {
                   type="button"
                   className="self-start cursor-pointer rounded-lg border border-[#eab308] bg-transparent px-5 py-2.5 font-medium text-[#eab308] hover:bg-[rgba(234,179,8,0.15)]"
                   onClick={() => resumeFileInputRef.current?.click()}
+                  disabled={isResuming || resumeActiveRef.current}
                 >
                   アップロードを再開
                 </button>
@@ -305,6 +407,7 @@ function EditVideoPage() {
           type="file"
           accept="video/*"
           onChange={(e) => void handleResumeFileChange(e)}
+          disabled={isResuming}
           hidden
         />
 
@@ -367,14 +470,14 @@ function EditVideoPage() {
           <div className="form-actions">
             <button
               type="button"
-              onClick={() => router.history.back()}
+              onClick={() => void navigate({ to: "/dashboard/videos" })}
               className="cancel-button"
             >
               キャンセル
             </button>
             <button
               type="submit"
-              disabled={!title.trim() || isSubmitting}
+              disabled={!title.trim() || isSubmitting || isResuming}
               className="submit-button"
             >
               {isSubmitting ? "保存中..." : "保存"}
@@ -382,123 +485,6 @@ function EditVideoPage() {
           </div>
         </form>
       </div>
-      <style>{`
-        .edit-page h1 {
-          margin-bottom: 2rem;
-          color: var(--text-primary, #fff);
-        }
-        .edit-form {
-          max-width: 600px;
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        .form-group label {
-          color: var(--text-secondary, #999);
-          font-size: 0.875rem;
-        }
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-          padding: 0.75rem;
-          background: var(--background-primary, #0d0d0d);
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
-          color: var(--text-primary, #fff);
-          font-size: 1rem;
-        }
-        .form-group input:focus,
-        .form-group textarea:focus,
-        .form-group select:focus {
-          outline: none;
-          border-color: var(--primary-color, #3b82f6);
-        }
-        .error-message {
-          padding: 0.75rem;
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid #ef4444;
-          border-radius: 8px;
-          color: #ef4444;
-        }
-        .form-actions {
-          display: flex;
-          gap: 1rem;
-        }
-        .cancel-button {
-          padding: 0.875rem 1.5rem;
-          background: transparent;
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
-          color: var(--text-primary, #fff);
-          cursor: pointer;
-        }
-        .cancel-button:hover {
-          background: var(--background-tertiary, #252525);
-        }
-        .submit-button {
-          padding: 0.875rem 1.5rem;
-          background: var(--primary-color, #3b82f6);
-          color: white;
-          border: none;
-          border-radius: 8px;
-          font-size: 1rem;
-          font-weight: 500;
-          cursor: pointer;
-        }
-        .submit-button:hover:not(:disabled) {
-          background: #2563eb;
-        }
-        .submit-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-        .encoding-progress {
-          padding: 1.5rem;
-          background: rgba(59, 130, 246, 0.1);
-          border: 1px solid rgba(59, 130, 246, 0.3);
-          border-radius: 12px;
-          margin-bottom: 1.5rem;
-          max-width: 600px;
-        }
-        .progress-header {
-          margin-bottom: 0.75rem;
-        }
-        .progress-status {
-          color: #3b82f6;
-          font-weight: 500;
-        }
-        .progress-bar-container {
-          height: 8px;
-          background: rgba(59, 130, 246, 0.2);
-          border-radius: 4px;
-          overflow: hidden;
-          margin-bottom: 0.5rem;
-        }
-        .progress-bar-fill {
-          height: 100%;
-          background: #3b82f6;
-          border-radius: 4px;
-          transition: width 0.3s ease;
-        }
-        .progress-time {
-          font-size: 0.875rem;
-          color: var(--text-secondary, #999);
-        }
-        .encode-failed {
-          padding: 1rem;
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid #ef4444;
-          border-radius: 8px;
-          color: #ef4444;
-          margin-bottom: 1.5rem;
-          max-width: 600px;
-        }
-      `}</style>
     </>
   );
 }

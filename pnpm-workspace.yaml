@@ -1,2 +1,25 @@
 packages:
   - "app/*"
+
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - "@parcel/watcher"
+  - "@tailwindcss/oxide"
+  - esbuild
+  - lefthook
+  - prisma
+
+overrides:
+  # GHSA-jp2q-39xq-3w4g and GHSA-8gc5-j5rx-235r.
+  "fast-xml-parser@<5.5.7": ">=5.5.7"
+  # GHSA-mw96-cpmx-2vgc.
+  "rollup@<4.59.0": ">=4.59.0"
+  # GHSA-3wcj-gjvf-fvch.
+  "hono@<4.12.7": ">=4.12.7"
+  # GHSA-38f7-945m-qr2g.
+  "effect@<3.20.0": ">=3.20.0"
+  # GHSA-3v7f-55p6-f55p.
+  "picomatch@<2.3.2": ">=2.3.2 <3.0.0"
+  # GHSA-c2c7-rcm5-vvqj.
+  "picomatch@>=4.0.0 <4.0.4": ">=4.0.4"

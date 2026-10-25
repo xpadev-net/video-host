@@ -1,8 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useAtomValue } from "jotai";
+import { type SetStateAction, useCallback, useEffect, useState } from "react";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
+import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
+import { PaginationControls } from "@/components/Dashboard/PaginationControls";
+import { useConfirm, useNotify } from "@/components/Feedback/FeedbackProvider";
 import { useMyPlaylists } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
+import { visibility2str } from "@/utils/visibility2str";
 
 export const Route = createFileRoute("/_app/dashboard/playlists/")({
   head: () => ({ meta: [{ title: "プレイリスト管理" }] }),
@@ -11,30 +21,86 @@ export const Route = createFileRoute("/_app/dashboard/playlists/")({
 
 function PlaylistsPage() {
   const { data: user, isLoading: isUserLoading } = useSelf();
-  const { data: playlistsData, mutate } = useMyPlaylists();
+  const { data: authSession } = authClient.useSession();
+  const sessionUserId = authSession?.user.id;
+  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
+  const [pagination, setPagination] = useState({
+    accountId: selectedAccountId,
+    profileId: selectedProfileId,
+    sessionUserId,
+    page: 1,
+  });
+  useEffect(() => {
+    setPagination({
+      accountId: selectedAccountId,
+      profileId: selectedProfileId,
+      sessionUserId,
+      page: 1,
+    });
+  }, [selectedAccountId, selectedProfileId, sessionUserId]);
+  const page =
+    pagination.accountId === selectedAccountId &&
+    pagination.profileId === selectedProfileId &&
+    pagination.sessionUserId === sessionUserId
+      ? pagination.page
+      : 1;
+  const setPage = useCallback(
+    (nextPage: SetStateAction<number>) => {
+      setPagination((current) => {
+        const currentPage =
+          current.accountId === selectedAccountId &&
+          current.profileId === selectedProfileId &&
+          current.sessionUserId === sessionUserId
+            ? current.page
+            : 1;
+        return {
+          accountId: selectedAccountId,
+          profileId: selectedProfileId,
+          sessionUserId,
+          page:
+            typeof nextPage === "function" ? nextPage(currentPage) : nextPage,
+        };
+      });
+    },
+    [selectedAccountId, selectedProfileId, sessionUserId],
+  );
+  const { data: playlistsData, error, mutate } = useMyPlaylists(page);
+  const confirm = useConfirm();
+  const notify = useNotify();
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
   const handleDelete = async (id: string) => {
-    if (!confirm("このプレイリストを削除しますか？")) return;
+    const profileId = selectedProfileId;
+    if (
+      !(await confirm({
+        title: "プレイリストを削除しますか？",
+        description: "削除したプレイリストは元に戻せません。",
+        confirmLabel: "削除",
+        destructive: true,
+      }))
+    )
+      return;
     setDeletingId(id);
     try {
-      const res = await client.api.v4.playlists[":playlist"].$delete({
-        param: { playlist: id },
-      });
+      const res = await client.api.v4.playlists[":playlist"].$delete(
+        { param: { playlist: id } },
+        { headers: { "X-Profile-Id": profileId ?? "" } },
+      );
 
       if (!res.ok) {
         throw new Error("Failed to delete");
       }
 
-      mutate();
+      if (playlists.length === 1 && page > 1) setPage((current) => current - 1);
+      else mutate();
     } catch {
-      alert("削除に失敗しました");
+      notify("削除に失敗しました");
     } finally {
       setDeletingId(null);
     }
   };
 
-  if (isUserLoading) return <div>Loading...</div>;
+  if (isUserLoading) return <DashboardLoading />;
   if (!user) return <div>ログインしてください</div>;
 
   const playlists = playlistsData?.items || [];
@@ -49,78 +115,76 @@ function PlaylistsPage() {
           </Link>
         </div>
 
-        {playlists.length === 0 ? (
+        {error ? (
+          <div className="empty-state" role="alert">
+            <p>プレイリストを読み込めませんでした</p>
+            <button
+              className="action-btn"
+              onClick={() => void mutate()}
+              type="button"
+            >
+              再試行
+            </button>
+            {page > 1 && (
+              <button
+                className="action-btn"
+                onClick={() => setPage(page - 1)}
+                type="button"
+              >
+                前のページへ戻る
+              </button>
+            )}
+          </div>
+        ) : playlists.length === 0 ? (
           <div className="empty-state">
             <p>プレイリストがありません</p>
             <Link to="/dashboard/playlists/new">最初のプレイリストを作成</Link>
           </div>
         ) : (
           <div className="playlists-list">
-            {playlists.map(
-              (playlist: {
-                id: string;
-                title: string;
-                visibility: string;
-                movies?: unknown[];
-              }) => (
-                <div key={playlist.id} className="playlist-item">
-                  <div className="playlist-info">
-                    <h3>{playlist.title}</h3>
-                    <div className="playlist-meta">
-                      <span
-                        className={`visibility-badge ${playlist.visibility.toLowerCase()}`}
-                      >
-                        {playlist.visibility === "PUBLIC"
-                          ? "公開"
-                          : playlist.visibility === "UNLISTED"
-                            ? "限定公開"
-                            : "非公開"}
-                      </span>
-                      <span>{playlist.movies?.length || 0}本の動画</span>
-                    </div>
-                  </div>
-                  <div className="playlist-actions">
-                    <Link
-                      to="/dashboard/playlists/$id/edit"
-                      params={{ id: playlist.id }}
-                      className="action-btn"
+            {playlists.map((playlist) => (
+              <div key={playlist.id} className="playlist-item">
+                <div className="playlist-info">
+                  <h3>{playlist.title}</h3>
+                  <div className="playlist-meta">
+                    <span
+                      className={`visibility-badge ${playlist.visibility.toLowerCase()}`}
                     >
-                      編集
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(playlist.id)}
-                      disabled={deletingId === playlist.id}
-                      className="action-btn delete"
-                    >
-                      {deletingId === playlist.id ? "削除中..." : "削除"}
-                    </button>
+                      {visibility2str(playlist.visibility)}
+                    </span>
+                    <span>{playlist.movies?.length || 0}本の動画</span>
                   </div>
                 </div>
-              ),
-            )}
+                <div className="playlist-actions">
+                  <Link
+                    to="/dashboard/playlists/$id/edit"
+                    params={{ id: playlist.id }}
+                    className="action-btn"
+                  >
+                    編集
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(playlist.id)}
+                    disabled={deletingId === playlist.id}
+                    className="action-btn delete"
+                  >
+                    {deletingId === playlist.id ? "削除中..." : "削除"}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
+        {!error && playlistsData?.pagination && (
+          <PaginationControls
+            onPageChange={setPage}
+            page={page}
+            totalCount={playlistsData.pagination.totalCount}
+            totalPages={playlistsData.pagination.totalPages}
+          />
+        )}
       </div>
-      <style>{`
-        .playlists-page h1 { color: var(--text-primary, #fff); }
-        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
-        .new-button { padding: 0.75rem 1.25rem; background: var(--primary-color, #3b82f6); color: white; text-decoration: none; border-radius: 8px; }
-        .empty-state { text-align: center; padding: 4rem; color: var(--text-secondary, #999); }
-        .empty-state a { color: var(--primary-color, #3b82f6); }
-        .playlists-list { display: flex; flex-direction: column; gap: 1rem; }
-        .playlist-item { display: flex; align-items: center; justify-content: space-between; padding: 1rem; background: var(--background-primary, #0d0d0d); border: 1px solid var(--border-color, #333); border-radius: 12px; }
-        .playlist-info h3 { color: var(--text-primary, #fff); margin: 0 0 0.5rem; }
-        .playlist-meta { display: flex; align-items: center; gap: 0.75rem; color: var(--text-secondary, #999); font-size: 0.875rem; }
-        .visibility-badge { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
-        .visibility-badge.public { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
-        .visibility-badge.unlisted { background: rgba(234, 179, 8, 0.2); color: #eab308; }
-        .visibility-badge.private { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
-        .playlist-actions { display: flex; gap: 0.5rem; }
-        .action-btn { padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.875rem; text-decoration: none; cursor: pointer; border: 1px solid var(--border-color, #333); background: transparent; color: var(--text-primary, #fff); }
-        .action-btn.delete { color: #ef4444; border-color: #ef4444; }
-        .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      `}</style>
     </>
   );
 }

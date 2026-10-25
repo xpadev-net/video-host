@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 const useIsMobile = () => {
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const ua = navigator.userAgent.toLowerCase();
-    setIsMobile(
-      /android|ipod|ipad|iphone|macintosh/.test(ua) && "ontouchend" in document,
-    );
-  }, []);
-  return isMobile;
+  return useSyncExternalStore(
+    (onChange) => {
+      const media = window.matchMedia("(pointer: coarse)");
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia("(pointer: coarse)").matches,
+    () => false,
+  );
 };
 
 export { useIsMobile };

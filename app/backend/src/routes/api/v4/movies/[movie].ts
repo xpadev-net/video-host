@@ -12,16 +12,27 @@ import {
   canViewMovie,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
-import { canManageMovie } from "@/utils/movieAuth";
-import { badRequest, notFound, unauthorized } from "@/utils/response";
+import {
+  DescriptionSchema,
+  MAX_VIEWER_IDS,
+  TitleSchema,
+} from "@/utils/inputSchemas";
+import { assertCanManageSeries, canManageOwned } from "@/utils/movieAuth";
+import { MAX_RELATION_MOVIES } from "@/utils/pagination";
+import {
+  badRequest,
+  forbidden,
+  notFound,
+  unauthorized,
+} from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
 const MoviePatchSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
+  title: TitleSchema.optional(),
+  description: DescriptionSchema.nullable().optional(),
   seriesId: z.string().optional().nullable(),
   visibility: ZVisibility.optional(),
-  viewerIds: z.array(z.string()).optional(),
+  viewerIds: z.array(z.string()).max(MAX_VIEWER_IDS).optional(),
   order: z.number().optional(),
 });
 
@@ -53,6 +64,7 @@ export const movieRoute = app
                   createdAt: "asc",
                 },
               ],
+              take: MAX_RELATION_MOVIES,
               include: {
                 author: true,
                 variants: true,
@@ -123,12 +135,16 @@ export const movieRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    if (!(await canManageMovie(user, existingMovie.authorId))) {
-      unauthorized("Not authorized to edit this movie");
+    if (!(await canManageOwned(user, existingMovie.authorId))) {
+      forbidden("Not authorized to edit this movie");
     }
 
     const { title, description, seriesId, visibility, viewerIds, order } =
       c.req.valid("json");
+
+    if (seriesId) {
+      await assertCanManageSeries(user, seriesId);
+    }
 
     const uniqueViewerIds = viewerIds ? [...new Set(viewerIds)] : undefined;
     if (uniqueViewerIds && uniqueViewerIds.length > 0) {
@@ -147,7 +163,8 @@ export const movieRoute = app
       },
       data: {
         title: title ?? existingMovie.title,
-        description: description ?? existingMovie.description,
+        description:
+          description === undefined ? existingMovie.description : description,
         seriesId:
           seriesId === null ? null : (seriesId ?? existingMovie.seriesId),
         visibility: visibility ?? existingMovie.visibility,
@@ -169,6 +186,7 @@ export const movieRoute = app
               orderBy: {
                 createdAt: "asc",
               },
+              take: MAX_RELATION_MOVIES,
               include: {
                 author: true,
                 variants: true,
@@ -186,10 +204,12 @@ export const movieRoute = app
     });
     return ok(
       c,
-      filterMovie({
-        ...movie,
-        viewers: movie.viewers.map((viewer) => viewer.user),
-      }),
+      formatMovie(
+        filterMovie({
+          ...movie,
+          viewers: movie.viewers.map((viewer) => viewer.user),
+        }),
+      ),
     );
   })
   .delete("/:movie", async (c) => {
@@ -211,36 +231,39 @@ export const movieRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    if (!(await canManageMovie(user, movie.authorId))) {
-      unauthorized("Not authorized to delete this movie");
+    if (!(await canManageOwned(user, movie.authorId))) {
+      forbidden("Not authorized to delete this movie");
     }
 
-    // Try to delete S3 files (don't fail if this errors)
-    for (const variant of movie.variants) {
-      try {
-        if (variant.s3Key) {
-          await deleteProdFile(variant.s3Key);
-          await deleteTmpFile(variant.s3Key);
-        }
-      } catch (e) {
-        console.error("Failed to delete S3 files for variant", variant.id, e);
-      }
-    }
-
-    // Delete from playlists first
-    await prisma.movieOnPlaylist.deleteMany({
-      where: { movieId: param },
-    });
-
-    // Delete variants
-    await prisma.movieVariant.deleteMany({
-      where: { movieId: param },
-    });
-
-    // Delete movie
+    // Join rows, variants, and viewer entries are removed by database
+    // cascades as part of the same delete statement.
     await prisma.movie.delete({
       where: { id: param },
     });
+
+    // Database state is removed atomically first; object storage cleanup is
+    // best effort and can be retried independently if the provider is down.
+    await Promise.all(
+      movie.variants.flatMap((variant) => {
+        if (!variant.s3Key) return [];
+        return [
+          deleteProdFile(variant.s3Key).catch((error) =>
+            console.error(
+              "Failed to delete prod object for variant",
+              variant.id,
+              error,
+            ),
+          ),
+          deleteTmpFile(variant.s3Key).catch((error) =>
+            console.error(
+              "Failed to delete tmp object for variant",
+              variant.id,
+              error,
+            ),
+          ),
+        ];
+      }),
+    );
 
     return ok(c, { success: true });
   });

@@ -1,7 +1,10 @@
 import { useRouter } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
 import { useRef, useState } from "react";
-import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
 import { authClient } from "@/lib/auth-client";
 
 import { getSafeCallback } from "@/utils/safeCallback";
@@ -11,6 +14,7 @@ export { getSafeCallback } from "@/utils/safeCallback";
 export function useAuth() {
   const router = useRouter();
   const setSelectedAccount = useSetAtom(selectedAccountIdAtom);
+  const setSelectedProfile = useSetAtom(selectedProfileIdAtom);
   const pending = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -26,6 +30,7 @@ export function useAuth() {
       return;
     }
     setSelectedAccount(null);
+    setSelectedProfile(null);
     const callback = getSafeCallback(
       new URLSearchParams(window.location.search).get("callback"),
     );

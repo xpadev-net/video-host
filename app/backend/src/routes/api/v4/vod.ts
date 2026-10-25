@@ -2,9 +2,11 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Hono } from "hono";
 import type { Env, HonoApp } from "@/@types/hono";
-import { S3_PROD_BUCKET, VOD_INTERNAL_SECRET } from "@/env";
+import { S3_PROD_BUCKET, VOD_ALLOW_UNSIGNED, VOD_INTERNAL_SECRET } from "@/env";
 import { s3Client } from "@/lib/s3";
+import { verifyVodToken } from "@/lib/vod-token";
 import { unauthorized } from "@/utils/response";
+import { safeEqual } from "@/utils/safeEqual";
 
 /**
  * Validates an S3 key to prevent path traversal attacks.
@@ -45,14 +47,20 @@ const app = new Hono<Env>();
 export const vodRoute = app.get("/mapping/*", async (c) => {
   // Verify internal secret from nginx
   const internalSecret = c.req.header("X-Vod-Internal-Secret");
-  if (internalSecret !== VOD_INTERNAL_SECRET) {
+  if (!internalSecret || !safeEqual(internalSecret, VOD_INTERNAL_SECRET)) {
     unauthorized("Invalid internal secret");
   }
 
   // Extract the s3Key from the path
-  // URL format: /vod/mapping/{s3Key}
   const fullPath = c.req.path;
-  const s3Key = fullPath.replace("/api/v4/vod/mapping/", "");
+  // URL format: /vod/mapping/{token}/{s3Key}
+  const tokenAndKey = fullPath.replace("/api/v4/vod/mapping/", "");
+  const separator = tokenAndKey.indexOf("/");
+  const token = separator === -1 ? "" : tokenAndKey.slice(0, separator);
+  const signedKey = separator === -1 ? "" : tokenAndKey.slice(separator + 1);
+  const tokenValid = !!signedKey && verifyVodToken(token, signedKey);
+  // During a rolling deploy older pods still hand out unsigned URLs.
+  const s3Key = tokenValid || !VOD_ALLOW_UNSIGNED ? signedKey : tokenAndKey;
 
   if (!s3Key) {
     return c.json({ error: "Missing s3Key" }, 400);
@@ -61,6 +69,12 @@ export const vodRoute = app.get("/mapping/*", async (c) => {
   // Validate S3 key to prevent path traversal attacks
   if (!isValidS3Key(s3Key)) {
     return c.json({ error: "Invalid s3Key" }, 400);
+  }
+
+  // The URL must have been issued by the API for a viewer allowed to watch
+  // this movie; knowing the (guessable) key alone is not enough.
+  if (!tokenValid && !VOD_ALLOW_UNSIGNED) {
+    unauthorized("Invalid or expired playback token");
   }
 
   // Generate presigned GET URL for the S3 object
@@ -92,6 +106,46 @@ export const vodRoute = app.get("/mapping/*", async (c) => {
   };
   // Return raw JSON for nginx-vod-module compatibility
   return c.json(mapping);
+});
+
+// Stable thumbnail URLs carry a token in the URL and stream the private S3
+// object through the API so they work with internal S3 endpoints too.
+export const vodThumbnailRoute = app.get("/thumbnail/:token/*", async (c) => {
+  const routePrefix = "/api/v4/vod/thumbnail/";
+  const routePrefixIndex = c.req.path.indexOf(routePrefix);
+  if (routePrefixIndex === -1) return c.notFound();
+  const suffix = c.req.path.slice(routePrefixIndex + routePrefix.length);
+  const separator = suffix.indexOf("/");
+  if (separator < 1) return c.notFound();
+
+  let token: string;
+  let thumbnailKey: string;
+  try {
+    token = decodeURIComponent(suffix.slice(0, separator));
+    thumbnailKey = suffix
+      .slice(separator + 1)
+      .split("/")
+      .map(decodeURIComponent)
+      .join("/");
+  } catch {
+    return c.notFound();
+  }
+  if (!isValidS3Key(thumbnailKey) || !verifyVodToken(token, thumbnailKey)) {
+    return c.notFound();
+  }
+
+  const object = await s3Client.send(
+    new GetObjectCommand({ Bucket: S3_PROD_BUCKET, Key: thumbnailKey }),
+  );
+  if (!object.Body) return c.notFound();
+
+  return new Response(object.Body.transformToWebStream(), {
+    headers: {
+      "Content-Type": "image/jpeg",
+      "Cache-Control": "public, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 });
 
 export const registerVodRoute = (app: HonoApp) => {

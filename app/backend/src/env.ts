@@ -13,9 +13,25 @@ const flag = (fallback: boolean) =>
   z
     .string()
     .optional()
-    .transform((value) =>
-      value === undefined || value === "" ? fallback : value === "true",
-    );
+    .transform((value, ctx) => {
+      if (value === undefined || value.trim() === "") return fallback;
+      switch (value.trim().toLowerCase()) {
+        case "true":
+        case "1":
+        case "yes":
+          return true;
+        case "false":
+        case "0":
+        case "no":
+          return false;
+        default:
+          ctx.addIssue({
+            code: "custom",
+            message: "Expected true/false, 1/0, or yes/no",
+          });
+          return z.NEVER;
+      }
+    });
 const origin = z.url().refine((value) => {
   let url: URL;
   try {
@@ -46,6 +62,111 @@ const origins = z
   )
   .pipe(z.array(origin));
 
+export const BackendEnvSchema = z.object({
+  NODE_ENV: z.enum(["development", "production", "test"]),
+  DATABASE_URL: z
+    .string()
+    .url()
+    .refine(
+      (value) => new URL(value).protocol === "mysql:",
+      "Expected a MySQL connection URL",
+    ),
+  BETTER_AUTH_SECRET: z.string().min(32),
+  BETTER_AUTH_URL: origin,
+  FRONTEND_URL: origin,
+  AUTH_TRUSTED_ORIGINS: origins,
+  AUTH_TRUSTED_PROXY_CIDRS: z
+    .string()
+    .optional()
+    .transform((value, ctx) => {
+      const cidrs =
+        value
+          ?.split(",")
+          .map((item) => item.trim())
+          .filter(Boolean) ?? [];
+      try {
+        createTrustedProxyList(cidrs);
+      } catch {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            "Expected explicit trusted proxy IPs/CIDRs (never wildcard or /0)",
+        });
+      }
+      return cidrs;
+    }),
+  CALLBACK_SECRET: z.string().min(1),
+  VOD_INTERNAL_SECRET: z.string().min(1),
+  // Transitional: also serve VOD mapping requests that carry no playback
+  // token, for the duration of a rolling deploy from pre-token releases.
+  VOD_ALLOW_UNSIGNED: z
+    .string()
+    .optional()
+    .transform((val) => val === "true")
+    .default(false),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  SIGNUP_ENABLED: flag(false),
+  SIGNUP_CODE: z.string().optional(),
+  PASSWORD_AUTH_ENABLED: flag(true),
+  OIDC_ENABLED: flag(false),
+  OIDC_ISSUER_URL: z
+    .union([z.url(), z.literal("")])
+    .optional()
+    .transform((value) => value || undefined),
+  OIDC_CLIENT_ID: z.string().optional(),
+  OIDC_CLIENT_SECRET: z.string().optional(),
+  OIDC_SCOPE: z
+    .string()
+    .optional()
+    .transform((value) => value || "openid profile email"),
+  OIDC_DISPLAY_NAME: z
+    .string()
+    .optional()
+    .transform((value) => value || "SSO"),
+  OIDC_AUTO_PROVISION: flag(true),
+  OIDC_ALLOW_HTTP: flag(false),
+  // Extra exact browser origins, used by both CORS and application CSRF checks.
+  CORS_ORIGIN: origins,
+  PUBLIC_ENDPOINTS: z
+    .string()
+    .optional()
+    .transform((value) =>
+      value
+        ? value
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : [],
+    ),
+  // S3 Configuration
+  S3_TMP_BUCKET: z.string().default("video-tmp"),
+  S3_PROD_BUCKET: z.string().default("video-prod"),
+  S3_REGION: z.string().default("ap-northeast-1"),
+  S3_ACCESS_KEY_ID: z.string().default(""),
+  S3_SECRET_ACCESS_KEY: z.string().default(""),
+  S3_ENDPOINT: z.string().optional(),
+  S3_FORCE_PATH_STYLE: flag(false),
+
+  // Largest accepted upload; enforced when an upload is completed because a
+  // presigned PUT cannot carry a size limit.
+  MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5 * 1024 * 1024 * 1024),
+
+  // Redis Configuration
+  REDIS_URL: z.string().default("redis://localhost:6379"),
+  REDIS_SENTINEL_HOSTS: z.string().optional(),
+  REDIS_SENTINEL_NAME: z.string().optional(),
+  REDIS_SENTINEL_PASSWORD: z.string().optional(),
+
+  // OpenTelemetry metrics export (disabled when the endpoint is unset)
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: z.string().optional(),
+  OTEL_SERVICE_NAME: z.string().optional(),
+});
+
 // Defaults depend on the parsed NODE_ENV, never on the importing process's mode.
 // Production intentionally fails closed when an external origin or secret is absent.
 export const EnvSchema = z.preprocess(
@@ -59,191 +180,110 @@ export const EnvSchema = z.preprocess(
       if (!values.BETTER_AUTH_URL)
         values.BETTER_AUTH_URL = "http://localhost:3000";
       if (!values.FRONTEND_URL) values.FRONTEND_URL = "http://localhost:3000";
+      if (!values.DATABASE_URL)
+        values.DATABASE_URL =
+          "mysql://video_host:video_host@127.0.0.1:3306/video_host";
     }
     return values;
   },
-  z
-    .object({
-      NODE_ENV: z.enum(["development", "production", "test"]),
-      BETTER_AUTH_SECRET: z.string().min(32),
-      BETTER_AUTH_URL: origin,
-      FRONTEND_URL: origin,
-      AUTH_TRUSTED_ORIGINS: origins,
-      AUTH_TRUSTED_PROXY_CIDRS: z
-        .string()
-        .optional()
-        .transform((value, ctx) => {
-          const cidrs =
-            value
-              ?.split(",")
-              .map((item) => item.trim())
-              .filter(Boolean) ?? [];
-          try {
-            createTrustedProxyList(cidrs);
-          } catch {
-            ctx.addIssue({
-              code: "custom",
-              message:
-                "Expected explicit trusted proxy IPs/CIDRs (never wildcard or /0)",
-            });
-          }
-          return cidrs;
-        }),
-      CALLBACK_SECRET: z.string().min(1),
-      VOD_INTERNAL_SECRET: z.string().min(1),
-      PORT: z.coerce.number().int().min(1).max(65535).default(3000),
-      SIGNUP_ENABLED: flag(false),
-      SIGNUP_CODE: z.string().optional(),
-      PASSWORD_AUTH_ENABLED: flag(true),
-      OIDC_ENABLED: flag(false),
-      OIDC_ISSUER_URL: z
-        .union([z.url(), z.literal("")])
-        .optional()
-        .transform((value) => value || undefined),
-      OIDC_CLIENT_ID: z.string().optional(),
-      OIDC_CLIENT_SECRET: z.string().optional(),
-      OIDC_SCOPE: z
-        .string()
-        .optional()
-        .transform((value) => value || "openid profile email"),
-      OIDC_DISPLAY_NAME: z
-        .string()
-        .optional()
-        .transform((value) => value || "SSO"),
-      OIDC_AUTO_PROVISION: flag(true),
-      OIDC_ALLOW_HTTP: flag(false),
-      // Extra exact browser origins, used by both CORS and application CSRF checks.
-      CORS_ORIGIN: origins,
-      PUBLIC_ENDPOINTS: z
-        .string()
-        .optional()
-        .transform((value) =>
-          value
-            ? value
-                .split(",")
-                .map((item) => item.trim())
-                .filter(Boolean)
-            : [],
-        ),
-      // S3 Configuration
-      S3_TMP_BUCKET: z.string().default("video-tmp"),
-      S3_PROD_BUCKET: z.string().default("video-prod"),
-      S3_REGION: z.string().default("ap-northeast-1"),
-      S3_ACCESS_KEY_ID: z.string().default(""),
-      S3_SECRET_ACCESS_KEY: z.string().default(""),
-      S3_ENDPOINT: z.string().optional(),
-      S3_FORCE_PATH_STYLE: z
-        .string()
-        .optional()
-        .transform((val) => val === "true")
-        .default(false),
-
-      // Redis Configuration
-      REDIS_URL: z.string().default("redis://localhost:6379"),
-      REDIS_SENTINEL_HOSTS: z.string().optional(),
-      REDIS_SENTINEL_NAME: z.string().optional(),
-      REDIS_SENTINEL_PASSWORD: z.string().optional(),
-
-      // Video Processing
-      VOD_BASE_URL: z.string().default(""),
-
-      // OpenTelemetry metrics export (disabled when the endpoint is unset)
-      OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
-      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: z.string().optional(),
-      OTEL_SERVICE_NAME: z.string().optional(),
-    })
-    .superRefine((env, ctx) => {
-      const issue = (message: string) =>
-        ctx.addIssue({ code: "custom", message });
-      if (env.NODE_ENV === "production") {
-        if (env.AUTH_TRUSTED_PROXY_CIDRS.length === 0)
-          issue(
-            "Production same-origin auth requires explicit AUTH_TRUSTED_PROXY_CIDRS",
-          );
-        for (const [key, value] of Object.entries(DEV_DEFAULTS)) {
-          if (env[key as keyof typeof DEV_DEFAULTS] === value)
-            issue("Production cannot use development default secrets");
-        }
-        if (
-          [
-            env.BETTER_AUTH_SECRET,
-            env.CALLBACK_SECRET,
-            env.VOD_INTERNAL_SECRET,
-          ].some((value) => value.startsWith("CHANGE_ME"))
-        ) {
-          issue("Production cannot use CHANGE_ME placeholder secrets");
-        }
-        if (
-          ![
-            env.BETTER_AUTH_URL,
-            env.FRONTEND_URL,
-            ...env.AUTH_TRUSTED_ORIGINS,
-            ...env.CORS_ORIGIN,
-          ].every((value) => value.startsWith("https://"))
-        ) {
-          issue(
-            "BETTER_AUTH_URL, FRONTEND_URL and trusted browser origins must use https:// in production",
-          );
-        }
-        if (env.OIDC_ALLOW_HTTP) issue("OIDC_ALLOW_HTTP is development-only");
+  BackendEnvSchema.superRefine((env, ctx) => {
+    const issue = (message: string) =>
+      ctx.addIssue({ code: "custom", message });
+    if (env.NODE_ENV === "production") {
+      if (env.AUTH_TRUSTED_PROXY_CIDRS.length === 0)
+        issue(
+          "Production same-origin auth requires explicit AUTH_TRUSTED_PROXY_CIDRS",
+        );
+      for (const [key, value] of Object.entries(DEV_DEFAULTS)) {
+        if (env[key as keyof typeof DEV_DEFAULTS] === value)
+          issue("Production cannot use development default secrets");
       }
-      if (!env.PASSWORD_AUTH_ENABLED && !env.OIDC_ENABLED)
-        issue("At least one authentication method must be enabled");
-      if (env.OIDC_ENABLED) {
-        if (!env.OIDC_ISSUER_URL || !env.OIDC_CLIENT_ID)
-          issue(
-            "OIDC_ISSUER_URL and OIDC_CLIENT_ID are required when OIDC_ENABLED is true",
-          );
-        if (env.OIDC_ISSUER_URL) {
-          let issuer: URL;
-          try {
-            issuer = new URL(env.OIDC_ISSUER_URL);
-          } catch {
-            issue("Invalid OIDC_ISSUER_URL");
-            return;
-          }
-          if (
-            issuer.username ||
-            issuer.password ||
-            issuer.search ||
-            issuer.hash
-          )
-            issue(
-              "OIDC_ISSUER_URL must not contain credentials, query, or fragment",
-            );
-          if (
-            issuer.protocol !== "https:" &&
-            !(
-              issuer.protocol === "http:" &&
-              env.OIDC_ALLOW_HTTP &&
-              env.NODE_ENV === "development"
-            )
-          )
-            issue(
-              "OIDC_ISSUER_URL must use HTTPS (HTTP is explicitly allowed only in development)",
-            );
+      if (
+        [
+          env.BETTER_AUTH_SECRET,
+          env.CALLBACK_SECRET,
+          env.VOD_INTERNAL_SECRET,
+        ].some((value) => value.startsWith("CHANGE_ME"))
+      ) {
+        issue("Production cannot use CHANGE_ME placeholder secrets");
+      }
+      if (!env.S3_ACCESS_KEY_ID || !env.S3_SECRET_ACCESS_KEY) {
+        issue(
+          "S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are required in production",
+        );
+      }
+      if (env.VOD_INTERNAL_SECRET.length < 32) {
+        // Playback tokens are HMACs under this secret and appear in public
+        // URLs, so a weak secret could be brute-forced offline.
+        issue(
+          "VOD_INTERNAL_SECRET must be at least 32 characters in production",
+        );
+      }
+      if (
+        ![
+          env.BETTER_AUTH_URL,
+          env.FRONTEND_URL,
+          ...env.AUTH_TRUSTED_ORIGINS,
+          ...env.CORS_ORIGIN,
+        ].every((value) => value.startsWith("https://"))
+      ) {
+        issue(
+          "BETTER_AUTH_URL, FRONTEND_URL and trusted browser origins must use https:// in production",
+        );
+      }
+      if (env.OIDC_ALLOW_HTTP) issue("OIDC_ALLOW_HTTP is development-only");
+    }
+    if (!env.PASSWORD_AUTH_ENABLED && !env.OIDC_ENABLED)
+      issue("At least one authentication method must be enabled");
+    if (env.OIDC_ENABLED) {
+      if (!env.OIDC_ISSUER_URL || !env.OIDC_CLIENT_ID)
+        issue(
+          "OIDC_ISSUER_URL and OIDC_CLIENT_ID are required when OIDC_ENABLED is true",
+        );
+      if (env.OIDC_ISSUER_URL) {
+        let issuer: URL;
+        try {
+          issuer = new URL(env.OIDC_ISSUER_URL);
+        } catch {
+          issue("Invalid OIDC_ISSUER_URL");
+          return;
         }
+        if (issuer.username || issuer.password || issuer.search || issuer.hash)
+          issue(
+            "OIDC_ISSUER_URL must not contain credentials, query, or fragment",
+          );
         if (
-          !["openid", "email"].every((scope) =>
-            env.OIDC_SCOPE.split(/\s+/).includes(scope),
+          issuer.protocol !== "https:" &&
+          !(
+            issuer.protocol === "http:" &&
+            env.OIDC_ALLOW_HTTP &&
+            env.NODE_ENV === "development"
           )
         )
-          issue("OIDC_SCOPE must include openid and email");
+          issue(
+            "OIDC_ISSUER_URL must use HTTPS (HTTP is explicitly allowed only in development)",
+          );
       }
-    })
-    .transform((env) => ({
-      ...env,
-      AUTH_TRUSTED_ORIGINS: [
-        ...new Set(
-          [
-            env.FRONTEND_URL,
-            env.BETTER_AUTH_URL,
-            ...env.AUTH_TRUSTED_ORIGINS,
-            ...env.CORS_ORIGIN,
-          ].map((value) => new URL(value).origin),
-        ),
-      ],
-    })),
+      if (
+        !["openid", "email"].every((scope) =>
+          env.OIDC_SCOPE.split(/\s+/).includes(scope),
+        )
+      )
+        issue("OIDC_SCOPE must include openid and email");
+    }
+  }).transform((env) => ({
+    ...env,
+    AUTH_TRUSTED_ORIGINS: [
+      ...new Set(
+        [
+          env.FRONTEND_URL,
+          env.BETTER_AUTH_URL,
+          ...env.AUTH_TRUSTED_ORIGINS,
+          ...env.CORS_ORIGIN,
+        ].map((value) => new URL(value).origin),
+      ),
+    ],
+  })),
 );
 
 const result = EnvSchema.safeParse(process.env);
@@ -255,6 +295,7 @@ if (!result.success) {
 const env = result.data;
 export const {
   NODE_ENV,
+  DATABASE_URL,
   BETTER_AUTH_SECRET,
   BETTER_AUTH_URL,
   FRONTEND_URL,
@@ -281,13 +322,14 @@ export const {
   S3_SECRET_ACCESS_KEY,
   S3_ENDPOINT,
   S3_FORCE_PATH_STYLE,
+  MAX_UPLOAD_BYTES,
   REDIS_URL,
   REDIS_SENTINEL_HOSTS,
   REDIS_SENTINEL_NAME,
   REDIS_SENTINEL_PASSWORD,
-  VOD_BASE_URL,
   CALLBACK_SECRET,
   VOD_INTERNAL_SECRET,
+  VOD_ALLOW_UNSIGNED,
   OTEL_EXPORTER_OTLP_ENDPOINT,
   OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
   OTEL_SERVICE_NAME,

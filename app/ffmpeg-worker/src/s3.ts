@@ -1,20 +1,21 @@
+import { createReadStream, createWriteStream } from "node:fs";
+import type { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import {
-  S3Client,
-  GetObjectCommand,
-  PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  S3Client,
 } from "@aws-sdk/client-s3";
-import { createWriteStream, createReadStream } from "fs";
-import { pipeline } from "stream/promises";
-import type { Readable } from "stream";
+import { Upload } from "@aws-sdk/lib-storage";
 import {
   S3_ACCESS_KEY_ID,
-  S3_SECRET_ACCESS_KEY,
-  S3_REGION,
   S3_ENDPOINT,
   S3_FORCE_PATH_STYLE,
-  S3_TMP_BUCKET,
   S3_PROD_BUCKET,
+  S3_REGION,
+  S3_SECRET_ACCESS_KEY,
+  S3_TMP_BUCKET,
 } from "./env";
 
 const s3Config: {
@@ -60,7 +61,7 @@ export const downloadFromTmp = async (
     throw new Error("Empty response body");
   }
 
-  const writeStream = createWriteStream(localPath);
+  const writeStream = createWriteStream(localPath, { flags: "wx" });
   const body = response.Body as Readable;
 
   // Handle abort during streaming
@@ -91,59 +92,59 @@ export const uploadToProd = async (
     throw new Error("Upload aborted before start");
   }
 
-  const maxRetries = 3;
-  let lastError: Error | undefined;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    // Check abort signal between retries
-    if (abortSignal?.aborted) {
-      throw new Error("Upload aborted due to timeout");
-    }
-
-    try {
-      const readStream = createReadStream(localPath);
-      const command = new PutObjectCommand({
-        Bucket: S3_PROD_BUCKET,
-        Key: s3Key,
-        Body: readStream,
-        ContentType: contentType,
-      });
-
-      await s3Client.send(command, { abortSignal });
-      return; // Success
-    } catch (error) {
-      // If aborted, don't retry
-      if (abortSignal?.aborted) {
-        throw new Error("Upload aborted due to timeout");
-      }
-
-      lastError = error as Error;
-      const isRetryable =
-        error instanceof Error &&
-        ("$fault" in error || error.message.includes("InternalError"));
-
-      if (isRetryable && attempt < maxRetries) {
-        console.log(
-          `Upload attempt ${attempt} failed, retrying in ${attempt * 2}s...`,
-        );
-        await new Promise((resolve) =>
-          setTimeout(resolve, attempt * 2000),
-        );
-      } else {
-        throw error;
-      }
-    }
+  const uploader = new Upload({
+    client: s3Client,
+    params: {
+      Bucket: S3_PROD_BUCKET,
+      Key: s3Key,
+      Body: createReadStream(localPath),
+      ContentType: contentType,
+    },
+    queueSize: 2,
+    partSize: 8 * 1024 * 1024,
+    leavePartsOnError: false,
+  });
+  const onAbort = () => void uploader.abort();
+  abortSignal?.addEventListener("abort", onAbort, { once: true });
+  if (abortSignal?.aborted) onAbort();
+  try {
+    await uploader.done();
+    if (abortSignal?.aborted) throw new Error("Upload aborted due to timeout");
+  } finally {
+    abortSignal?.removeEventListener("abort", onAbort);
   }
-
-  throw lastError;
 };
 
-export const deleteFromTmp = async (s3Key: string): Promise<void> => {
+export const getTmpObjectSize = async (s3Key: string): Promise<number> => {
+  const response = await s3Client.send(
+    new HeadObjectCommand({ Bucket: S3_TMP_BUCKET, Key: s3Key }),
+  );
+  if (response.ContentLength === undefined) {
+    throw new Error(`S3 object has no Content-Length: ${s3Key}`);
+  }
+  return response.ContentLength;
+};
+
+export const deleteFromTmp = async (
+  s3Key: string,
+  abortSignal?: AbortSignal,
+): Promise<void> => {
   const command = new DeleteObjectCommand({
     Bucket: S3_TMP_BUCKET,
     Key: s3Key,
   });
-  await s3Client.send(command);
+  await s3Client.send(command, { abortSignal });
 };
 
-export { S3_TMP_BUCKET, S3_PROD_BUCKET };
+export const deleteFromProd = async (s3Key: string): Promise<void> => {
+  await Promise.all(
+    [s3Key, `${s3Key}.jpg`].map((key) =>
+      s3Client.send(
+        new DeleteObjectCommand({
+          Bucket: S3_PROD_BUCKET,
+          Key: key,
+        }),
+      ),
+    ),
+  );
+};

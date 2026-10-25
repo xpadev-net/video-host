@@ -11,6 +11,7 @@ const database = vi.hoisted(() => ({
     delete: vi.fn(),
   },
   movie: { findUnique: vi.fn() },
+  movieVariant: { findFirst: vi.fn(), updateMany: vi.fn() },
   $transaction: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: database }));
@@ -21,10 +22,11 @@ vi.mock("@aws-sdk/s3-request-presigner", () => ({
     .mockResolvedValue("https://storage.example.test/video.mp4?signature=test"),
 }));
 
+import { createVodToken } from "../lib/vod-token";
 import { callbackRoute } from "../routes/api/v4/callback";
 import { systemAccountsRoute } from "../routes/api/v4/system-accounts";
 import { vodRoute } from "../routes/api/v4/vod";
-import { canManageMovie, resolveAuthorId } from "../utils/movieAuth";
+import { canManageOwned, resolveAuthorId } from "../utils/movieAuth";
 import { isSystemAccount } from "../utils/systemAccountCache";
 
 const person = (id: string, role: User["role"] = "USER"): User => ({
@@ -87,7 +89,7 @@ describe("explicit HUMAN and SYSTEM authorization", () => {
   });
   it("rejects ordinary users posting for system accounts", async () => {
     await expect(resolveAuthorId(member, system.id)).rejects.toMatchObject({
-      status: 401,
+      status: 403,
     });
     expect(database.user.findUnique).not.toHaveBeenCalled();
     expect(await resolveAuthorId(member)).toBe(member.id);
@@ -96,10 +98,10 @@ describe("explicit HUMAN and SYSTEM authorization", () => {
     database.user.findUnique
       .mockResolvedValueOnce({ kind: "HUMAN" })
       .mockResolvedValueOnce({ kind: "SYSTEM" });
-    expect(await canManageMovie(member, member.id)).toBe(true);
-    expect(await canManageMovie(admin, humanSso.id)).toBe(false);
-    expect(await canManageMovie(admin, system.id)).toBe(true);
-    expect(await canManageMovie(member, system.id)).toBe(false);
+    expect(await canManageOwned(member, member.id)).toBe(true);
+    expect(await canManageOwned(admin, humanSso.id)).toBe(false);
+    expect(await canManageOwned(admin, system.id)).toBe(true);
+    expect(await canManageOwned(member, system.id)).toBe(false);
   });
   it("lists only explicitly classified SYSTEM accounts", async () => {
     database.user.findMany.mockResolvedValue([system]);
@@ -125,29 +127,29 @@ describe("explicit HUMAN and SYSTEM authorization", () => {
       }),
     );
   });
-  it.each([
-    humanSso,
-    { ...system, authUserId: "unexpected-auth-mapping" },
-  ])("rejects system deletion for human/mapped identities", async (target) => {
-    database.user.findUnique.mockResolvedValue(target);
-    expect(
-      (
-        await appFor(admin).request(`/api/v4/system-accounts/${target.id}`, {
-          method: "DELETE",
-        })
-      ).status,
-    ).toBe(400);
-    expect(database.$transaction).not.toHaveBeenCalled();
-  });
-  it.each([
-    undefined,
-    member,
-  ])("rejects non-admin system administration", async (actor) => {
-    expect(
-      (await appFor(actor).request("/api/v4/system-accounts")).status,
-    ).toBe(401);
-    expect(database.user.findMany).not.toHaveBeenCalled();
-  });
+  it.each([humanSso, { ...system, authUserId: "unexpected-auth-mapping" }])(
+    "rejects system deletion for human/mapped identities",
+    async (target) => {
+      database.user.findUnique.mockResolvedValue(target);
+      expect(
+        (
+          await appFor(admin).request(`/api/v4/system-accounts/${target.id}`, {
+            method: "DELETE",
+          })
+        ).status,
+      ).toBe(400);
+      expect(database.$transaction).not.toHaveBeenCalled();
+    },
+  );
+  it.each([undefined, member])(
+    "rejects non-admin system administration",
+    async (actor) => {
+      expect(
+        (await appFor(actor).request("/api/v4/system-accounts")).status,
+      ).toBe(actor ? 403 : 401);
+      expect(database.user.findMany).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("machine authentication remains separate", () => {
@@ -176,6 +178,52 @@ describe("machine authentication remains separate", () => {
     expect(response.status).toBe(400);
     expect(database.movie.findUnique).toHaveBeenCalled();
   });
+  it("rejects invalid callback secrets before reading movie state", async () => {
+    const response = await appFor().request("/api/v4/callback", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer wrong-secret",
+      },
+      body: JSON.stringify({
+        movieId: "m1",
+        variantId: "original",
+        s3Key: "uploads/alice/video.mp4",
+        status: "failed",
+      }),
+    });
+    expect(response.status).toBe(401);
+    expect(database.movie.findUnique).not.toHaveBeenCalled();
+  });
+  it("does not transition a READY variant to FAILED", async () => {
+    database.movie.findUnique.mockResolvedValue({ id: "m1" });
+    database.movieVariant.findFirst.mockResolvedValue({ id: "v1" });
+    database.movieVariant.updateMany.mockResolvedValue({ count: 0 });
+    database.$transaction.mockImplementation((operation) =>
+      operation(database),
+    );
+
+    const response = await appFor().request("/api/v4/callback", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer test-callback-secret",
+      },
+      body: JSON.stringify({
+        movieId: "m1",
+        variantId: "original",
+        s3Key: "uploads/alice/video.mp4",
+        status: "failed",
+      }),
+    });
+    expect(response.status).toBe(409);
+    expect(database.movieVariant.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: "PROCESSING" }),
+        data: { status: "FAILED" },
+      }),
+    );
+  });
   it("rejects cookie/admin context for VOD mapping without internal secret", async () => {
     expect(
       (
@@ -185,13 +233,29 @@ describe("machine authentication remains separate", () => {
       ).status,
     ).toBe(401);
   });
-  it("accepts the independent VOD secret", async () => {
+  it("accepts the independent VOD secret with a valid playback token", async () => {
+    const key = "uploads/u1/movie.mp4";
     expect(
       (
-        await appFor().request("/api/v4/vod/mapping/movie.mp4", {
-          headers: { "X-Vod-Internal-Secret": "test-vod-internal-secret" },
-        })
+        await appFor().request(
+          `/api/v4/vod/mapping/${createVodToken(key)}/${key}`,
+          { headers: { "X-Vod-Internal-Secret": "test-vod-internal-secret" } },
+        )
       ).status,
     ).toBe(200);
+  });
+  it("rejects VOD mapping without a valid playback token", async () => {
+    const headers = { "X-Vod-Internal-Secret": "test-vod-internal-secret" };
+    const key = "uploads/u1/movie.mp4";
+    const other = createVodToken("uploads/u2/other.mp4");
+    const expired = createVodToken(key, Date.now() - 7 * 3600 * 1000);
+    for (const path of [
+      `/api/v4/vod/mapping/${key}`, // guessed key, no token
+      `/api/v4/vod/mapping/bogus/${key}`,
+      `/api/v4/vod/mapping/${other}/${key}`, // token for another key
+      `/api/v4/vod/mapping/${expired}/${key}`,
+    ]) {
+      expect((await appFor().request(path, { headers })).status).toBe(401);
+    }
   });
 });

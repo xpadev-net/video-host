@@ -2,8 +2,9 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
-import { filterUser } from "@/lib/filter";
+import { filterSelf } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
+import { AvatarUrlSchema, NameSchema } from "@/utils/inputSchemas";
 import { badRequest, unauthorized } from "@/utils/response";
 import { ok } from "@/utils/response/ok";
 
@@ -15,15 +16,15 @@ export const meRoute = app
     if (!user) {
       unauthorized("Unauthorized");
     }
-    return ok(c, filterUser(user));
+    return ok(c, filterSelf(user));
   })
   .patch(
     "/me",
     zValidator(
       "json",
       z.object({
-        name: z.string().optional(),
-        avatarUrl: z.string().optional(),
+        name: NameSchema.optional(),
+        avatarUrl: AvatarUrlSchema.nullable().optional(),
       }),
     ),
     async (c) => {
@@ -40,11 +41,12 @@ export const meRoute = app
           id: user.id,
         },
         data: {
-          name: data.name ?? user.name,
-          avatarUrl: data.avatarUrl ?? user.avatarUrl,
+          name: data.name === undefined ? user.name : data.name,
+          avatarUrl:
+            data.avatarUrl === undefined ? user.avatarUrl : data.avatarUrl,
         },
       });
-      return ok(c, filterUser(updatedUser));
+      return ok(c, filterSelf(updatedUser));
     },
   );
 

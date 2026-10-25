@@ -4,7 +4,11 @@ import { trimTrailingSlash } from "hono/trailing-slash";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "@/@types/hono";
 
-const mocks = vi.hoisted(() => ({ getSession: vi.fn(), findUnique: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getSession: vi.fn(),
+  findProfile: vi.fn(),
+  provisionProfile: vi.fn(),
+}));
 vi.mock("@/env", () => ({
   AUTH_TRUSTED_ORIGINS: ["https://video.example.com"],
   PUBLIC_ENDPOINTS: ["/api/v4/public"],
@@ -20,7 +24,10 @@ vi.mock("@/lib/auth", () => ({
   ssoProviderId: null,
 }));
 vi.mock("@/lib/prisma", () => ({
-  prisma: { user: { findUnique: mocks.findUnique } },
+  prisma: { authProfile: { findFirst: mocks.findProfile } },
+}));
+vi.mock("@/lib/auth-profile", () => ({
+  provisionAuthProfile: mocks.provisionProfile,
 }));
 
 import { handleAuth } from "@/middleware/auth";
@@ -28,9 +35,12 @@ import { authRoute } from "@/routes/api/v4/auth";
 
 const profile = {
   id: "domain-id",
+  username: "domain_user",
+  name: "Default profile",
   authUserId: "auth-id",
   kind: "HUMAN",
   role: "ADMIN",
+  avatarUrl: null,
 };
 function appUnderTest(withAuthConfigRoute = false) {
   const app = new Hono<Env>();
@@ -47,7 +57,7 @@ function appUnderTest(withAuthConfigRoute = false) {
     app.use(trimTrailingSlash());
     app.route("/api/v4/auth", authRoute);
   } else {
-    app.all("*", (c) => c.json({ user: c.get("user") ?? null }));
+    app.all("/api/*", (c) => c.json({ user: c.get("user") ?? null }));
   }
   return app;
 }
@@ -59,7 +69,8 @@ describe("cookie-backed domain authentication", () => {
       response: null,
       headers: new Headers(),
     });
-    mocks.findUnique.mockResolvedValue(profile);
+    mocks.provisionProfile.mockResolvedValue(profile);
+    mocks.findProfile.mockResolvedValue(null);
   });
   it("rejects missing, expired or revoked sessions", async () => {
     expect((await appUnderTest().request("/api/v4/users")).status).toBe(401);
@@ -83,9 +94,7 @@ describe("cookie-backed domain authentication", () => {
     });
     expect(res.status).toBe(200);
     expect((await res.json()).user).toEqual(profile);
-    expect(mocks.findUnique).toHaveBeenCalledWith({
-      where: { authUserId: "auth-id" },
-    });
+    expect(mocks.provisionProfile).toHaveBeenCalledWith({ id: "auth-id" });
     expect(mocks.getSession.mock.calls[0][0].headers.get("cookie")).toContain(
       "session_token",
     );
@@ -99,15 +108,44 @@ describe("cookie-backed domain authentication", () => {
     expect(response.headers.get("set-cookie")).toContain("session=renewed");
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
-  it("rejects SYSTEM profiles and missing domain mappings", async () => {
+  it("rejects SYSTEM default profiles", async () => {
     mocks.getSession.mockResolvedValue({
       response: { user: { id: "auth-id" } },
       headers: new Headers(),
     });
-    for (const user of [{ ...profile, kind: "SYSTEM" }, null]) {
-      mocks.findUnique.mockResolvedValue(user);
-      expect((await appUnderTest().request("/api/v4/users")).status).toBe(401);
-    }
+    mocks.provisionProfile.mockResolvedValue({ ...profile, kind: "SYSTEM" });
+    expect((await appUnderTest().request("/api/v4/users")).status).toBe(401);
+  });
+  it("uses only additional profiles owned by the authenticated account", async () => {
+    mocks.getSession.mockResolvedValue({
+      response: { user: { id: "auth-id" } },
+      headers: new Headers(),
+    });
+    mocks.findProfile.mockResolvedValue({
+      profile: {
+        ...profile,
+        id: "extra-profile-id",
+        authUserId: null,
+        role: "USER",
+      },
+    });
+    const own = await appUnderTest().request("/api/v4/users", {
+      headers: { "x-profile-id": "extra-profile-id" },
+    });
+    expect((await own.json()).user).toMatchObject({
+      id: "extra-profile-id",
+      role: "ADMIN",
+    });
+    expect(mocks.findProfile).toHaveBeenCalledWith({
+      where: { authUserId: "auth-id", profileId: "extra-profile-id" },
+      include: { profile: true },
+    });
+
+    mocks.findProfile.mockResolvedValue(null);
+    const forged = await appUnderTest().request("/api/v4/users", {
+      headers: { "x-profile-id": "someone-elses-profile" },
+    });
+    expect((await forged.json()).user).toMatchObject({ id: "domain-id" });
   });
   it("allows configured public reads and exact auth config only", async () => {
     for (const path of [
@@ -125,27 +163,32 @@ describe("cookie-backed domain authentication", () => {
       expect((await appUnderTest().request(path)).status).toBe(401);
     }
   });
-  it.each([
-    "GET",
-    "HEAD",
-  ])("redirects anonymous %s config/ requests to a successful config response", async (method) => {
-    const app = appUnderTest(true);
-    const redirect = await app.request("/api/v4/auth/config/?from=login", {
-      method,
-    });
-    expect(redirect.status).toBe(301);
-    const location = redirect.headers.get("location");
-    expect(location).toBe("http://localhost/api/v4/auth/config?from=login");
-    if (!location) throw new Error("Missing config redirect location");
-    const response = await app.request(location, { method });
-    expect(response.status).toBe(200);
-    if (method === "GET") {
-      expect(await response.json()).toMatchObject({
-        status: "ok",
-        data: { passwordAuthEnabled: true, signupEnabled: false },
+  it.each(["GET", "HEAD"])(
+    "redirects anonymous %s config/ requests to a successful config response",
+    async (method) => {
+      const app = appUnderTest(true);
+      const redirect = await app.request("/api/v4/auth/config/?from=login", {
+        method,
       });
-    }
-    expect(mocks.findUnique).not.toHaveBeenCalled();
+      expect(redirect.status).toBe(301);
+      const location = redirect.headers.get("location");
+      expect(location).toBe("http://localhost/api/v4/auth/config?from=login");
+      if (!location) throw new Error("Missing config redirect location");
+      const response = await app.request(location, { method });
+      expect(response.status).toBe(200);
+      if (method === "GET") {
+        expect(await response.json()).toMatchObject({
+          status: "ok",
+          data: { passwordAuthEnabled: true, signupEnabled: false },
+        });
+      }
+      expect(mocks.provisionProfile).not.toHaveBeenCalled();
+    },
+  );
+  it("answers anonymous requests to unknown paths with 404, not 401", async () => {
+    const app = appUnderTest();
+    expect((await app.request("/no/such/path")).status).toBe(404);
+    expect((await app.request("/api/v4/users")).status).toBe(401);
   });
   it("keeps trailing-slash lookalikes and private paths protected", async () => {
     const app = appUnderTest(true);

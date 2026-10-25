@@ -12,6 +12,16 @@ resources:
   - ffmpeg-worker/deployment.yaml
   - vod/deployment.yaml
   - vod/service.yaml
+  - networking.yaml
+  - availability.yaml
 
-commonLabels:
-  app.kubernetes.io/part-of: video-host
+configMapGenerator:
+  - name: vod-nginx-config
+    files:
+      - nginx.conf=vod/nginx.conf.template
+      - render-nginx-config.sh=vod/render-nginx-config.sh
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: video-host
+    includeSelectors: true

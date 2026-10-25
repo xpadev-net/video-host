@@ -1,8 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useAtomValue } from "jotai";
+import { Film } from "lucide-react";
+import { type SetStateAction, useCallback, useEffect, useState } from "react";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
+import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
+import { PaginationControls } from "@/components/Dashboard/PaginationControls";
+import { useConfirm, useNotify } from "@/components/Feedback/FeedbackProvider";
 import { useMyMovies } from "@/hooks/useDashboard";
 import { useSelf } from "@/hooks/useUser";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
+import { time2str } from "@/libraries/time";
 import { visibility2str } from "@/utils/visibility2str";
 
 export const Route = createFileRoute("/_app/dashboard/videos/")({
@@ -12,32 +23,88 @@ export const Route = createFileRoute("/_app/dashboard/videos/")({
 
 function VideosPage() {
   const { data: user, isLoading: isUserLoading } = useSelf();
-  const { data: moviesData, mutate } = useMyMovies();
+  const { data: authSession } = authClient.useSession();
+  const sessionUserId = authSession?.user.id;
+  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
+  const selectedProfileId = useAtomValue(selectedProfileIdAtom);
+  const [pagination, setPagination] = useState({
+    accountId: selectedAccountId,
+    profileId: selectedProfileId,
+    sessionUserId,
+    page: 1,
+  });
+  useEffect(() => {
+    setPagination({
+      accountId: selectedAccountId,
+      profileId: selectedProfileId,
+      sessionUserId,
+      page: 1,
+    });
+  }, [selectedAccountId, selectedProfileId, sessionUserId]);
+  const page =
+    pagination.accountId === selectedAccountId &&
+    pagination.profileId === selectedProfileId &&
+    pagination.sessionUserId === sessionUserId
+      ? pagination.page
+      : 1;
+  const setPage = useCallback(
+    (nextPage: SetStateAction<number>) => {
+      setPagination((current) => {
+        const currentPage =
+          current.accountId === selectedAccountId &&
+          current.profileId === selectedProfileId &&
+          current.sessionUserId === sessionUserId
+            ? current.page
+            : 1;
+        return {
+          accountId: selectedAccountId,
+          profileId: selectedProfileId,
+          sessionUserId,
+          page:
+            typeof nextPage === "function" ? nextPage(currentPage) : nextPage,
+        };
+      });
+    },
+    [selectedAccountId, selectedProfileId, sessionUserId],
+  );
+  const { data: moviesData, error, mutate } = useMyMovies(page);
+  const confirm = useConfirm();
+  const notify = useNotify();
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
   const handleDelete = async (id: string) => {
-    if (!confirm("この動画を削除しますか？")) return;
+    const profileId = selectedProfileId;
+    if (
+      !(await confirm({
+        title: "動画を削除しますか？",
+        description: "削除した動画は元に戻せません。",
+        confirmLabel: "削除",
+        destructive: true,
+      }))
+    )
+      return;
 
     setDeletingId(id);
     try {
-      const res = await client.api.v4.movies[":movie"].$delete({
-        param: { movie: id },
-      });
+      const res = await client.api.v4.movies[":movie"].$delete(
+        { param: { movie: id } },
+        { headers: { "X-Profile-Id": profileId ?? "" } },
+      );
 
       if (!res.ok) {
         throw new Error("Failed to delete");
       }
 
-      mutate();
+      if (movies.length === 1 && page > 1) setPage((current) => current - 1);
+      else mutate();
     } catch (_err) {
-      alert("削除に失敗しました");
+      notify("削除に失敗しました");
     } finally {
       setDeletingId(null);
     }
   };
 
   if (isUserLoading) {
-    return <div>Loading...</div>;
+    return <DashboardLoading />;
   }
 
   if (!user) {
@@ -56,7 +123,27 @@ function VideosPage() {
           </Link>
         </div>
 
-        {movies.length === 0 ? (
+        {error ? (
+          <div className="empty-state" role="alert">
+            <p>動画を読み込めませんでした</p>
+            <button
+              className="action-btn"
+              onClick={() => void mutate()}
+              type="button"
+            >
+              再試行
+            </button>
+            {page > 1 && (
+              <button
+                className="action-btn"
+                onClick={() => setPage(page - 1)}
+                type="button"
+              >
+                前のページへ戻る
+              </button>
+            )}
+          </div>
+        ) : movies.length === 0 ? (
           <div className="empty-state">
             <p>動画がありません</p>
             <Link to="/dashboard/videos/new">最初の動画をアップロード</Link>
@@ -75,7 +162,9 @@ function VideosPage() {
                       style={{ objectFit: "cover" }}
                     />
                   ) : (
-                    <div className="thumbnail-placeholder">🎬</div>
+                    <div className="thumbnail-placeholder">
+                      <Film aria-hidden="true" />
+                    </div>
                   )}
                 </div>
                 <div className="video-info">
@@ -103,8 +192,7 @@ function VideosPage() {
                     )}
                     {movie.variants?.[0]?.status === "READY" && (
                       <span className="video-duration">
-                        {Math.floor(movie.duration / 60)}:
-                        {(movie.duration % 60).toString().padStart(2, "0")}
+                        {time2str(movie.duration)}
                       </span>
                     )}
                   </div>
@@ -130,154 +218,15 @@ function VideosPage() {
             ))}
           </div>
         )}
+        {!error && moviesData?.pagination && (
+          <PaginationControls
+            onPageChange={setPage}
+            page={page}
+            totalCount={moviesData.pagination.totalCount}
+            totalPages={moviesData.pagination.totalPages}
+          />
+        )}
       </div>
-      <style>{`
-        .videos-page h1 {
-          color: var(--text-primary, #fff);
-        }
-        .page-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 2rem;
-        }
-        .new-button {
-          padding: 0.75rem 1.25rem;
-          background: var(--primary-color, #3b82f6);
-          color: white;
-          text-decoration: none;
-          border-radius: 8px;
-          font-weight: 500;
-        }
-        .new-button:hover {
-          background: #2563eb;
-        }
-        .empty-state {
-          text-align: center;
-          padding: 4rem;
-          color: var(--text-secondary, #999);
-        }
-        .empty-state a {
-          color: var(--primary-color, #3b82f6);
-        }
-        .videos-list {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        .video-item {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-          padding: 1rem;
-          background: var(--background-primary, #0d0d0d);
-          border: 1px solid var(--border-color, #333);
-          border-radius: 12px;
-        }
-        .video-thumbnail {
-          width: 160px;
-          height: 90px;
-          border-radius: 8px;
-          overflow: hidden;
-          background: var(--background-tertiary, #252525);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-        }
-        .video-thumbnail img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
-        .thumbnail-placeholder {
-          font-size: 2rem;
-        }
-        .video-info {
-          flex: 1;
-        }
-        .video-title {
-          color: var(--text-primary, #fff);
-          margin: 0 0 0.5rem;
-        }
-        .video-meta {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-        }
-        .visibility-badge {
-          padding: 0.25rem 0.5rem;
-          border-radius: 4px;
-          font-size: 0.75rem;
-        }
-        .visibility-badge.public {
-          background: rgba(34, 197, 94, 0.2);
-          color: #22c55e;
-        }
-        .visibility-badge.unlisted {
-          background: rgba(234, 179, 8, 0.2);
-          color: #eab308;
-        }
-        .visibility-badge.private {
-          background: rgba(239, 68, 68, 0.2);
-          color: #ef4444;
-        }
-        .visibility-badge.limited {
-          background: rgba(168, 85, 247, 0.2);
-          color: #a855f7;
-        }
-        .status-badge {
-          padding: 0.25rem 0.5rem;
-          border-radius: 4px;
-          font-size: 0.75rem;
-          font-weight: 500;
-        }
-        .status-badge.encoding {
-          background: rgba(59, 130, 246, 0.2);
-          color: #3b82f6;
-          animation: pulse 2s infinite;
-        }
-        .status-badge.failed {
-          background: rgba(239, 68, 68, 0.2);
-          color: #ef4444;
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        .video-duration {
-          color: var(--text-secondary, #999);
-          font-size: 0.875rem;
-        }
-        .video-actions {
-          display: flex;
-          gap: 0.5rem;
-        }
-        .action-btn {
-          padding: 0.5rem 1rem;
-          border-radius: 6px;
-          font-size: 0.875rem;
-          text-decoration: none;
-          cursor: pointer;
-          border: 1px solid var(--border-color, #333);
-          background: transparent;
-          color: var(--text-primary, #fff);
-        }
-        .action-btn:hover {
-          background: var(--background-tertiary, #252525);
-        }
-        .action-btn.delete {
-          color: #ef4444;
-          border-color: #ef4444;
-        }
-        .action-btn.delete:hover {
-          background: rgba(239, 68, 68, 0.1);
-        }
-        .action-btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      `}</style>
     </>
   );
 }

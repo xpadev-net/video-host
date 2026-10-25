@@ -1,0 +1,150 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: video-host
+  labels:
+    app.kubernetes.io/name: video-host
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - your-frontend-domain.com
+      secretName: video-host-tls
+  rules:
+    - host: your-frontend-domain.com
+      http:
+        paths:
+          - path: /vod
+            pathType: Prefix
+            backend:
+              service:
+                name: vod
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: frontend
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ffmpeg-worker
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vod
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vod-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vod
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ffmpeg-worker-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ffmpeg-worker
+  policyTypes: [Ingress]
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ffmpeg-worker-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ffmpeg-worker
+  policyTypes: [Egress]
+  egress:
+    # Cluster-local backend, Redis/Sentinel, and S3-compatible services.
+    - to:
+        - podSelector: {}
+      ports:
+        - { protocol: TCP, port: 3000 }
+        - { protocol: TCP, port: 6379 }
+        - { protocol: TCP, port: 26379 }
+        - { protocol: TCP, port: 8333 }
+    # DNS resolution through CoreDNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # Optional OTLP HTTP metrics collector used by the worker config sample.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: otel-collector
+      ports:
+        - { protocol: TCP, port: 4318 }
+    # Production S3 uses AWS HTTPS endpoints; metadata and other plain HTTP
+    # destinations remain blocked by this policy.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - { protocol: TCP, port: 443 }
+    - to:
+        - ipBlock:
+            cidr: ::/0
+      ports:
+        - { protocol: TCP, port: 443 }

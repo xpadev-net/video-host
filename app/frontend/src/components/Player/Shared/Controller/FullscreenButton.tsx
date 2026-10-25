@@ -1,6 +1,6 @@
 import { useAtom, useAtomValue } from "jotai";
 import { Maximize, Minimize } from "lucide-react";
-import { type KeyboardEvent, type MouseEvent, useEffect } from "react";
+import { type MouseEvent, useEffect } from "react";
 import {
   PlayerConfigAtom,
   PlayerStateAtom,
@@ -59,25 +59,11 @@ const FullscreenButton = ({ className }: props) => {
     }));
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      e.stopPropagation();
-      setMetadata((pv) => ({
-        ...pv,
-        isSetting: false,
-        isFullscreen: !pv.isFullscreen,
-      }));
-    }
-  };
-
   return (
     <button
       className={className}
       onClick={toggleFullscreen}
-      onKeyDown={handleKeyDown}
       type="button"
-      tabIndex={0}
       aria-label={
         metadata.isFullscreen ? "フルスクリーンを終了" : "フルスクリーンにする"
       }

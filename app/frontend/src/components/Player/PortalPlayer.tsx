@@ -1,56 +1,64 @@
 import { useRouterState } from "@tanstack/react-router";
 import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue } from "jotai";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CurrentMovieAtom, DurablePlayerAtom } from "@/atoms/Player";
-import { useIsMobile } from "@/libraries/isMobile";
+import { isPipRoute } from "@/components/Player/utils/isPipRoute";
 import { DesktopPlayer } from "./DesktopPlayer";
 import { MobilePlayer } from "./MobilePlayer";
 
-export const PortalPlayer = ({
-  fallback,
-}: {
-  fallback: HTMLElement | null;
-}) => {
+// The player (and its HLS instance) must survive navigations: while a route is
+// loading there is briefly no portal target, and a plain `createPortal` into a
+// changing container would remount it. So the player always renders into one
+// stable `host` element, and only that element is re-parented between the
+// current target and a hidden holder. The holder is rendered by React, so the
+// player is never left without a home (and never destroyed) between targets.
+export const PortalPlayer = () => {
   const portalTarget = useAtomValue(DurablePlayerAtom);
   const currentMovie = useAtomValue(CurrentMovieAtom);
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
   const id = useId();
-  const ref = useRef<HTMLDivElement>(null);
-  const target = portalTarget || fallback;
+  const holderRef = useRef<HTMLDivElement>(null);
+  const [host] = useState<HTMLDivElement | null>(() =>
+    typeof document === "undefined" ? null : document.createElement("div"),
+  );
+  const destination = portalTarget?.target ?? null;
 
   // PiPモードの判定: パスが/movies/[movie]でない場合
-  const isPipMode = !/^\/movies\/[^/]+\/?$/.test(pathname);
+  const isPipMode = isPipRoute(pathname);
 
   useEffect(() => {
-    const player = document.getElementById(id);
-    if (!player) return;
-
-    if (portalTarget) {
-      player.parentElement?.removeChild(player);
-      portalTarget.target?.appendChild(player);
+    const parent = destination ?? holderRef.current;
+    if (host && parent && host.parentElement !== parent) {
+      parent.appendChild(host);
     }
+  }, [host, destination]);
 
-    return () => {
-      ref.current?.appendChild(player);
-    };
-  }, [portalTarget, id]);
-
-  if (!target || !currentMovie) {
-    return null;
-  }
+  useEffect(
+    () => () => {
+      host?.remove();
+    },
+    [host],
+  );
 
   return (
-    <div ref={ref} className={"hidden"}>
-      <Player
-        data={currentMovie}
-        id={id}
-        isPipMode={isPipMode}
-        className={portalTarget?.className}
-      />
-    </div>
+    <>
+      <div ref={holderRef} className="hidden" />
+      {host &&
+        currentMovie &&
+        createPortal(
+          <Player
+            data={currentMovie}
+            id={id}
+            isPipMode={isPipMode}
+            className={portalTarget?.className}
+          />,
+          host,
+        )}
+    </>
   );
 };
 
@@ -62,11 +70,15 @@ type props = {
 };
 
 const Player = ({ data, className, id, isPipMode = false }: props) => {
-  const isMobile = useIsMobile();
+  const [playerMode, setPlayerMode] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setPlayerMode(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
 
   return (
     <div id={id}>
-      {isMobile && (
+      {playerMode === true && (
         <MobilePlayer
           className={className}
           data={data}
@@ -74,7 +86,7 @@ const Player = ({ data, className, id, isPipMode = false }: props) => {
           isPipMode={isPipMode}
         />
       )}
-      {!isMobile && (
+      {playerMode === false && (
         <DesktopPlayer
           className={className}
           data={data}

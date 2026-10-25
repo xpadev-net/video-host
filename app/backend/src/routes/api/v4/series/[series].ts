@@ -14,18 +14,40 @@ import {
   buildMovieAccessWhere,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
-import { badRequest, notFound, unauthorized } from "@/utils/response";
+import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
+import { canManageOwned } from "@/utils/movieAuth";
+import {
+  MAX_RELATION_MOVIES,
+  PageNumberSchema,
+  pageSizeSchema,
+  paginationQuerySchema,
+} from "@/utils/pagination";
+import {
+  badRequest,
+  forbidden,
+  notFound,
+  unauthorized,
+} from "@/utils/response";
 import { ok } from "@/utils/response/ok";
-import { isSystemAccount } from "@/utils/systemAccountCache";
 
 const app = new Hono<Env>();
 
 const DEFAULT_MOVIES_LIMIT = 20;
-const MAX_MOVIES_LIMIT = 100;
+const MAX_MOVIES_LIMIT = MAX_RELATION_MOVIES;
+
+const SeriesDetailQuerySchema = z.object({
+  moviesPage: PageNumberSchema,
+  moviesLimit: pageSizeSchema(DEFAULT_MOVIES_LIMIT, MAX_MOVIES_LIMIT),
+  includeMoviesCount: z.string().optional(),
+});
+const SeriesMoviesQuerySchema = paginationQuerySchema(
+  DEFAULT_MOVIES_LIMIT,
+  MAX_MOVIES_LIMIT,
+);
 
 const SeriesPatchSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
+  title: TitleSchema.optional(),
+  description: DescriptionSchema.nullable().optional(),
   visibility: ZBasicVisibility.optional(),
 });
 
@@ -38,23 +60,15 @@ const ReorderMoviesSchema = z.object({
 });
 
 export const seriesDetailRoute = app
-  .get("/:series", async (c) => {
+  .get("/:series", zValidator("query", SeriesDetailQuerySchema), async (c) => {
     const seriesId = c.req.param("series");
     if (!seriesId) {
       notFound("Series not found");
     }
 
     // Check if client requests paginated movies
-    const moviesPage = parseInt(c.req.queries("moviesPage")?.[0] || "1", 10);
-    const moviesLimit = Math.min(
-      parseInt(
-        c.req.queries("moviesLimit")?.[0] || DEFAULT_MOVIES_LIMIT.toString(),
-        10,
-      ),
-      MAX_MOVIES_LIMIT,
-    );
-    const includeMoviesCount =
-      (c.req.queries("includeMoviesCount")?.length ?? 0) > 0;
+    const { moviesPage, moviesLimit, includeMoviesCount } =
+      c.req.valid("query");
 
     const user = c.get("user");
     const movieAccessWhere = buildMovieAccessWhere(user);
@@ -97,7 +111,7 @@ export const seriesDetailRoute = app
     // depend on the current page being non-empty: an out-of-range offset
     // returns zero rows while totalPages/hasNext/hasPrev still describe the
     // filtered result set.
-    if (includeMoviesCount) {
+    if (includeMoviesCount !== undefined) {
       const totalMoviesCount = await prisma.movie.count({
         where: { seriesId: seriesId, ...movieAccessWhere },
       });
@@ -118,7 +132,7 @@ export const seriesDetailRoute = app
       return ok(c, filteredSeries);
     }
 
-    return ok(c, filterSeries(series));
+    return ok(c, formatSeries(filterSeries(series)));
   })
   .patch("/:series", zValidator("json", SeriesPatchSchema), async (c) => {
     const user = c.get("user");
@@ -138,12 +152,8 @@ export const seriesDetailRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    const isOwner = existingSeries.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(existingSeries.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this series");
+    if (!(await canManageOwned(user, existingSeries.authorId))) {
+      forbidden("Not authorized to edit this series");
     }
 
     const { title, description, visibility } = c.req.valid("json");
@@ -153,7 +163,8 @@ export const seriesDetailRoute = app
       },
       data: {
         title: title ?? existingSeries.title,
-        description: description ?? existingSeries.description,
+        description:
+          description === undefined ? existingSeries.description : description,
         visibility: visibility ?? existingSeries.visibility,
       },
       include: {
@@ -163,6 +174,7 @@ export const seriesDetailRoute = app
           orderBy: {
             createdAt: "asc",
           },
+          take: MAX_RELATION_MOVIES,
           include: {
             author: true,
             variants: true,
@@ -170,7 +182,7 @@ export const seriesDetailRoute = app
         },
       },
     });
-    return ok(c, filterSeries(series));
+    return ok(c, formatSeries(filterSeries(series)));
   })
   .delete("/:series", async (c) => {
     const user = c.get("user");
@@ -190,12 +202,8 @@ export const seriesDetailRoute = app
     }
 
     // Check ownership: owner or admin (for system accounts)
-    const isOwner = series.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(series.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to delete this series");
+    if (!(await canManageOwned(user, series.authorId))) {
+      forbidden("Not authorized to delete this series");
     }
 
     // Unlink movies from series (don't delete them)
@@ -211,83 +219,80 @@ export const seriesDetailRoute = app
 
     return ok(c, { success: true });
   })
-  .get("/:series/movies", async (c) => {
-    const seriesId = c.req.param("series");
-    if (!seriesId) {
-      notFound("Series not found");
-    }
+  .get(
+    "/:series/movies",
+    zValidator("query", SeriesMoviesQuerySchema),
+    async (c) => {
+      const seriesId = c.req.param("series");
+      if (!seriesId) {
+        notFound("Series not found");
+      }
 
-    const page = parseInt(c.req.queries("page")?.[0] || "1", 10);
-    const limit = Math.min(
-      parseInt(
-        c.req.queries("limit")?.[0] || DEFAULT_MOVIES_LIMIT.toString(),
-        10,
-      ),
-      MAX_MOVIES_LIMIT,
-    );
+      const { page, limit } = c.req.valid("query");
 
-    // First check if series exists and user has access
-    const user = c.get("user");
-    const series = await prisma.series.findFirst({
-      where: { id: seriesId },
-    });
+      // First check if series exists and user has access
+      const user = c.get("user");
+      const series = await prisma.series.findFirst({
+        where: { id: seriesId },
+      });
 
-    if (!series) {
-      notFound("Series not found");
-    }
+      if (!series) {
+        notFound("Series not found");
+      }
 
-    if (!canViewOwnedEntity(series, user)) {
-      notFound("Series not found");
-    }
+      if (!canViewOwnedEntity(series, user)) {
+        notFound("Series not found");
+      }
 
-    const moviesWhere = { seriesId, ...buildMovieAccessWhere(user) };
+      const moviesWhere = { seriesId, ...buildMovieAccessWhere(user) };
 
-    // Get total count and movies
-    const totalCount = await prisma.movie.count({
-      where: moviesWhere,
-    });
+      // Get total count and movies
+      const totalCount = await prisma.movie.count({
+        where: moviesWhere,
+      });
 
-    const movies = await prisma.movie.findMany({
-      where: moviesWhere,
-      include: {
-        author: true,
-        series: {
-          include: {
-            author: true,
+      const movies = await prisma.movie.findMany({
+        where: moviesWhere,
+        include: {
+          author: true,
+          series: {
+            include: {
+              author: true,
+            },
           },
+          variants: true,
         },
-        variants: true,
-      },
-      orderBy: [
-        {
-          order: "asc",
+        orderBy: [
+          {
+            order: "asc",
+          },
+          {
+            createdAt: "asc",
+          },
+        ],
+        take: limit,
+        skip: (page - 1) * limit,
+      });
+
+      const totalPages = Math.ceil(totalCount / limit);
+      const hasNext = page < totalPages;
+      const hasPrev = page > 1;
+
+      const response: PaginatedResponse<FormattedMovie> = {
+        items: movies.map((v) => formatMovie(filterMovie(v))),
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages,
+          hasNext,
+          hasPrev,
         },
-        {
-          createdAt: "asc",
-        },
-      ],
-      take: limit,
-      skip: (page - 1) * limit,
-    });
+      };
 
-    const totalPages = Math.ceil(totalCount / limit);
-    const hasNext = page < totalPages;
-    const hasPrev = page > 1;
-
-    const response: PaginatedResponse<FormattedMovie> = {
-      items: movies.map((v) => formatMovie(filterMovie(v))),
-      pagination: {
-        page,
-        limit,
-        totalCount,
-        totalPages,
-        hasNext,
-        hasPrev,
-      },
-    };
-
-    return ok(c, response);
-  })
+      return ok(c, response);
+    },
+  )
   .post("/:series/movies", zValidator("json", AddMovieSchema), async (c) => {
     const user = c.get("user");
     if (!user) {
@@ -306,12 +311,8 @@ export const seriesDetailRoute = app
       notFound("Series not found");
     }
 
-    const isOwner = series.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(series.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this series");
+    if (!(await canManageOwned(user, series.authorId))) {
+      forbidden("Not authorized to edit this series");
     }
 
     const { movieId } = c.req.valid("json");
@@ -321,6 +322,12 @@ export const seriesDetailRoute = app
       where: { id: movieId },
     });
     if (!movie) {
+      notFound("Movie not found");
+    }
+
+    // Only movies the caller may manage can be pulled into a series; a
+    // movie they merely know the id of is reported as missing.
+    if (!(await canManageOwned(user, movie.authorId))) {
       notFound("Movie not found");
     }
 
@@ -352,6 +359,7 @@ export const seriesDetailRoute = app
         movies: {
           where: buildMovieAccessWhere(user),
           orderBy: { order: "asc" },
+          take: MAX_RELATION_MOVIES,
           include: { author: true, variants: true },
         },
       },
@@ -361,7 +369,7 @@ export const seriesDetailRoute = app
       notFound("Series not found");
     }
 
-    return ok(c, filterSeries(updatedSeries));
+    return ok(c, formatSeries(filterSeries(updatedSeries)));
   })
   .delete("/:series/movies/:movie", async (c) => {
     const user = c.get("user");
@@ -382,19 +390,19 @@ export const seriesDetailRoute = app
       notFound("Series not found");
     }
 
-    const isOwner = series.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(series.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this series");
+    if (!(await canManageOwned(user, series.authorId))) {
+      forbidden("Not authorized to edit this series");
     }
 
     // Remove movie from series (don't delete the movie)
-    await prisma.movie.update({
-      where: { id: movieId },
+    // Scoped to this series so other series' movies cannot be detached.
+    const detached = await prisma.movie.updateMany({
+      where: { id: movieId, seriesId },
       data: { seriesId: null, order: 0 },
     });
+    if (detached.count === 0) {
+      notFound("Movie not found in this series");
+    }
 
     return ok(c, { success: true });
   })
@@ -419,18 +427,25 @@ export const seriesDetailRoute = app
         notFound("Series not found");
       }
 
-      const isOwner = series.authorId === user.id;
-      const isAdminForSystemAccount =
-        user.role === "ADMIN" && (await isSystemAccount(series.authorId));
-
-      if (!isOwner && !isAdminForSystemAccount) {
-        unauthorized("Not authorized to edit this series");
+      if (!(await canManageOwned(user, series.authorId))) {
+        forbidden("Not authorized to edit this series");
       }
 
       const { movieIds } = c.req.valid("json");
 
-      // Update order for each movie
-      await Promise.all(
+      const uniqueMovieIds = new Set(movieIds);
+      if (uniqueMovieIds.size !== movieIds.length) {
+        badRequest("movieIds contains duplicates");
+      }
+      const inSeries = await prisma.movie.count({
+        where: { id: { in: movieIds }, seriesId },
+      });
+      if (inSeries !== movieIds.length) {
+        badRequest("movieIds must all belong to this series");
+      }
+
+      // Update order for each movie atomically
+      await prisma.$transaction(
         movieIds.map((movieId, index) =>
           prisma.movie.update({
             where: { id: movieId },
@@ -447,6 +462,7 @@ export const seriesDetailRoute = app
           movies: {
             where: buildMovieAccessWhere(user),
             orderBy: { order: "asc" },
+            take: MAX_RELATION_MOVIES,
             include: { author: true, variants: true },
           },
         },
@@ -456,7 +472,7 @@ export const seriesDetailRoute = app
         notFound("Series not found");
       }
 
-      return ok(c, filterSeries(updatedSeries));
+      return ok(c, formatSeries(filterSeries(updatedSeries)));
     },
   );
 

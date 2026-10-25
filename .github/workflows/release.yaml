@@ -4,378 +4,561 @@ on:
   workflow_dispatch:
     inputs:
       version_type:
-        description: 'Version bump type'
+        description: Version bump type
         required: true
-        default: 'patch'
+        default: patch
         type: choice
-        options:
-          - patch
-          - minor
-          - major
+        options: [patch, minor, major]
       release_backend:
-        description: 'Release Backend'
+        description: Prepare a backend release PR
         required: true
-        default: true
+        default: false
         type: boolean
       release_frontend:
-        description: 'Release Frontend'
+        description: Prepare a frontend release PR
         required: true
-        default: true
+        default: false
         type: boolean
       release_ffmpeg_worker:
-        description: 'Release FFmpeg Worker'
+        description: Prepare an FFmpeg worker release PR
         required: true
-        default: true
+        default: false
         type: boolean
+      recover_existing_release:
+        description: Republish selected versions already reserved on the current commit
+        required: true
+        default: false
+        type: boolean
+  pull_request:
+    branches: [master]
+    types: [closed]
   push:
-    branches-ignore:
-      - "**"
+    branches-ignore: ["**"]
     tags:
-      - "backend-v*"
-      - "frontend-v*"
-      - "ffmpeg-worker-v*"
+      - backend-v*
+      - frontend-v*
+      - ffmpeg-worker-v*
+
+concurrency:
+  group: release-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
   REGISTRY: ghcr.io
-  NODE_VERSION: '22'
 
 jobs:
-  # Unified version bump job
   bump-versions:
-    if: github.event_name == 'workflow_dispatch' && (inputs.release_backend || inputs.release_frontend || inputs.release_ffmpeg_worker)
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      !inputs.recover_existing_release &&
+      (inputs.release_backend || inputs.release_frontend || inputs.release_ffmpeg_worker)
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    outputs:
-      backend_version: ${{ steps.bump-backend.outputs.new_version }}
-      frontend_version: ${{ steps.bump-frontend.outputs.new_version }}
-      ffmpeg_worker_version: ${{ steps.bump-ffmpeg-worker.outputs.new_version }}
+      pull-requests: write
+      actions: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - name: Checkout master
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: master
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .nvmrc
+          package-manager-cache: false
 
-      - name: Configure Git
+      - name: Create version bump branch and pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_TYPE: ${{ inputs.version_type }}
+          RELEASE_BACKEND: ${{ inputs.release_backend }}
+          RELEASE_FRONTEND: ${{ inputs.release_frontend }}
+          RELEASE_WORKER: ${{ inputs.release_ffmpeg_worker }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          set -euo pipefail
+          BRANCH="release/versions-${GITHUB_RUN_ID}"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$BRANCH:refs/remotes/origin/$BRANCH"
+            git switch --track -c "$BRANCH" "origin/$BRANCH"
+          else
+            node <<'NODE'
+          const fs = require('node:fs');
+          const packages = [
+            ['RELEASE_BACKEND', 'app/backend/package.json'],
+            ['RELEASE_FRONTEND', 'app/frontend/package.json'],
+            ['RELEASE_WORKER', 'app/ffmpeg-worker/package.json'],
+          ];
+          const bump = process.env.VERSION_TYPE;
+          for (const [flag, file] of packages) {
+            if (process.env[flag] !== 'true') continue;
+            const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(pkg.version);
+            if (!match) throw new Error(`Unsupported package version in ${file}: ${pkg.version}`);
+            let [, major, minor, patch] = match.map(Number);
+            if (bump === 'major') { major += 1; minor = 0; patch = 0; }
+            else if (bump === 'minor') { minor += 1; patch = 0; }
+            else if (bump === 'patch') patch += 1;
+            else throw new Error(`Unsupported version bump: ${bump}`);
+            pkg.version = `${major}.${minor}.${patch}`;
+            fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
+          }
+          NODE
 
-      # Backend version bump
-      - name: Bump backend version
-        if: inputs.release_backend
-        id: bump-backend
-        working-directory: app/backend
-        run: |
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          echo "Current version: $CURRENT_VERSION"
-          
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-          
-          case "${{ inputs.version_type }}" in
-            major)
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            minor)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            patch)
-              PATCH=$((PATCH + 1))
-              ;;
-          esac
-          
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          echo "New version: $NEW_VERSION"
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-            pkg.version = '$NEW_VERSION';
-            fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-
-      # Frontend version bump
-      - name: Bump frontend version
-        if: inputs.release_frontend
-        id: bump-frontend
-        working-directory: app/frontend
-        run: |
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          echo "Current version: $CURRENT_VERSION"
-          
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-          
-          case "${{ inputs.version_type }}" in
-            major)
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            minor)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            patch)
-              PATCH=$((PATCH + 1))
-              ;;
-          esac
-          
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          echo "New version: $NEW_VERSION"
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-            pkg.version = '$NEW_VERSION';
-            fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-
-      # FFmpeg Worker version bump
-      - name: Bump ffmpeg-worker version
-        if: inputs.release_ffmpeg_worker
-        id: bump-ffmpeg-worker
-        working-directory: app/ffmpeg-worker
-        run: |
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          echo "Current version: $CURRENT_VERSION"
-          
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-          
-          case "${{ inputs.version_type }}" in
-            major)
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            minor)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            patch)
-              PATCH=$((PATCH + 1))
-              ;;
-          esac
-          
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          echo "New version: $NEW_VERSION"
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-            pkg.version = '$NEW_VERSION';
-            fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-
-      # Commit all version changes at once
-      - name: Commit and push version changes
-        run: |
-          COMMIT_MSG="chore: bump versions"
-          FILES_TO_ADD=""
-          
-          if [ "${{ inputs.release_backend }}" == "true" ]; then
-            FILES_TO_ADD="$FILES_TO_ADD app/backend/package.json"
-            COMMIT_MSG="$COMMIT_MSG, backend v${{ steps.bump-backend.outputs.new_version }}"
+            git switch -c "$BRANCH"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add app/backend/package.json app/frontend/package.json app/ffmpeg-worker/package.json
+            git commit -m "chore(release): bump selected package versions"
+            git push origin "$BRANCH"
           fi
-          
-          if [ "${{ inputs.release_frontend }}" == "true" ]; then
-            FILES_TO_ADD="$FILES_TO_ADD app/frontend/package.json"
-            COMMIT_MSG="$COMMIT_MSG, frontend v${{ steps.bump-frontend.outputs.new_version }}"
+
+          cat > /tmp/release-pr.md <<'EOF'
+          <!-- video-host-release -->
+          This version bump was prepared by the Release workflow. Review CI before merging. Merging this PR builds the selected images with immutable version and commit tags, publishes build provenance and SBOMs, and creates GitHub Releases.
+          EOF
+          EXISTING_PR="$(gh pr list --head "$BRANCH" --base master --state all --json number,state,mergedAt --jq '.[0] // empty')"
+          if [ -z "$EXISTING_PR" ]; then
+            gh pr create \
+              --base master \
+              --head "$BRANCH" \
+              --title "chore(release): bump selected package versions" \
+              --body-file /tmp/release-pr.md
+          elif [ "$(printf '%s' "$EXISTING_PR" | jq -r '.state')" = CLOSED ] && [ "$(printf '%s' "$EXISTING_PR" | jq -r '.mergedAt')" = null ]; then
+            gh pr reopen "$(printf '%s' "$EXISTING_PR" | jq -r '.number')"
           fi
-          
-          if [ "${{ inputs.release_ffmpeg_worker }}" == "true" ]; then
-            FILES_TO_ADD="$FILES_TO_ADD app/ffmpeg-worker/package.json"
-            COMMIT_MSG="$COMMIT_MSG, ffmpeg-worker v${{ steps.bump-ffmpeg-worker.outputs.new_version }}"
+
+          # GITHUB_TOKEN-created branches do not trigger pull_request workflows.
+          gh workflow run ci.yaml --ref "$BRANCH"
+
+  prepare-release:
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.body, '<!-- video-host-release -->') &&
+      github.event.pull_request.user.login == 'github-actions[bot]' &&
+      startsWith(github.event.pull_request.head.ref, 'release/versions-') &&
+      github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'workflow_dispatch' && inputs.recover_existing_release) ||
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    outputs:
+      backend: ${{ steps.release.outputs.backend }}
+      backend_version: ${{ steps.release.outputs.backend_version }}
+      frontend: ${{ steps.release.outputs.frontend }}
+      frontend_version: ${{ steps.release.outputs.frontend_version }}
+      worker: ${{ steps.release.outputs.worker }}
+      worker_version: ${{ steps.release.outputs.worker_version }}
+      commit_sha: ${{ steps.release.outputs.commit_sha }}
+      short_sha: ${{ steps.release.outputs.short_sha }}
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.merge_commit_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Dispatch CI for recovery tag
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: gh workflow run ci.yaml --ref "$TAG_NAME"
+
+      - name: Wait for passing CI on the release PR and merge commit
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          wait_for_ci() {
+            local sha="$1"
+            local run_id=""
+            for ((attempt = 0; attempt < 60; attempt++)); do
+              run_id="$(gh run list --workflow ci.yaml --commit "$sha" --json databaseId,status,conclusion --jq '[.[] | select(.status != "completed" or .conclusion == "success")][0].databaseId // empty')"
+              [ -n "$run_id" ] && break
+              sleep 5
+            done
+            if [ -z "$run_id" ]; then
+              echo "No successful or active CI run found for commit $sha" >&2
+              return 1
+            fi
+            gh run watch "$run_id" --exit-status
+          }
+          wait_for_ci "$PR_HEAD_SHA"
+          wait_for_ci "$MERGE_SHA"
+
+      - name: Wait for passing CI on the recovery tag commit
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for ((attempt = 0; attempt < 60; attempt++)); do
+            run_id="$(gh run list --workflow ci.yaml --commit "$RELEASE_SHA" --json databaseId,status,conclusion --jq '[.[] | select(.status != "completed" or .conclusion == "success")][0].databaseId // empty')"
+            [ -n "$run_id" ] && break
+            sleep 5
+          done
+          if [ -z "${run_id:-}" ]; then
+            echo "No successful or active CI run found for recovery commit $RELEASE_SHA" >&2
+            exit 1
           fi
-          
-          # Clean up commit message (remove first comma)
-          COMMIT_MSG=$(echo "$COMMIT_MSG" | sed 's/versions, /versions: /')
-          
-          git add $FILES_TO_ADD
-          git commit -m "$COMMIT_MSG"
-          git push
+          gh run watch "$run_id" --exit-status
 
-      # Create and push tags
-      - name: Create and push backend tag
-        if: inputs.release_backend
+      - name: Determine selected images and release versions
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RECOVER_EXISTING_RELEASE: ${{ inputs.recover_existing_release }}
+          RELEASE_BACKEND: ${{ inputs.release_backend }}
+          RELEASE_FRONTEND: ${{ inputs.release_frontend }}
+          RELEASE_WORKER: ${{ inputs.release_ffmpeg_worker }}
+          TAG_NAME: ${{ github.ref_name }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          TAG_NAME="backend-v${{ steps.bump-backend.outputs.new_version }}"
-          git tag "$TAG_NAME"
-          git push origin "$TAG_NAME"
+          set -euo pipefail
+          COMMIT_SHA="$(git rev-parse HEAD)"
 
-      - name: Create and push frontend tag
-        if: inputs.release_frontend
+          if [ "$EVENT_NAME" = workflow_dispatch ] && [ "$RECOVER_EXISTING_RELEASE" = true ]; then
+            RELEASE_SHA=""
+            for entry in "backend:$RELEASE_BACKEND:app/backend/package.json" "frontend:$RELEASE_FRONTEND:app/frontend/package.json" "worker:$RELEASE_WORKER:app/ffmpeg-worker/package.json"; do
+              PACKAGE="${entry%%:*}"
+              REST="${entry#*:}"
+              SELECTED="${REST%%:*}"
+              FILE="${REST#*:}"
+              echo "$PACKAGE=$SELECTED" >> "$GITHUB_OUTPUT"
+              if [ "$SELECTED" = true ]; then
+                VERSION="v$(node -p "require('./$FILE').version")"
+                TAG_PACKAGE="$PACKAGE"
+                [ "$PACKAGE" != worker ] || TAG_PACKAGE=ffmpeg-worker
+                TAG="$TAG_PACKAGE-$VERSION"
+                TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG^{}" | awk 'NR == 1 { print $1 }')"
+                if [ -z "$TAG_SHA" ]; then
+                  TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG" | awk 'NR == 1 { print $1 }')"
+                fi
+                if [ -z "$TAG_SHA" ] || { [ -n "$RELEASE_SHA" ] && [ "$TAG_SHA" != "$RELEASE_SHA" ]; }; then
+                  echo "Release tag $TAG points to ${TAG_SHA:-<missing>}, expected ${RELEASE_SHA:-an existing release commit}" >&2
+                  exit 1
+                fi
+                RELEASE_SHA="$TAG_SHA"
+                echo "${PACKAGE}_version=$VERSION" >> "$GITHUB_OUTPUT"
+              fi
+            done
+            if [ -z "$RELEASE_SHA" ]; then
+              echo "Select at least one package to recover" >&2
+              exit 1
+            fi
+            echo "commit_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+            echo "short_sha=${RELEASE_SHA:0:12}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${COMMIT_SHA:0:12}" >> "$GITHUB_OUTPUT"
+
+          if [ "$EVENT_NAME" = push ]; then
+            case "$TAG_NAME" in
+              backend-v*) PACKAGE=backend; VERSION="${TAG_NAME#backend-}" ;;
+              frontend-v*) PACKAGE=frontend; VERSION="${TAG_NAME#frontend-}" ;;
+              ffmpeg-worker-v*) PACKAGE=worker; VERSION="${TAG_NAME#ffmpeg-worker-}" ;;
+              *) echo "Unsupported release tag: $TAG_NAME" >&2; exit 1 ;;
+            esac
+            echo "$PACKAGE=true" >> "$GITHUB_OUTPUT"
+            echo "${PACKAGE}_version=$VERSION" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED="$(git diff --name-only "$MERGE_SHA^1" "$MERGE_SHA")"
+          for entry in 'backend:app/backend/package.json' 'frontend:app/frontend/package.json' 'worker:app/ffmpeg-worker/package.json'; do
+            PACKAGE="${entry%%:*}"
+            FILE="${entry#*:}"
+            if printf '%s\n' "$CHANGED" | grep -Fxq "$FILE"; then
+              PREVIOUS_VERSION="$(git show "$MERGE_SHA^1:$FILE" | node -e 'let data = ""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => process.stdout.write(JSON.parse(data).version))')"
+              VERSION="$(node -p "require('./$FILE').version")"
+              if [ "$VERSION" = "$PREVIOUS_VERSION" ]; then
+                echo "$PACKAGE=false" >> "$GITHUB_OUTPUT"
+                continue
+              fi
+              VERSION="v$VERSION"
+              TAG="$PACKAGE-$VERSION"
+              EXISTING_TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG^{}" | awk 'NR == 1 { print $1 }')"
+              if [ -z "$EXISTING_TAG_SHA" ]; then
+                EXISTING_TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG" | awk 'NR == 1 { print $1 }')"
+              fi
+              if [ -n "$EXISTING_TAG_SHA" ] && [ "$EXISTING_TAG_SHA" != "$COMMIT_SHA" ]; then
+                echo "Release tag $TAG already points to $EXISTING_TAG_SHA, expected $COMMIT_SHA" >&2
+                exit 1
+              fi
+              echo "$PACKAGE=true" >> "$GITHUB_OUTPUT"
+              echo "${PACKAGE}_version=$VERSION" >> "$GITHUB_OUTPUT"
+            else
+              echo "$PACKAGE=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
+  reserve-release-tags:
+    needs: prepare-release
+    if: >-
+      needs.prepare-release.result == 'success' &&
+      (needs.prepare-release.outputs.backend == 'true' ||
+      needs.prepare-release.outputs.frontend == 'true' ||
+      needs.prepare-release.outputs.worker == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare-release.outputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Atomically reserve release version tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_SHA: ${{ needs.prepare-release.outputs.commit_sha }}
+          BACKEND: ${{ needs.prepare-release.outputs.backend }}
+          BACKEND_VERSION: ${{ needs.prepare-release.outputs.backend_version }}
+          FRONTEND: ${{ needs.prepare-release.outputs.frontend }}
+          FRONTEND_VERSION: ${{ needs.prepare-release.outputs.frontend_version }}
+          WORKER: ${{ needs.prepare-release.outputs.worker }}
+          WORKER_VERSION: ${{ needs.prepare-release.outputs.worker_version }}
         run: |
-          TAG_NAME="frontend-v${{ steps.bump-frontend.outputs.new_version }}"
-          git tag "$TAG_NAME"
-          git push origin "$TAG_NAME"
+          set -euo pipefail
+          reserve_tag() {
+            local tag="$1"
+            local existing_sha
+            existing_sha="$(git ls-remote --tags origin "refs/tags/$tag^{}" | awk 'NR == 1 { print $1 }')"
+            if [ -z "$existing_sha" ]; then
+              existing_sha="$(git ls-remote --tags origin "refs/tags/$tag" | awk 'NR == 1 { print $1 }')"
+            fi
+            if [ -n "$existing_sha" ]; then
+              if [ "$existing_sha" != "$COMMIT_SHA" ]; then
+                echo "Release tag $tag already points to $existing_sha, expected $COMMIT_SHA" >&2
+                return 1
+              fi
+              return 0
+            fi
+            git tag "$tag" "$COMMIT_SHA"
+            git push origin "refs/tags/$tag"
+          }
+          [ "$BACKEND" != true ] || reserve_tag "backend-$BACKEND_VERSION"
+          [ "$FRONTEND" != true ] || reserve_tag "frontend-$FRONTEND_VERSION"
+          [ "$WORKER" != true ] || reserve_tag "ffmpeg-worker-$WORKER_VERSION"
 
-      - name: Create and push ffmpeg-worker tag
-        if: inputs.release_ffmpeg_worker
-        run: |
-          TAG_NAME="ffmpeg-worker-v${{ steps.bump-ffmpeg-worker.outputs.new_version }}"
-          git tag "$TAG_NAME"
-          git push origin "$TAG_NAME"
-
-  # Backend Docker build
   build-backend:
-    if: |
-      always() && (
-        (github.event_name == 'workflow_dispatch' && inputs.release_backend && needs.bump-versions.result == 'success') ||
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/backend-v'))
-      )
-    needs: [bump-versions]
+    needs: [prepare-release, reserve-release-tags]
+    if: needs.prepare-release.outputs.backend == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - name: Checkout release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('backend-v{0}', needs.bump-versions.outputs.backend_version) || github.ref }}
+          ref: ${{ needs.prepare-release.outputs.commit_sha }}
+
+      - name: Read Docker Node image version
+        id: node-image
+        run: echo "version=$(cat .nvmrc)-bookworm-slim" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get tag name
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "TAG_NAME=v${{ needs.bump-versions.outputs.backend_version }}" >> $GITHUB_ENV
-          else
-            echo "TAG_NAME=${GITHUB_REF#refs/tags/backend-}" >> $GITHUB_ENV
-          fi
-
-      - name: Build and push with registry cache
-        uses: docker/build-push-action@v6
+      - name: Build and publish backend image
+        id: build-image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: ./app/backend/Dockerfile
+          file: app/backend/Dockerfile
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/backend:${{ env.TAG_NAME }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/backend:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/backend:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/backend:buildcache,mode=max
+            ${{ env.REGISTRY }}/${{ github.repository }}/backend:${{ needs.prepare-release.outputs.backend_version }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/backend:sha-${{ needs.prepare-release.outputs.short_sha }}
           build-args: |
-            COMMIT_HASH=${{ github.sha }}
+            NODE_VERSION=${{ steps.node-image.outputs.version }}
+            COMMIT_HASH=${{ needs.prepare-release.outputs.commit_sha }}
+          cache-from: type=gha,scope=release-backend
+          sbom: true
+          provenance: mode=max
 
-  # Frontend Docker build
+      - name: Sign backend image provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository }}/backend
+          subject-digest: ${{ steps.build-image.outputs.digest }}
+          push-to-registry: true
+
   build-frontend:
-    if: |
-      always() && (
-        (github.event_name == 'workflow_dispatch' && inputs.release_frontend && needs.bump-versions.result == 'success') ||
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/frontend-v'))
-      )
-    needs: [bump-versions]
+    needs: [prepare-release, reserve-release-tags]
+    if: needs.prepare-release.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - name: Checkout release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('frontend-v{0}', needs.bump-versions.outputs.frontend_version) || github.ref }}
+          ref: ${{ needs.prepare-release.outputs.commit_sha }}
+
+      - name: Read Docker Node image version
+        id: node-image
+        run: echo "version=$(cat .nvmrc)-bookworm-slim" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get tag name
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "TAG_NAME=v${{ needs.bump-versions.outputs.frontend_version }}" >> $GITHUB_ENV
-          else
-            echo "TAG_NAME=${GITHUB_REF#refs/tags/frontend-}" >> $GITHUB_ENV
-          fi
-
-      - name: Build and push with registry cache
-        uses: docker/build-push-action@v6
+      - name: Build and publish frontend image
+        id: build-image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: ./app/frontend/Dockerfile
+          file: app/frontend/Dockerfile
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:${{ env.TAG_NAME }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/frontend:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/frontend:buildcache,mode=max
+            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:${{ needs.prepare-release.outputs.frontend_version }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/frontend:sha-${{ needs.prepare-release.outputs.short_sha }}
           build-args: |
-            COMMIT_HASH=${{ github.sha }}
+            NODE_VERSION=${{ steps.node-image.outputs.version }}
+            COMMIT_HASH=${{ needs.prepare-release.outputs.commit_sha }}
+          cache-from: type=gha,scope=release-frontend
+          sbom: true
+          provenance: mode=max
 
-  # FFmpeg Worker Docker build
+      - name: Sign frontend image provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository }}/frontend
+          subject-digest: ${{ steps.build-image.outputs.digest }}
+          push-to-registry: true
+
   build-ffmpeg-worker:
-    if: |
-      always() && (
-        (github.event_name == 'workflow_dispatch' && inputs.release_ffmpeg_worker && needs.bump-versions.result == 'success') ||
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/ffmpeg-worker-v'))
-      )
-    needs: [bump-versions]
+    needs: [prepare-release, reserve-release-tags]
+    if: needs.prepare-release.outputs.worker == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - name: Checkout release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('ffmpeg-worker-v{0}', needs.bump-versions.outputs.ffmpeg_worker_version) || github.ref }}
+          ref: ${{ needs.prepare-release.outputs.commit_sha }}
+
+      - name: Read Docker Node image version
+        id: node-image
+        run: echo "version=$(cat .nvmrc)-bookworm-slim" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get tag name
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "TAG_NAME=v${{ needs.bump-versions.outputs.ffmpeg_worker_version }}" >> $GITHUB_ENV
-          else
-            echo "TAG_NAME=${GITHUB_REF#refs/tags/ffmpeg-worker-}" >> $GITHUB_ENV
-          fi
-
-      - name: Build and push with registry cache
-        uses: docker/build-push-action@v6
+      - name: Build and publish FFmpeg worker image
+        id: build-image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: ./app/ffmpeg-worker/Dockerfile
+          file: app/ffmpeg-worker/Dockerfile
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/ffmpeg-worker:${{ env.TAG_NAME }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/ffmpeg-worker:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/ffmpeg-worker:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/ffmpeg-worker:buildcache,mode=max
+            ${{ env.REGISTRY }}/${{ github.repository }}/ffmpeg-worker:${{ needs.prepare-release.outputs.worker_version }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/ffmpeg-worker:sha-${{ needs.prepare-release.outputs.short_sha }}
           build-args: |
-            COMMIT_HASH=${{ github.sha }}
+            NODE_VERSION=${{ steps.node-image.outputs.version }}
+            COMMIT_HASH=${{ needs.prepare-release.outputs.commit_sha }}
+          cache-from: type=gha,scope=release-ffmpeg-worker
+          sbom: true
+          provenance: mode=max
+
+      - name: Sign FFmpeg worker image provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository }}/ffmpeg-worker
+          subject-digest: ${{ steps.build-image.outputs.digest }}
+          push-to-registry: true
+
+  publish-github-releases:
+    needs: [prepare-release, reserve-release-tags, build-backend, build-frontend, build-ffmpeg-worker]
+    if: >-
+      always() && needs.prepare-release.result == 'success' &&
+      needs.reserve-release-tags.result == 'success' &&
+      (needs.build-backend.result == 'success' ||
+      (needs.prepare-release.outputs.backend != 'true' && needs.build-backend.result == 'skipped')) &&
+      (needs.build-frontend.result == 'success' ||
+      (needs.prepare-release.outputs.frontend != 'true' && needs.build-frontend.result == 'skipped')) &&
+      (needs.build-ffmpeg-worker.result == 'success' ||
+      (needs.prepare-release.outputs.worker != 'true' && needs.build-ffmpeg-worker.result == 'skipped')) &&
+      (needs.prepare-release.outputs.backend == 'true' || needs.prepare-release.outputs.frontend == 'true' || needs.prepare-release.outputs.worker == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub Releases with generated notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ needs.prepare-release.outputs.commit_sha }}
+          BACKEND: ${{ needs.prepare-release.outputs.backend }}
+          BACKEND_VERSION: ${{ needs.prepare-release.outputs.backend_version }}
+          FRONTEND: ${{ needs.prepare-release.outputs.frontend }}
+          FRONTEND_VERSION: ${{ needs.prepare-release.outputs.frontend_version }}
+          WORKER: ${{ needs.prepare-release.outputs.worker }}
+          WORKER_VERSION: ${{ needs.prepare-release.outputs.worker_version }}
+        run: |
+          set -euo pipefail
+          create_release() {
+            local tag="$1"
+            local prefix="$2"
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              local previous_tag
+              previous_tag="$(gh release list --limit 100 --json tagName --jq ".[] | select(.tagName | startswith(\"$prefix-v\")) | .tagName" | head -n 1)"
+              if [ -n "$previous_tag" ]; then
+                gh release create "$tag" --target "$COMMIT_SHA" --generate-notes --notes-start-tag "$previous_tag" --title "$tag"
+              else
+                gh release create "$tag" --target "$COMMIT_SHA" --generate-notes --title "$tag"
+              fi
+            fi
+          }
+          [ "$BACKEND" != true ] || create_release "backend-$BACKEND_VERSION" backend
+          [ "$FRONTEND" != true ] || create_release "frontend-$FRONTEND_VERSION" frontend
+          [ "$WORKER" != true ] || create_release "ffmpeg-worker-$WORKER_VERSION" ffmpeg-worker

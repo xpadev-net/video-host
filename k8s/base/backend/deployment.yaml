@@ -7,6 +7,11 @@ metadata:
     app.kubernetes.io/component: api
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: backend
@@ -16,9 +21,21 @@ spec:
         app.kubernetes.io/name: backend
         app.kubernetes.io/component: api
     spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: backend
-          image: ghcr.io/xpadev-net/video-host/backend:latest
+          image: ghcr.io/xpadev-net/video-host/backend:v0.0.37
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           ports:
             - containerPort: 3000
               protocol: TCP
@@ -145,6 +162,18 @@ spec:
                 configMapKeyRef:
                   name: backend-config
                   key: s3-tmp-bucket
+            - name: VOD_ALLOW_UNSIGNED
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: vod-allow-unsigned
+                  optional: true
+            - name: MAX_UPLOAD_BYTES
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: max-upload-bytes
+                  optional: true
             - name: S3_PROD_BUCKET
               valueFrom:
                 configMapKeyRef:
@@ -201,12 +230,6 @@ spec:
                   name: backend-secrets
                   key: redis-sentinel-password
                   optional: true
-            # Video Processing
-            - name: VOD_BASE_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: backend-config
-                  key: vod-base-url
             - name: CALLBACK_SECRET
               valueFrom:
                 secretKeyRef:
@@ -224,6 +247,12 @@ spec:
                   name: backend-config
                   key: otel-endpoint
                   optional: true
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: otel-metrics-endpoint
+                  optional: true
             - name: OTEL_SERVICE_NAME
               valueFrom:
                 configMapKeyRef:
@@ -238,12 +267,23 @@ spec:
               memory: "512Mi"
               cpu: "500m"
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /readyz
               port: 3000
-            initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healthz
               port: 3000
-            initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 360

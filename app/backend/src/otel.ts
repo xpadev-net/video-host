@@ -24,6 +24,7 @@ const EXPORT_INTERVAL_MS = 30_000;
 export const getMeter = () => metrics.getMeter(DEFAULT_SERVICE_NAME);
 
 let enabled = false;
+let shutdownProvider: (() => Promise<void>) | null = null;
 
 // True once a real MeterProvider is registered. Callers can skip registering
 // instrumentation entirely when export is disabled.
@@ -55,13 +56,12 @@ export const initOtelMetrics = () => {
   });
   metrics.setGlobalMeterProvider(provider);
   enabled = true;
+  shutdownProvider = () => provider.shutdown();
+};
 
-  const shutdown = (signal: "SIGINT" | "SIGTERM") => {
-    provider
-      .shutdown()
-      .catch((err) => console.error("OTel metrics shutdown failed:", err))
-      .finally(() => process.exit(signal === "SIGINT" ? 130 : 143));
-  };
-  process.once("SIGINT", () => shutdown("SIGINT"));
-  process.once("SIGTERM", () => shutdown("SIGTERM"));
+export const shutdownOtelMetrics = async (): Promise<void> => {
+  if (!shutdownProvider) return;
+  const shutdown = shutdownProvider;
+  shutdownProvider = null;
+  await shutdown();
 };

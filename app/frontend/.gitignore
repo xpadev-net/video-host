@@ -24,13 +24,8 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
-
-/.husky
 
 .idea
 .env.local

@@ -7,6 +7,11 @@ metadata:
     app.kubernetes.io/component: streaming
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: vod
@@ -16,41 +21,89 @@ spec:
         app.kubernetes.io/name: vod
         app.kubernetes.io/component: streaming
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
-        - name: generate-certs
-          image: alpine:latest
+        - name: prepare-nginx-config
+          image: nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           command:
             - /bin/sh
-            - -c
-            - |
-              apk add --no-cache openssl
-              openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-                -keyout /etc/nginx/ssl/tls.key \
-                -out /etc/nginx/ssl/tls.crt \
-                -subj "/CN=vod/O=video-host"
-          volumeMounts:
-            - name: ssl-certs
-              mountPath: /etc/nginx/ssl
-      containers:
-        - name: vod
-          image: ghcr.io/xpadev-net/nginx-vod-module-docker:latest
-          ports:
-            - containerPort: 443
-              protocol: TCP
+            - /etc/nginx/template/render-nginx-config.sh
           env:
             - name: VOD_INTERNAL_SECRET
               valueFrom:
                 secretKeyRef:
                   name: vod-secrets
                   key: vod-internal-secret
+            - name: BACKEND_MAPPING_UPSTREAM
+              value: http://backend:3000/api/v4/vod/mapping/
+            - name: BACKEND_THUMBNAIL_UPSTREAM
+              value: http://backend:3000/api/v4/vod/thumbnail/
+            - name: LISTEN_PORT
+              value: "8080"
+            - name: S3_CA_BUNDLE
+              value: /etc/nginx/ssl/ca-certificates.crt
+            - name: S3_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: s3-endpoint
+                  optional: true
+            - name: S3_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: s3-region
+            - name: S3_FORCE_PATH_STYLE
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: s3-force-path-style
+                  optional: true
+            - name: S3_PROD_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: s3-prod-bucket
           volumeMounts:
-            - name: nginx-config
+            - name: ca-certificates
+              mountPath: /etc/nginx/ssl
+            - name: nginx-config-template
+              mountPath: /etc/nginx/template
+              readOnly: true
+            - name: nginx-config-rendered
+              mountPath: /etc/nginx/rendered
+      containers:
+        - name: vod
+          image: ghcr.io/xpadev-net/nginx-vod-module-docker@sha256:f6adc8d8c94ee38726d3c2ffdcb637f3622f2404bbc4654242da4025970aa5ff
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-config-rendered
               mountPath: /etc/nginx/nginx.conf
               subPath: nginx.conf
               readOnly: true
-            - name: ssl-certs
+            - name: ca-certificates
               mountPath: /etc/nginx/ssl
               readOnly: true
+            - name: nginx-tmp
+              mountPath: /tmp
           resources:
             requests:
               memory: "256Mi"
@@ -61,21 +114,23 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 443
-              scheme: HTTPS
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health
-              port: 443
-              scheme: HTTPS
+              port: 8080
             initialDelaySeconds: 10
             periodSeconds: 20
       volumes:
-        - name: nginx-config
+        - name: nginx-config-template
           configMap:
             name: vod-nginx-config
-        - name: ssl-certs
+        - name: nginx-config-rendered
+          emptyDir: {}
+        - name: ca-certificates
+          emptyDir: {}
+        - name: nginx-tmp
           emptyDir: {}
 

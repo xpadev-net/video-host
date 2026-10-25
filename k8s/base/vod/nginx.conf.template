@@ -1,0 +1,163 @@
+user 101 101;
+worker_processes auto;
+error_log /dev/stderr warn;
+pid /tmp/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    client_body_temp_path /tmp/client_temp;
+    proxy_temp_path /tmp/proxy_temp;
+    fastcgi_temp_path /tmp/fastcgi_temp;
+    uwsgi_temp_path /tmp/uwsgi_temp;
+    scgi_temp_path /tmp/scgi_temp;
+
+    default_type application/octet-stream;
+    server_tokens off;
+
+    types {
+        text/html html htm shtml;
+        text/css css;
+        application/javascript js;
+        application/json json;
+        application/vnd.apple.mpegurl m3u8;
+        video/mp2t ts;
+        video/mp4 mp4;
+        application/dash+xml mpd;
+        video/webm webm;
+        audio/mp4 m4a;
+        audio/mpeg mp3;
+    }
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+    access_log /dev/stdout main;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    client_max_body_size 100M;
+
+    vod_mode mapped;
+    vod_upstream_location /mapping;
+    vod_remote_upstream_location /proxy;
+    vod_last_modified 'Sun, 19 Nov 2000 08:52:00 GMT';
+    vod_last_modified_types *;
+    vod_metadata_cache metadata_cache 64m;
+    vod_response_cache response_cache 32m 60;
+    # Cache expirations are in seconds. They bound how long a cached mapping or
+    # manifest can outlive the playback token that authorised it.
+    vod_mapping_cache mapping_cache 5m 60;
+    vod_manifest_segment_durations_mode accurate;
+    vod_segment_duration 10000;
+    vod_align_segments_to_key_frames on;
+
+    gzip on;
+    gzip_types application/vnd.apple.mpegurl;
+    open_file_cache max=1000 inactive=5m;
+    open_file_cache_valid 2m;
+    open_file_cache_min_uses 1;
+    open_file_cache_errors on;
+    aio on;
+
+    resolver ${DNS_RESOLVER} ipv6=off valid=10s;
+
+    server {
+        listen ${LISTEN_PORT};
+        server_name localhost;
+        server_tokens off;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+
+        location /mapping/vod/ {
+            internal;
+            proxy_pass ${BACKEND_MAPPING_UPSTREAM};
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Vod-Internal-Secret "${VOD_INTERNAL_SECRET}";
+            proxy_connect_timeout 5s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+        }
+
+        location ~ ^/proxy/(.+)$ {
+            internal;
+            set $backend_uri $1;
+            set $s3_scheme "${S3_PROXY_SCHEME}";
+            set $s3_host "${S3_PROXY_HOST}";
+            set $s3_signed_host "${S3_SIGNED_HOST}";
+
+            if ($backend_uri ~ "^(.*)%3F(.*)$") {
+                set $path_part $1;
+                set $qs_part $2;
+            }
+
+            if ($qs_part = "") {
+                proxy_pass $s3_scheme://$s3_host/$backend_uri;
+            }
+            if ($qs_part != "") {
+                proxy_pass $s3_scheme://$s3_host/$path_part?$qs_part;
+            }
+
+            proxy_set_header Cookie "";
+            proxy_set_header Authorization "";
+            proxy_set_header Host $s3_signed_host;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_connect_timeout 5s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+            proxy_ssl_server_name on;
+            proxy_ssl_name $s3_host;
+            proxy_ssl_verify on;
+            proxy_ssl_trusted_certificate ${S3_CA_BUNDLE};
+            proxy_ssl_verify_depth 5;
+        }
+
+        location /vod/thumbnail/ {
+            proxy_pass ${BACKEND_THUMBNAIL_UPSTREAM};
+            proxy_set_header Host $http_host;
+            proxy_connect_timeout 5s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+            add_header Access-Control-Allow-Origin '*' always;
+            add_header Access-Control-Allow-Methods 'GET, OPTIONS' always;
+            add_header X-Content-Type-Options nosniff always;
+            add_header Referrer-Policy no-referrer always;
+        }
+
+        location /vod/ {
+            vod hls;
+            add_header Access-Control-Allow-Origin '*' always;
+            add_header Access-Control-Allow-Methods 'GET, OPTIONS' always;
+            add_header Access-Control-Allow-Headers 'Origin, Content-Type, Accept, Range, Authorization' always;
+            add_header Access-Control-Expose-Headers 'Content-Length, Content-Range' always;
+            add_header X-Content-Type-Options nosniff always;
+            add_header Referrer-Policy no-referrer always;
+
+            if ($request_method = OPTIONS) {
+                add_header Access-Control-Allow-Origin '*';
+                add_header Access-Control-Allow-Methods 'GET, OPTIONS';
+                add_header Access-Control-Allow-Headers 'Origin, Content-Type, Accept, Range, Authorization';
+                add_header Access-Control-Max-Age 1728000;
+                add_header Content-Type 'text/plain charset=UTF-8';
+                add_header Content-Length 0;
+                add_header X-Content-Type-Options nosniff always;
+                add_header Referrer-Policy no-referrer always;
+                return 204;
+            }
+
+            alias /remote/;
+        }
+    }
+}

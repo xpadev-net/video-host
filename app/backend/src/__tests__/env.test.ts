@@ -1,14 +1,19 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEV_DEFAULTS, EnvSchema } from "../env";
+import { BackendEnvSchema, DEV_DEFAULTS, EnvSchema } from "../env";
 
 const production = (changes: Record<string, string | undefined> = {}) => ({
   NODE_ENV: "production",
+  DATABASE_URL: "mysql://video_host:test@db.example.com:3306/video_host",
   BETTER_AUTH_SECRET: "synthetic-test-secret-with-at-least-32-characters",
   BETTER_AUTH_URL: "https://video.example.com",
   FRONTEND_URL: "https://video.example.com",
   AUTH_TRUSTED_PROXY_CIDRS: "10.0.0.2/32, 2001:db8:100::/48",
   CALLBACK_SECRET: "synthetic-callback-secret",
-  VOD_INTERNAL_SECRET: "synthetic-vod-secret",
+  S3_ACCESS_KEY_ID: "synthetic-access-key",
+  S3_SECRET_ACCESS_KEY: "synthetic-secret-key",
+  VOD_INTERNAL_SECRET: "synthetic-vod-secret-0123456789abcdef",
   ...changes,
 });
 const oidc = {
@@ -18,6 +23,69 @@ const oidc = {
 };
 
 describe("authentication environment", () => {
+  it("keeps the backend environment example in sync with the schema", () => {
+    const backendExamplePath = resolve(
+      process.cwd(),
+      "app/backend/.env.example",
+    );
+    const examplePath = existsSync(backendExamplePath)
+      ? backendExamplePath
+      : resolve(process.cwd(), ".env.example");
+    const example = readFileSync(examplePath, "utf8");
+    const documentedKeys = new Set(
+      example
+        .split(/\r?\n/)
+        .map((line) => line.match(/^([A-Z][A-Z0-9_]*)=/)?.[1])
+        .filter((key): key is string => key !== undefined),
+    );
+    const schemaKeys = new Set(Object.keys(BackendEnvSchema.shape));
+
+    expect([...documentedKeys].sort()).toEqual([...schemaKeys].sort());
+
+    const workspaceRoot = existsSync(
+      resolve(process.cwd(), "pnpm-workspace.yaml"),
+    )
+      ? process.cwd()
+      : resolve(process.cwd(), "../..");
+    const rootPath = resolve(workspaceRoot, ".env.example");
+    const rootExample = readFileSync(rootPath, "utf8");
+    const rootKeys = new Set(
+      rootExample
+        .split(/\r?\n/)
+        .map((line) => line.match(/^([A-Z][A-Z0-9_]*)=/)?.[1])
+        .filter((key): key is string => key !== undefined),
+    );
+    expect([...schemaKeys].every((key) => rootKeys.has(key))).toBe(true);
+
+    const rootValues = new Map(
+      rootExample
+        .split(/\r?\n/)
+        .map((line) => line.match(/^([A-Z][A-Z0-9_]*)=(.*)$/))
+        .filter((match): match is RegExpMatchArray => match !== null)
+        .map((match) => [match[1], match[2]]),
+    );
+    const frontendExample = readFileSync(
+      resolve(workspaceRoot, "app/frontend/.env.example"),
+      "utf8",
+    );
+    for (const line of frontendExample.split(/\r?\n/)) {
+      const match = line.match(/^(API_UPSTREAM_URL|VITE_[A-Z0-9_]+)=(.*)$/);
+      if (match) expect(rootValues.get(match[1])).toBe(match[2]);
+    }
+  });
+  it("requires S3 credentials in production", () => {
+    for (const key of ["S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"]) {
+      expect(EnvSchema.safeParse(production({ [key]: "" })).success).toBe(
+        false,
+      );
+    }
+  });
+  it("rejects a short VOD secret in production", () => {
+    expect(
+      EnvSchema.safeParse(production({ VOD_INTERNAL_SECRET: "too-short" }))
+        .success,
+    ).toBe(false);
+  });
   it("accepts complete production configuration", () => {
     expect(EnvSchema.safeParse(production()).success).toBe(true);
   });

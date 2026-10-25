@@ -1,8 +1,7 @@
 import type { FormattedMovie } from "@video-host/backend";
-import type { Options } from "@xpadev-net/niconicomments";
 import type Hls from "hls.js";
 import { atom } from "jotai";
-import { atomWithStorage } from "jotai/utils";
+import { atomWithStorage, createJSONStorage } from "jotai/utils";
 import type {
   PlayerAudioTrack,
   PlayerConfig,
@@ -20,6 +19,34 @@ const CurrentMovieAtom = atom<FormattedMovie | null>(null);
 const WrapperRefAtom = atom<HTMLElement | null>(null);
 const VideoRefAtom = atom<HTMLVideoElement | null>(null);
 const HlsRefAtom = atom<Hls | null>(null);
+const StopPlayerAtom = atom(null, (get, set) => {
+  const video = get(VideoRefAtom);
+  video?.pause();
+  if (video) {
+    video.removeAttribute("src");
+    video.srcObject = null;
+    video.load();
+  }
+  get(HlsRefAtom)?.destroy();
+  set(HlsRefAtom, null);
+  set(VideoRefAtom, null);
+  set(CurrentMovieAtom, null);
+  // The route component owns the portal target and clears it on unmount. Keep
+  // it registered while stopping media so a still-mounted Player can reuse it.
+  set(PlayerStateAtom, {
+    paused: false,
+    isLoading: true,
+    isSetting: false,
+    isFullscreen: false,
+    error: null,
+  });
+  set(VideoMetadataAtom, { currentTime: 0, duration: 0 });
+  set(AudioTracksAtom, []);
+  set(AudioTrackIdAtom, -1);
+  set(PlayerSettingAtom, ["main"]);
+  set(PlayerSeekNotificationAtom, null);
+  set(PlayerPlayPauseNotificationAtom, null);
+});
 const AudioTracksAtom = atom<PlayerAudioTrack[]>([]);
 const AudioTrackIdAtom = atom<number>(-1);
 const VideoMetadataAtom = atom<VideoMetadata>({ currentTime: 0, duration: 0 });
@@ -29,14 +56,65 @@ const PlayerStateAtom = atom<PlayerState>({
   isLoading: true,
   isSetting: false,
   isFullscreen: false,
+  error: null,
 });
-const PlayerConfigAtom = atomWithStorage<PlayerConfig>("playerConfig", {
-  windowFullscreen: true,
-  autoPlay: true,
-  isTheatre: false,
-  isPipEnable: false,
-  isNiconicommentsEnable: true,
-});
+// "autoPlay" was renamed to "autoPlayNext" (it only ever meant "play the next
+// movie"). During the transition both names are kept in storage:
+// - reads/subscriptions migrate whatever shape arrives, so a choice saved under
+//   the old name is not lost;
+// - writes also store the old name, so a tab still on the previous release
+//   keeps seeing the setting.
+// This writer always stores the two equal, so when they differ an old tab wrote
+// the old one last and it wins.
+const baseConfigStorage = createJSONStorage<PlayerConfig>();
+
+const migrateConfig = (stored: PlayerConfig): PlayerConfig => {
+  const legacy = stored as PlayerConfig & Partial<{ autoPlay: boolean }>;
+  if (!legacy || typeof legacy !== "object" || !("autoPlay" in legacy)) {
+    return stored;
+  }
+  const { autoPlay, ...rest } = legacy;
+  return {
+    ...rest,
+    autoPlayNext:
+      typeof autoPlay === "boolean" ? autoPlay : (rest.autoPlayNext ?? true),
+  };
+};
+
+const playerConfigStorage = {
+  ...baseConfigStorage,
+  getItem: (key: string, initialValue: PlayerConfig): PlayerConfig =>
+    migrateConfig(baseConfigStorage.getItem(key, initialValue)),
+  setItem: (key: string, value: PlayerConfig) =>
+    baseConfigStorage.setItem(key, {
+      ...value,
+      autoPlay: value.autoPlayNext,
+    } as PlayerConfig),
+  // Updates written by another tab arrive here, not through getItem, so they
+  // need the same migration.
+  subscribe: baseConfigStorage.subscribe
+    ? (
+        key: string,
+        callback: (value: PlayerConfig) => void,
+        initialValue: PlayerConfig,
+      ) =>
+        baseConfigStorage.subscribe?.(
+          key,
+          (value) => callback(migrateConfig(value)),
+          initialValue,
+        ) ?? (() => undefined)
+    : undefined,
+};
+
+const PlayerConfigAtom = atomWithStorage<PlayerConfig>(
+  "playerConfig",
+  {
+    windowFullscreen: true,
+    autoPlayNext: true,
+    isTheatre: false,
+  },
+  playerConfigStorage,
+);
 
 const PlayerPlaybackRateAtom = atomWithStorage<number>(
   "playerConfig.playerPlaybackRate",
@@ -48,9 +126,11 @@ const PlayerVolumeAtom = atomWithStorage<number>(
   1,
 );
 
-const NiconicommentsConfigAtom = atomWithStorage<Options>(
-  "niconicommentsConfig",
-  { format: "v1", enableLegacyPiP: true },
+// Mute is its own flag: muting must not touch the stored volume, or the
+// pre-mute volume is lost.
+const PlayerMutedAtom = atomWithStorage<boolean>(
+  "playerConfig.playerMuted",
+  false,
 );
 
 const PlayerSettingAtom = atom<SettingKey[]>(["main"]);
@@ -70,14 +150,15 @@ export {
   CurrentMovieAtom,
   DurablePlayerAtom,
   HlsRefAtom,
-  NiconicommentsConfigAtom,
   PlayerConfigAtom,
+  PlayerMutedAtom,
   PlayerPlaybackRateAtom,
   PlayerPlayPauseNotificationAtom,
   PlayerSeekNotificationAtom,
   PlayerSettingAtom,
   PlayerStateAtom,
   PlayerVolumeAtom,
+  StopPlayerAtom,
   VideoMetadataAtom,
   VideoRefAtom,
   WrapperRefAtom,

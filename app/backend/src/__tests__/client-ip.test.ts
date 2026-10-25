@@ -67,14 +67,12 @@ describe("transport-bound auth client IP", () => {
       "198.51.100.5",
     );
   });
-  it.each([
-    undefined,
-    "",
-    "invalid",
-    "fe80::1%eth0",
-  ])("fails closed without a valid socket peer: %s", (peer) => {
-    expect(() => resolveClientIp(peer, "198.51.100.1", trusted)).toThrow();
-  });
+  it.each([undefined, "", "invalid", "fe80::1%eth0"])(
+    "fails closed without a valid socket peer: %s",
+    (peer) => {
+      expect(() => resolveClientIp(peer, "198.51.100.1", trusted)).toThrow();
+    },
+  );
   it.each([
     null,
     "",

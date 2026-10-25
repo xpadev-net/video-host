@@ -1,11 +1,23 @@
 import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
 import type { FilteredUser, Visibility } from "@video-host/backend";
 import { useAtomValue } from "jotai";
-import { type ChangeEvent, type FormEvent, useRef, useState } from "react";
+import { Film } from "lucide-react";
+import {
+  type ChangeEvent,
+  type FormEvent,
+  type MouseEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
+import { useConfirm } from "@/components/Feedback/FeedbackProvider";
 import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { useUpload } from "@/hooks/useUpload";
 import { useSelf } from "@/hooks/useUser";
+import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
 
 export const Route = createFileRoute("/_app/dashboard/videos/new")({
@@ -15,7 +27,10 @@ export const Route = createFileRoute("/_app/dashboard/videos/new")({
 
 function NewVideoPage() {
   const selectedAccountId = useAtomValue(selectedAccountIdAtom);
+  const confirm = useConfirm();
   const { data: user, isLoading: isUserLoading } = useSelf();
+  const { data: authSession } = authClient.useSession();
+  const sessionUserId = authSession?.user.id;
   const {
     init,
     upload,
@@ -35,15 +50,27 @@ function NewVideoPage() {
   const [saved, setSaved] = useState(false);
   const [savePending, setSavePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cancelDeleteFailed, setCancelDeleteFailed] = useState(false);
+  const [cancelDeletePending, setCancelDeletePending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadActiveRef = useRef(false);
+  const uploadOperationRef = useRef(0);
+  const cancelDeleteMovieIdRef = useRef<string | null>(null);
+  const movieProfileIdRef = useRef<string | null>(null);
+  const movieSessionUserIdRef = useRef<string | null>(null);
+  const currentSessionUserIdRef = useRef(sessionUserId);
 
   // Latest form values for the auto-save that fires when the upload lands;
   // the .then callback registered at file-select time would otherwise save
   // stale values and clobber whatever the user typed while uploading.
   const metadataRef = useRef({ title, description, visibility, viewers });
-  metadataRef.current = { title, description, visibility, viewers };
+  useEffect(() => {
+    metadataRef.current = { title, description, visibility, viewers };
+  }, [title, description, visibility, viewers]);
   const movieIdRef = useRef<string | null>(null);
-  movieIdRef.current = movieId;
+  useEffect(() => {
+    movieIdRef.current = movieId;
+  }, [movieId]);
 
   const isBusy =
     uploadState.phase === "creating" ||
@@ -55,31 +82,60 @@ function NewVideoPage() {
   // in flight; once it lands, the encode keeps running server-side and leaving
   // is safe. beforeunload only covers real navigation, so client-side route
   // changes need their own confirm gate.
-  const needsLeaveGuard = isBusy || savePending;
+  const needsLeaveGuard = isBusy || savePending || cancelDeletePending;
   useBlocker({
-    shouldBlockFn: () =>
-      !window.confirm("アップロード中です。このページを離れますか？"),
+    shouldBlockFn: async () =>
+      !(await confirm({
+        title: "アップロード中です",
+        description: cancelDeletePending
+          ? "アップロード記録の削除が完了するまでページを離れないでください。"
+          : "このページを離れると進行中のアップロードが中断されます。",
+        confirmLabel: "ページを離れる",
+        destructive: true,
+      })),
     enableBeforeUnload: needsLeaveGuard,
     disabled: !needsLeaveGuard,
   });
 
   const doSaveMetadata = async (): Promise<boolean> => {
     const id = movieIdRef.current;
+    const sessionId = movieSessionUserIdRef.current;
     const current = metadataRef.current;
-    if (!id || !current.title.trim()) return false;
-    const res = await client.api.v4.movies[":movie"].$patch({
-      param: { movie: id },
-      json: {
-        title: current.title.trim(),
-        description: current.description.trim(),
-        visibility: current.visibility,
-        viewerIds: current.viewers.map((viewer) => viewer.id),
-      },
-    });
-    if (!res.ok) {
-      throw new Error("Failed to update");
+    if (!id) return false;
+    if (!sessionId || sessionId !== currentSessionUserIdRef.current) {
+      throw new Error(
+        "ログイン状態が変わりました。アップロードをやり直してください",
+      );
     }
-    setSaved(true);
+    if (!current.title.trim()) {
+      setError("タイトルを入力してから保存してください");
+      return false;
+    }
+    const submitted = {
+      title: current.title.trim(),
+      description: current.description.trim(),
+      visibility: current.visibility,
+      viewerIds: current.viewers.map((viewer) => viewer.id),
+    };
+    const res = await client.api.v4.movies[":movie"].$patch(
+      {
+        param: { movie: id },
+        json: submitted,
+      },
+      { headers: { "X-Profile-Id": movieProfileIdRef.current ?? "" } },
+    );
+    if (!res.ok) {
+      throw new Error("メタデータの保存に失敗しました");
+    }
+    if (currentSessionUserIdRef.current !== sessionId) return false;
+    const latest = metadataRef.current;
+    setSaved(
+      submitted.title === latest.title.trim() &&
+        submitted.description === latest.description.trim() &&
+        submitted.visibility === latest.visibility &&
+        submitted.viewerIds.join("\0") ===
+          latest.viewers.map((viewer) => viewer.id).join("\0"),
+    );
     return true;
   };
 
@@ -87,6 +143,32 @@ function NewVideoPage() {
   // auto-save could otherwise land first and let the stale request finish
   // last, silently reverting the user's newest edits.
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  useLayoutEffect(() => {
+    if (currentSessionUserIdRef.current === sessionUserId) return;
+    currentSessionUserIdRef.current = sessionUserId;
+    cancel();
+    resetUpload();
+    uploadOperationRef.current += 1;
+    uploadActiveRef.current = false;
+    movieIdRef.current = null;
+    movieProfileIdRef.current = null;
+    movieSessionUserIdRef.current = null;
+    cancelDeleteMovieIdRef.current = null;
+    saveQueueRef.current = Promise.resolve();
+    setFile(null);
+    setMovieId(null);
+    setTitle("");
+    setDescription("");
+    setVisibility("PUBLIC");
+    setViewers([]);
+    setIsSaving(false);
+    setSaved(false);
+    setSavePending(false);
+    setCancelDeleteFailed(false);
+    setCancelDeletePending(false);
+    setError(null);
+  }, [sessionUserId, cancel, resetUpload]);
+
   const saveMetadata = (): Promise<boolean> => {
     const task = saveQueueRef.current.then(() => doSaveMetadata());
     saveQueueRef.current = task.then(
@@ -97,11 +179,20 @@ function NewVideoPage() {
   };
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
     const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
+    input.value = "";
+    if (!selectedFile || uploadActiveRef.current || savePending) return;
+    const startingSessionId = currentSessionUserIdRef.current;
+    if (!startingSessionId) return;
+    uploadActiveRef.current = true;
+    const operation = ++uploadOperationRef.current;
 
     setFile(selectedFile);
     setMovieId(null);
+    movieIdRef.current = null;
+    movieProfileIdRef.current = null;
+    movieSessionUserIdRef.current = null;
     setSaved(false);
     setError(null);
     resetUpload();
@@ -112,70 +203,203 @@ function NewVideoPage() {
       asUserId: selectedAccountId || undefined,
     });
     if (!result) {
+      uploadActiveRef.current = false;
       return; // uploadState.error is shown below
     }
+    if (currentSessionUserIdRef.current !== startingSessionId) return;
 
+    movieIdRef.current = result.movieId;
     setMovieId(result.movieId);
+    movieProfileIdRef.current = result.profileId;
+    movieSessionUserIdRef.current = startingSessionId;
+    metadataRef.current = { ...metadataRef.current, title: result.title };
     setTitle(result.title);
 
     // Upload in the background; when it lands, persist the metadata the user
     // has typed so far and queue the encode. savePending keeps the leave
     // guard armed until the save resolves — an in-flight PATCH dies with the
     // page and the movie would stay PRIVATE.
-    void upload(result.movieId, result.uploadUrl, selectedFile).then(
-      (succeeded) => {
-        if (succeeded) {
+    void upload(result.movieId, result.uploadUrl, selectedFile)
+      .then(async (succeeded) => {
+        if (
+          succeeded &&
+          currentSessionUserIdRef.current === startingSessionId &&
+          movieSessionUserIdRef.current === startingSessionId
+        ) {
           setSavePending(true);
-          void saveMetadata()
-            .catch(() => {
+          try {
+            await saveMetadata();
+          } catch {
+            if (
+              currentSessionUserIdRef.current === startingSessionId &&
+              movieSessionUserIdRef.current === startingSessionId
+            )
               setError(
                 "メタデータの保存に失敗しました。「保存」で再度お試しください",
               );
-            })
-            .finally(() => setSavePending(false));
+          } finally {
+            if (
+              currentSessionUserIdRef.current === startingSessionId &&
+              movieSessionUserIdRef.current === startingSessionId
+            )
+              setSavePending(false);
+          }
         }
-      },
-    );
+      })
+      .finally(() => {
+        if (operation === uploadOperationRef.current) {
+          uploadActiveRef.current = false;
+        }
+      });
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!movieId || !title.trim()) return;
+    const sessionId = currentSessionUserIdRef.current;
+    if (!sessionId || movieSessionUserIdRef.current !== sessionId) return;
 
     setIsSaving(true);
     setError(null);
     try {
       await saveMetadata();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存に失敗しました");
+      if (
+        currentSessionUserIdRef.current === sessionId &&
+        movieSessionUserIdRef.current === sessionId
+      )
+        setError(err instanceof Error ? err.message : "保存に失敗しました");
     } finally {
-      setIsSaving(false);
+      if (
+        currentSessionUserIdRef.current === sessionId &&
+        movieSessionUserIdRef.current === sessionId
+      )
+        setIsSaving(false);
     }
   };
 
+  const preventLeavingWithUnsavedChanges = (
+    e: MouseEvent<HTMLAnchorElement>,
+  ) => {
+    if (saved && !savePending && !isSaving) return;
+    e.preventDefault();
+    setError("変更を保存してから移動してください");
+  };
+
   const handleRetryUpload = async () => {
-    if (!file) return;
+    if (!file || uploadActiveRef.current || savePending) return;
+    const sessionId = currentSessionUserIdRef.current;
+    if (
+      !sessionId ||
+      (movieId !== null && movieSessionUserIdRef.current !== sessionId)
+    )
+      return;
+    uploadActiveRef.current = true;
+    const operation = ++uploadOperationRef.current;
     setError(null);
-    const succeeded = movieId
-      ? await resume(movieId, file)
-      : await (async () => {
-          const result = await init(file, {
-            asUserId: selectedAccountId || undefined,
-          });
-          if (!result) return false;
-          setMovieId(result.movieId);
-          setTitle(result.title);
-          return upload(result.movieId, result.uploadUrl, file);
-        })();
-    if (succeeded) {
-      setSavePending(true);
-      void saveMetadata()
-        .catch(() => {
-          setError(
-            "メタデータの保存に失敗しました。「保存」で再度お試しください",
-          );
-        })
-        .finally(() => setSavePending(false));
+    try {
+      const succeeded = movieId
+        ? await resume(movieId, file)
+        : await (async () => {
+            const result = await init(file, {
+              asUserId: selectedAccountId || undefined,
+            });
+            if (!result) return false;
+            if (currentSessionUserIdRef.current !== sessionId) return false;
+            movieIdRef.current = result.movieId;
+            setMovieId(result.movieId);
+            movieProfileIdRef.current = result.profileId;
+            movieSessionUserIdRef.current = sessionId;
+            metadataRef.current = {
+              ...metadataRef.current,
+              title: result.title,
+            };
+            setTitle(result.title);
+            return upload(result.movieId, result.uploadUrl, file);
+          })();
+      if (
+        succeeded &&
+        currentSessionUserIdRef.current === sessionId &&
+        movieSessionUserIdRef.current === sessionId
+      ) {
+        setSavePending(true);
+        try {
+          await saveMetadata();
+        } catch {
+          if (
+            currentSessionUserIdRef.current === sessionId &&
+            movieSessionUserIdRef.current === sessionId
+          )
+            setError(
+              "メタデータの保存に失敗しました。「保存」で再度お試しください",
+            );
+        } finally {
+          if (
+            currentSessionUserIdRef.current === sessionId &&
+            movieSessionUserIdRef.current === sessionId
+          )
+            setSavePending(false);
+        }
+      }
+    } finally {
+      if (operation === uploadOperationRef.current) {
+        uploadActiveRef.current = false;
+      }
+    }
+  };
+
+  const clearCanceledUpload = () => {
+    cancelDeleteMovieIdRef.current = null;
+    setCancelDeleteFailed(false);
+    setFile(null);
+    setMovieId(null);
+    movieIdRef.current = null;
+    movieProfileIdRef.current = null;
+    movieSessionUserIdRef.current = null;
+    setTitle("");
+    setDescription("");
+    resetUpload();
+    uploadActiveRef.current = false;
+  };
+
+  const deleteCanceledMovie = async (
+    id: string,
+    sessionId: string,
+    profileId: string | null,
+  ) => {
+    setCancelDeletePending(true);
+    setError(null);
+    try {
+      const res = await client.api.v4.movies[":movie"].$delete(
+        { param: { movie: id } },
+        { headers: { "X-Profile-Id": profileId ?? "" } },
+      );
+      if (!res.ok && Number(res.status) !== 404) {
+        throw new Error("Failed to delete canceled upload");
+      }
+      if (
+        currentSessionUserIdRef.current !== sessionId ||
+        movieSessionUserIdRef.current !== sessionId ||
+        movieIdRef.current !== id
+      )
+        return;
+      clearCanceledUpload();
+    } catch {
+      if (
+        currentSessionUserIdRef.current === sessionId &&
+        movieSessionUserIdRef.current === sessionId &&
+        movieIdRef.current === id
+      ) {
+        setCancelDeleteFailed(true);
+        setError("動画の削除に失敗しました。キャンセルを再試行してください。");
+        uploadActiveRef.current = false;
+      }
+    } finally {
+      if (
+        currentSessionUserIdRef.current === sessionId &&
+        movieSessionUserIdRef.current === sessionId
+      )
+        setCancelDeletePending(false);
     }
   };
 
@@ -184,23 +408,46 @@ function NewVideoPage() {
     // encode; deleting the movie here would race that completion, so cancel
     // is only offered while bytes are still in flight.
     if (uploadState.phase !== "uploading") return;
-    cancel();
-    if (movieId) {
-      // Discard the record created for this upload; a leftover UPLOADING
-      // movie would sit in the dashboard forever otherwise.
-      await client.api.v4.movies[":movie"]
-        .$delete({ param: { movie: movieId } })
-        .catch(() => {});
+    const sessionId = currentSessionUserIdRef.current;
+    const movieIdAtStart = movieId;
+    const profileId = movieProfileIdRef.current;
+    if (!sessionId || movieSessionUserIdRef.current !== sessionId) return;
+    if (!cancel()) return;
+    uploadOperationRef.current += 1;
+    if (movieIdAtStart) {
+      cancelDeleteMovieIdRef.current = movieIdAtStart;
+      await deleteCanceledMovie(movieIdAtStart, sessionId, profileId);
+      return;
     }
+    if (currentSessionUserIdRef.current !== sessionId) return;
+    clearCanceledUpload();
+  };
+
+  const handleRetryCancelDelete = async () => {
+    const id = cancelDeleteMovieIdRef.current;
+    if (!id || cancelDeletePending) return;
+    const sessionId = currentSessionUserIdRef.current;
+    if (!sessionId || movieSessionUserIdRef.current !== sessionId) return;
+    await deleteCanceledMovie(id, sessionId, movieProfileIdRef.current);
+  };
+
+  const handleStartNextUpload = () => {
+    if (savePending || uploadActiveRef.current) return;
+    resetUpload();
     setFile(null);
     setMovieId(null);
+    movieIdRef.current = null;
     setTitle("");
     setDescription("");
-    resetUpload();
+    setVisibility("PUBLIC");
+    setViewers([]);
+    setSaved(false);
+    setError(null);
+    fileInputRef.current?.click();
   };
 
   if (isUserLoading) {
-    return <div>Loading...</div>;
+    return <DashboardLoading />;
   }
 
   if (!user) {
@@ -223,7 +470,7 @@ function NewVideoPage() {
               >
                 {file ? (
                   <div className="file-info">
-                    <span className="file-icon">🎬</span>
+                    <Film aria-hidden="true" className="file-icon" />
                     <span className="file-name">{file.name}</span>
                     <span className="file-size">
                       ({(file.size / 1024 / 1024).toFixed(2)} MB)
@@ -235,36 +482,37 @@ function NewVideoPage() {
                   </div>
                 )}
               </button>
-              <input
-                ref={fileInputRef}
-                id="video-file"
-                type="file"
-                accept="video/*"
-                onChange={(e) => void handleFileChange(e)}
-                hidden
-              />
             </div>
           ) : null}
+          <input
+            ref={fileInputRef}
+            id="video-file"
+            type="file"
+            accept="video/*"
+            onChange={(e) => void handleFileChange(e)}
+            disabled={isBusy || savePending}
+            hidden
+          />
 
           {movieId && isBusy && (
             <div className="flex flex-col gap-3">
-              <div className="text-sm text-[color:var(--text-secondary,#999)]">
+              <div className="text-sm text-muted-foreground">
                 {uploadState.phase === "uploading" &&
                   `アップロード中 (${uploadState.progress}%)`}
                 {(uploadState.phase === "creating" ||
                   uploadState.phase === "completing") &&
                   "アップロード処理中..."}
               </div>
-              <div className="relative h-2 overflow-hidden rounded bg-[var(--background-primary,#0d0d0d)]">
+              <div className="relative h-2 overflow-hidden rounded bg-background">
                 <div
-                  className="h-full bg-[var(--primary-color,#3b82f6)] transition-[width]"
+                  className="h-full bg-primary transition-[width]"
                   style={{ width: `${uploadState.progress}%` }}
                 />
               </div>
               {uploadState.phase === "uploading" && (
                 <button
                   type="button"
-                  className="self-start cursor-pointer rounded-md border border-[var(--border-color,#333)] bg-transparent px-3.5 py-1.5 text-[0.8rem] text-[color:var(--text-secondary,#999)] hover:border-[#ef4444] hover:text-[#ef4444]"
+                  className="self-start cursor-pointer rounded-md border border-border bg-transparent px-3.5 py-1.5 text-[0.8rem] text-muted-foreground hover:border-[#ef4444] hover:text-[#ef4444]"
                   onClick={() => void handleCancelUpload()}
                 >
                   アップロードをキャンセル
@@ -285,15 +533,25 @@ function NewVideoPage() {
                   to="/dashboard/videos/$id/edit"
                   params={{ id: movieId ?? "" }}
                   className="font-medium text-green-500"
+                  onClick={preventLeavingWithUnsavedChanges}
                 >
                   動画ページへ
                 </Link>
                 <Link
                   to="/dashboard/videos"
                   className="font-medium text-green-500"
+                  onClick={preventLeavingWithUnsavedChanges}
                 >
                   動画一覧へ
                 </Link>
+                <button
+                  type="button"
+                  className="font-medium text-green-500"
+                  onClick={handleStartNextUpload}
+                  disabled={savePending || isSaving || !saved}
+                >
+                  次の動画をアップロード
+                </button>
               </div>
             </div>
           )}
@@ -311,6 +569,17 @@ function NewVideoPage() {
             </div>
           )}
 
+          {cancelDeleteFailed && (
+            <button
+              type="button"
+              className="self-start cursor-pointer rounded-md border border-[#ef4444] bg-transparent px-3.5 py-1.5 text-[0.8rem] text-[#ef4444] hover:bg-[rgba(239,68,68,0.15)]"
+              onClick={() => void handleRetryCancelDelete()}
+              disabled={cancelDeletePending}
+            >
+              {cancelDeletePending ? "削除中..." : "キャンセルを再試行"}
+            </button>
+          )}
+
           {movieId && (
             <>
               <div className="form-group">
@@ -320,7 +589,12 @@ function NewVideoPage() {
                   type="text"
                   value={title}
                   onChange={(e) => {
-                    setTitle(e.target.value);
+                    const nextTitle = e.target.value;
+                    metadataRef.current = {
+                      ...metadataRef.current,
+                      title: nextTitle,
+                    };
+                    setTitle(nextTitle);
                     setSaved(false);
                   }}
                   placeholder="動画のタイトルを入力"
@@ -334,7 +608,12 @@ function NewVideoPage() {
                   id="description"
                   value={description}
                   onChange={(e) => {
-                    setDescription(e.target.value);
+                    const nextDescription = e.target.value;
+                    metadataRef.current = {
+                      ...metadataRef.current,
+                      description: nextDescription,
+                    };
+                    setDescription(nextDescription);
                     setSaved(false);
                   }}
                   placeholder="動画の説明を入力（任意）"
@@ -348,7 +627,12 @@ function NewVideoPage() {
                   id="visibility"
                   value={visibility}
                   onChange={(e) => {
-                    setVisibility(e.target.value as Visibility);
+                    const nextVisibility = e.target.value as Visibility;
+                    metadataRef.current = {
+                      ...metadataRef.current,
+                      visibility: nextVisibility,
+                    };
+                    setVisibility(nextVisibility);
                     setSaved(false);
                   }}
                 >
@@ -357,7 +641,7 @@ function NewVideoPage() {
                   <option value="LIMITED">指定ユーザー公開</option>
                   <option value="PRIVATE">非公開</option>
                 </select>
-                <p className="m-0 text-[0.8rem] text-[color:var(--text-secondary,#999)]">
+                <p className="m-0 text-[0.8rem] text-muted-foreground">
                   エンコードが完了するまでは設定に関わらず非公開になります
                 </p>
               </div>
@@ -369,6 +653,10 @@ function NewVideoPage() {
                     id="viewers"
                     selected={viewers}
                     onChange={(next) => {
+                      metadataRef.current = {
+                        ...metadataRef.current,
+                        viewers: next,
+                      };
                       setViewers(next);
                       setSaved(false);
                     }}
@@ -391,111 +679,6 @@ function NewVideoPage() {
           )}
         </form>
       </div>
-      <style>{`
-        .upload-page h1 {
-          margin-bottom: 2rem;
-          color: var(--text-primary, #fff);
-        }
-        .upload-form {
-          max-width: 600px;
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        .form-group label {
-          color: var(--text-secondary, #999);
-          font-size: 0.875rem;
-        }
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-          padding: 0.75rem;
-          background: var(--background-primary, #0d0d0d);
-          border: 1px solid var(--border-color, #333);
-          border-radius: 8px;
-          color: var(--text-primary, #fff);
-          font-size: 1rem;
-        }
-        .form-group input:focus,
-        .form-group textarea:focus,
-        .form-group select:focus {
-          outline: none;
-          border-color: var(--primary-color, #3b82f6);
-        }
-        .file-drop-zone {
-          padding: 2rem;
-          border: 2px dashed var(--border-color, #333);
-          border-radius: 12px;
-          text-align: center;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-        .file-drop-zone:hover:not(:disabled) {
-          border-color: var(--primary-color, #3b82f6);
-        }
-        .file-drop-zone:disabled {
-          opacity: 0.7;
-          cursor: default;
-        }
-        .file-placeholder {
-          color: var(--text-secondary, #999);
-        }
-        .file-info {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.5rem;
-        }
-        .file-icon {
-          font-size: 1.5rem;
-        }
-        .file-name {
-          color: var(--text-primary, #fff);
-        }
-        .file-size {
-          color: var(--text-secondary, #999);
-          font-size: 0.875rem;
-        }
-        .error-message {
-          padding: 0.75rem;
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid #ef4444;
-          border-radius: 8px;
-          color: #ef4444;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-        }
-        .form-actions {
-          display: flex;
-          gap: 1rem;
-          align-items: center;
-        }
-        .submit-button {
-          padding: 0.875rem 1.5rem;
-          background: var(--primary-color, #3b82f6);
-          color: white;
-          border: none;
-          border-radius: 8px;
-          font-size: 1rem;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-        .submit-button:hover:not(:disabled) {
-          background: #2563eb;
-        }
-        .submit-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      `}</style>
     </>
   );
 }

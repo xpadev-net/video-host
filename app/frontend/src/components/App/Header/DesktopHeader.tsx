@@ -1,4 +1,4 @@
-import { AuthButton } from "src/components/App/Header/Auth";
+import { AuthButton } from "@/components/App/Header/Auth";
 import { Search } from "@/components/App/Header/Search";
 import { ToggleTheme } from "@/components/App/Header/Theme";
 import { HeaderMenu } from "@/components/App/Menu";

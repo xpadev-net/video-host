@@ -7,6 +7,11 @@ metadata:
     app.kubernetes.io/component: worker
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: ffmpeg-worker
@@ -16,9 +21,23 @@ spec:
         app.kubernetes.io/name: ffmpeg-worker
         app.kubernetes.io/component: worker
     spec:
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: ffmpeg-worker
-          image: ghcr.io/xpadev-net/video-host/ffmpeg-worker:latest
+          image: ghcr.io/xpadev-net/video-host/ffmpeg-worker:v0.0.11
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
           env:
             # Redis
             - name: REDIS_URL
@@ -83,11 +102,11 @@ spec:
                   name: ffmpeg-worker-secrets
                   key: s3-secret-access-key
             # Callback
-            - name: BACKEND_CALLBACK_URL
+            - name: BACKEND_BASE_URL
               valueFrom:
                 configMapKeyRef:
                   name: ffmpeg-worker-config
-                  key: backend-callback-url
+                  key: backend-base-url
             - name: CALLBACK_SECRET
               valueFrom:
                 secretKeyRef:
@@ -124,6 +143,12 @@ spec:
                   name: ffmpeg-worker-config
                   key: ffmpeg-threads
                   optional: true
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: log-level
+                  optional: true
             - name: TEMP_DIR
               value: /tmp/ffmpeg-worker
             # OpenTelemetry (metrics export is disabled when otel-endpoint is unset)
@@ -132,6 +157,12 @@ spec:
                 configMapKeyRef:
                   name: ffmpeg-worker-config
                   key: otel-endpoint
+                  optional: true
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: ffmpeg-worker-config
+                  key: otel-metrics-endpoint
                   optional: true
             - name: OTEL_SERVICE_NAME
               valueFrom:
@@ -146,9 +177,38 @@ spec:
             requests:
               memory: "512Mi"
               cpu: "500m"
+              ephemeral-storage: "12Gi"
             limits:
               memory: "2Gi"
               cpu: "2000m"
+              ephemeral-storage: "16Gi"
+          startupProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - "try { process.exit(Date.now() - require('node:fs').statSync('/tmp/ffmpeg-worker/healthy').mtimeMs < 90000 ? 0 : 1) } catch { process.exit(1) }"
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - "try { process.exit(Date.now() - require('node:fs').statSync('/tmp/ffmpeg-worker/healthy').mtimeMs < 90000 ? 0 : 1) } catch { process.exit(1) }"
+            periodSeconds: 30
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - "try { process.exit(Date.now() - require('node:fs').statSync('/tmp/ffmpeg-worker/ready').mtimeMs < 90000 ? 0 : 1) } catch { process.exit(1) }"
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
       volumes:
         - name: temp-storage
           emptyDir:

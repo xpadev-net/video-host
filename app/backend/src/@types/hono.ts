@@ -4,6 +4,7 @@ import type { Hono } from "hono";
 export type Env = {
   Variables: {
     user?: User;
+    authUserId?: string;
   };
 };
 

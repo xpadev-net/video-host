@@ -29,15 +29,17 @@ data:
   # S3
   s3-tmp-bucket: "video-tmp"
   s3-prod-bucket: "video-prod"
+  # ロールアウト中のみ "true": トークン無しの VOD mapping を一時的に許可 (完了後は削除)
+  # vod-allow-unsigned: "true"
+  max-upload-bytes: "5368709120"  # 最大アップロードサイズ (bytes, 既定 5GiB)
   s3-region: "ap-northeast-1"
-  s3-endpoint: ""  # MinIO等を使う場合に設定
-  s3-force-path-style: "false"
+  s3-endpoint: "http://object-storage:8333"  # SeaweedFS S3 service
+  s3-force-path-style: "true"
   # Redis
   redis-url: "redis://redis:6379"
   redis-sentinel-hosts: ""
   redis-sentinel-name: ""
-  # Video Processing
-  vod-base-url: "http://vod-server/vod"
   # OpenTelemetry (メトリクス送信先。空の場合は無効)
   otel-endpoint: ""  # 例: "http://otel-collector.otel-collector.svc.cluster.local:4318"
+  otel-metrics-endpoint: ""
   otel-service-name: "video-host-backend"

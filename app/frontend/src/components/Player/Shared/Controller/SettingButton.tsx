@@ -1,6 +1,6 @@
 import { useAtom, useSetAtom } from "jotai";
 import { Settings } from "lucide-react";
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { MouseEvent } from "react";
 import { PlayerSettingAtom, PlayerStateAtom } from "@/atoms/Player";
 
 type props = {
@@ -10,32 +10,24 @@ type props = {
 const SettingButton = ({ className }: props) => {
   const [metadata, setMetadata] = useAtom(PlayerStateAtom);
   const setPlayerSetting = useSetAtom(PlayerSettingAtom);
-  const toggleTheatre = (e: MouseEvent<HTMLButtonElement>) => {
+  const toggleSettings = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    setMetadata((pv) => ({ ...pv, isSetting: !pv.isSetting }));
-    if (!metadata.isSetting) {
+    const isOpening = !metadata.isSetting;
+    setMetadata((pv) => ({ ...pv, isSetting: isOpening }));
+    if (isOpening) {
       setPlayerSetting(["main"]);
     }
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      e.stopPropagation();
-      setMetadata((pv) => ({ ...pv, isSetting: !pv.isSetting }));
-      if (!metadata.isSetting) {
-        setPlayerSetting(["main"]);
-      }
-    }
-  };
   return (
     <button
       className={className}
-      onClick={toggleTheatre}
-      onKeyDown={handleKeyDown}
+      onClick={toggleSettings}
       type="button"
-      tabIndex={0}
       aria-label={`設定メニューを${metadata.isSetting ? "閉じる" : "開く"}`}
+      aria-haspopup="dialog"
+      aria-expanded={metadata.isSetting}
+      aria-controls="player-settings-menu"
     >
       <Settings />
     </button>

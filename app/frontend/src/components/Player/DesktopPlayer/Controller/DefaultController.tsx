@@ -2,15 +2,16 @@ import type { FormattedMovie } from "@video-host/backend";
 import { useAtomValue, useSetAtom } from "jotai";
 import { type KeyboardEvent, type MouseEvent, useState } from "react";
 import { VideoMetadataAtom, VideoRefAtom } from "@/atoms/Player";
-import { TimeDisplay } from "@/components/Player/DesktopPlayer/Controller/TimeDisplay";
 import { AutoPlayButton } from "@/components/Player/Shared/Controller/AutoPlayButton";
 import { FullscreenButton } from "@/components/Player/Shared/Controller/FullscreenButton";
 import { PlayPauseButton } from "@/components/Player/Shared/Controller/PlayPauseButton";
 import { PrevNextButton } from "@/components/Player/Shared/Controller/PrevNextButton";
 import { SettingButton } from "@/components/Player/Shared/Controller/SettingButton";
+import { Slider } from "@/components/Player/Shared/Controller/Slider";
+import { TimeDisplay } from "@/components/Player/Shared/Controller/TimeDisplay";
 import { Setting } from "@/components/Player/Shared/Setting/Setting";
 import { cn } from "@/lib/utils";
-import { Slider } from "./Slider";
+import { toggleMute } from "@/utils/volume";
 import { TheatreButton } from "./TheatreButton";
 import { VolumeIcon } from "./VolumeIcon";
 import { VolumeSlider } from "./VolumeSlider";
@@ -24,7 +25,6 @@ const DefaultController = ({ data, isHovering }: props) => {
   const videoRef = useAtomValue(VideoRefAtom);
   const setMetadata = useSetAtom(VideoMetadataAtom);
   const [isVolumeExtend, setIsVolumeExtend] = useState(false);
-  const [mutedVolume, setMutedVolume] = useState<number | undefined>(undefined);
   if (!data) return null;
   const onMouseLeave = () => {
     setIsVolumeExtend(false);
@@ -48,18 +48,7 @@ const DefaultController = ({ data, isHovering }: props) => {
 
   const onVolumeClick = () => {
     if (!videoRef) return;
-    if (mutedVolume && videoRef.volume === 0) {
-      setMutedVolume(undefined);
-      videoRef.volume = mutedVolume;
-      videoRef.muted = false;
-    } else if (mutedVolume === 0 && videoRef.volume === 0) {
-      setMutedVolume(undefined);
-      videoRef.volume = 1;
-      videoRef.muted = false;
-    } else {
-      setMutedVolume(videoRef.volume);
-      videoRef.volume = 0;
-    }
+    toggleMute(videoRef);
   };
 
   return (
@@ -83,13 +72,13 @@ const DefaultController = ({ data, isHovering }: props) => {
       <div className="flex flex-row h-10 justify-between">
         <div className="flex flex-row items-center">
           <PrevNextButton
-            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6"
+            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6"
             type={"prev"}
             data={data}
           />
-          <PlayPauseButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
+          <PlayPauseButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6" />
           <PrevNextButton
-            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6"
+            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6"
             type={"next"}
             data={data}
           />
@@ -98,7 +87,8 @@ const DefaultController = ({ data, isHovering }: props) => {
             onClick={onVolumeClick}
             onMouseOver={onVolumeMouseOver}
             onFocus={onVolumeMouseOver}
-            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6"
+            className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6"
+            aria-label="音量を調整"
           >
             <VolumeIcon />
           </button>
@@ -112,13 +102,13 @@ const DefaultController = ({ data, isHovering }: props) => {
           <TimeDisplay />
         </div>
         <div className="flex flex-row items-center">
-          <AutoPlayButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
-          <SettingButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
-          <TheatreButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
-          <FullscreenButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center [&>svg]:w-6 [&>svg]:h-6" />
+          <AutoPlayButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6" />
+          <SettingButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6" />
+          <TheatreButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6" />
+          <FullscreenButton className="w-10 h-10 border-none bg-none cursor-pointer flex justify-center items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-white [&>svg]:w-6 [&>svg]:h-6" />
         </div>
       </div>
-      <Slider />
+      <Slider showTimePreview />
       <Setting className="absolute right-3 bottom-[60px]" />
     </fieldset>
   );

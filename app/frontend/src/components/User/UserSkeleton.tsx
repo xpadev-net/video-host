@@ -1,5 +1,5 @@
-import { Flex, Skeleton } from "@radix-ui/themes";
 import type { FC } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type Props = {
   size?: "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8";
@@ -18,13 +18,13 @@ export const UserSkeleton: FC<Props> = ({ size = "3" }) => {
   }[size];
 
   return (
-    <Flex direction={"row"} align={"center"} gap={"2"} className="w-full">
+    <div className="flex w-full flex-row items-center gap-2">
       <Skeleton
         width={avatarSize}
         height={avatarSize}
-        style={{ borderRadius: "max(var(--radius-2), var(--radius-full))" }}
+        style={{ borderRadius: "9999px" }}
       />
-      <Skeleton height="20px" className={`text-text text-nowrap w-3/4`} />
-    </Flex>
+      <Skeleton height="20px" className="text-text text-nowrap w-3/4" />
+    </div>
   );
 };

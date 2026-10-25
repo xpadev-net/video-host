@@ -4,20 +4,29 @@ import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
 import { ZBasicVisibility } from "@/@types/models";
 import { filterPlaylist } from "@/lib/filter";
+import { formatPlaylist } from "@/lib/formatter";
 import { prisma } from "@/lib/prisma";
 import {
   buildMovieAccessWhere,
+  canViewMovie,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
-import { badRequest, notFound, unauthorized } from "@/utils/response";
+import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
+import { canManageOwned } from "@/utils/movieAuth";
+import { MAX_RELATION_MOVIES } from "@/utils/pagination";
+import {
+  badRequest,
+  forbidden,
+  notFound,
+  unauthorized,
+} from "@/utils/response";
 import { ok } from "@/utils/response/ok";
-import { isSystemAccount } from "@/utils/systemAccountCache";
 
 const app = new Hono<Env>();
 
 const PlaylistPatchSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
+  title: TitleSchema.optional(),
+  description: DescriptionSchema.nullable().optional(),
   visibility: ZBasicVisibility.optional(),
 });
 
@@ -46,6 +55,7 @@ export const playlistDetailRoute = app
         movies: {
           where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
+          take: MAX_RELATION_MOVIES,
           include: {
             movie: {
               include: {
@@ -67,7 +77,7 @@ export const playlistDetailRoute = app
     }
 
     return ok(c, {
-      ...filterPlaylist(playlist),
+      ...formatPlaylist(filterPlaylist(playlist)),
       isOwner: user?.id === playlist.authorId,
     });
   })
@@ -88,13 +98,8 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
-    const isOwner = existingPlaylist.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" &&
-      (await isSystemAccount(existingPlaylist.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this playlist");
+    if (!(await canManageOwned(user, existingPlaylist.authorId))) {
+      forbidden("Not authorized to edit this playlist");
     }
 
     const { title, description, visibility } = c.req.valid("json");
@@ -104,7 +109,10 @@ export const playlistDetailRoute = app
       },
       data: {
         title: title ?? existingPlaylist.title,
-        description: description ?? existingPlaylist.description,
+        description:
+          description === undefined
+            ? existingPlaylist.description
+            : description,
         visibility: visibility ?? existingPlaylist.visibility,
       },
       include: {
@@ -112,6 +120,7 @@ export const playlistDetailRoute = app
         movies: {
           where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
+          take: MAX_RELATION_MOVIES,
           include: {
             movie: {
               include: {
@@ -123,7 +132,7 @@ export const playlistDetailRoute = app
         },
       },
     });
-    return ok(c, filterPlaylist(playlist));
+    return ok(c, formatPlaylist(filterPlaylist(playlist)));
   })
   .delete("/:playlist", async (c) => {
     const user = c.get("user");
@@ -142,18 +151,11 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
-    const isOwner = playlist.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to delete this playlist");
+    if (!(await canManageOwned(user, playlist.authorId))) {
+      forbidden("Not authorized to delete this playlist");
     }
 
-    await prisma.movieOnPlaylist.deleteMany({
-      where: { playlistId: param },
-    });
-
+    // Join rows are removed by the database cascade with the playlist.
     await prisma.playlist.delete({
       where: { id: param },
     });
@@ -178,20 +180,25 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
-    const isOwner = playlist.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this playlist");
+    if (!(await canManageOwned(user, playlist.authorId))) {
+      forbidden("Not authorized to edit this playlist");
     }
 
     const { movieId } = c.req.valid("json");
 
     const movie = await prisma.movie.findUnique({
       where: { id: movieId },
+      include: { viewers: true, variants: true },
     });
-    if (!movie) {
+    // Movies the caller cannot watch are reported as missing so the
+    // endpoint is not an existence oracle for private movies.
+    if (
+      !movie ||
+      !canViewMovie(movie, user) ||
+      (movie.authorId !== user.id &&
+        user.role !== "ADMIN" &&
+        !movie.variants.some((v) => v.status === "READY"))
+    ) {
       notFound("Movie not found");
     }
 
@@ -226,6 +233,7 @@ export const playlistDetailRoute = app
         movies: {
           where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
+          take: MAX_RELATION_MOVIES,
           include: {
             movie: {
               include: {
@@ -242,7 +250,7 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
-    return ok(c, filterPlaylist(updatedPlaylist));
+    return ok(c, formatPlaylist(filterPlaylist(updatedPlaylist)));
   })
   .delete("/:playlist/movies/:movie", async (c) => {
     const user = c.get("user");
@@ -263,12 +271,8 @@ export const playlistDetailRoute = app
       notFound("Playlist not found");
     }
 
-    const isOwner = playlist.authorId === user.id;
-    const isAdminForSystemAccount =
-      user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
-
-    if (!isOwner && !isAdminForSystemAccount) {
-      unauthorized("Not authorized to edit this playlist");
+    if (!(await canManageOwned(user, playlist.authorId))) {
+      forbidden("Not authorized to edit this playlist");
     }
 
     await prisma.movieOnPlaylist.deleteMany({
@@ -301,12 +305,8 @@ export const playlistDetailRoute = app
         notFound("Playlist not found");
       }
 
-      const isOwner = playlist.authorId === user.id;
-      const isAdminForSystemAccount =
-        user.role === "ADMIN" && (await isSystemAccount(playlist.authorId));
-
-      if (!isOwner && !isAdminForSystemAccount) {
-        unauthorized("Not authorized to edit this playlist");
+      if (!(await canManageOwned(user, playlist.authorId))) {
+        forbidden("Not authorized to edit this playlist");
       }
 
       const { movieIds } = c.req.valid("json");
@@ -330,6 +330,7 @@ export const playlistDetailRoute = app
           movies: {
             where: { movie: buildMovieAccessWhere(user) },
             orderBy: { order: "asc" },
+            take: MAX_RELATION_MOVIES,
             include: {
               movie: {
                 include: {
@@ -346,7 +347,7 @@ export const playlistDetailRoute = app
         notFound("Playlist not found");
       }
 
-      return ok(c, filterPlaylist(updatedPlaylist));
+      return ok(c, formatPlaylist(filterPlaylist(updatedPlaylist)));
     },
   );
 

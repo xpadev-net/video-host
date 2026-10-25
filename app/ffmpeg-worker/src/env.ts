@@ -1,73 +1,43 @@
 import "dotenv/config";
+import { availableParallelism } from "node:os";
+import { parseWorkerEnv } from "./config";
+import { log } from "./logger";
 
-/**
- * Requires an environment variable to be set.
- * In development mode (NODE_ENV=development), allows a default value with a warning.
- * In production mode, throws an error if the variable is not set.
- */
-const requireEnv = (name: string, defaultForDev?: string): string => {
-  const value = process.env[name];
-  if (value) return value;
+const env = parseWorkerEnv(process.env, Math.min(2, availableParallelism()));
+if (process.env.NODE_ENV === "development" && !process.env.CALLBACK_SECRET) {
+  log.warn("CALLBACK_SECRET not set, using the development default");
+}
 
-  if (process.env.NODE_ENV === "development" && defaultForDev !== undefined) {
-    console.warn(`Warning: ${name} not set, using development default`);
-    return defaultForDev;
-  }
+export const REDIS_URL = env.REDIS_URL;
+export const REDIS_SENTINEL_HOSTS = env.REDIS_SENTINEL_HOSTS;
+export const REDIS_SENTINEL_NAME = env.REDIS_SENTINEL_NAME;
+export const REDIS_SENTINEL_PASSWORD = env.REDIS_SENTINEL_PASSWORD;
 
-  throw new Error(
-    `Required environment variable ${name} is not set. ` +
-    `Set it in your environment or use NODE_ENV=development for defaults.`,
-  );
+export const S3_TMP_BUCKET = env.S3_TMP_BUCKET;
+export const S3_PROD_BUCKET = env.S3_PROD_BUCKET;
+export const S3_REGION = env.S3_REGION;
+export const S3_ACCESS_KEY_ID = env.S3_ACCESS_KEY_ID;
+export const S3_SECRET_ACCESS_KEY = env.S3_SECRET_ACCESS_KEY;
+export const S3_ENDPOINT = env.S3_ENDPOINT;
+export const S3_FORCE_PATH_STYLE = env.S3_FORCE_PATH_STYLE;
+
+export const BACKEND_BASE_URL = env.BACKEND_BASE_URL;
+export const CALLBACK_SECRET = env.CALLBACK_SECRET;
+
+export const VOD_BASE_URL = env.VOD_BASE_URL;
+export const getVodContentUrl = (s3Key: string): string => {
+  const origin = VOD_BASE_URL.replace(/\/+$/, "").replace(/\/vod$/i, "");
+  const encodedKey = s3Key.split("/").map(encodeURIComponent).join("/");
+  return `${origin}/vod/${encodedKey}/master.m3u8`;
 };
 
-export const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-// Sentinel Configuration (optional)
-export const REDIS_SENTINEL_HOSTS = process.env.REDIS_SENTINEL_HOSTS; // e.g., "host1:26379,host2:26379,host3:26379"
-export const REDIS_SENTINEL_NAME = process.env.REDIS_SENTINEL_NAME; // e.g., "mymaster"
-export const REDIS_SENTINEL_PASSWORD = process.env.REDIS_SENTINEL_PASSWORD;
+export const POLL_INTERVAL_MS = env.POLL_INTERVAL_MS;
+export const TEMP_DIR = env.TEMP_DIR;
+export const MIN_DISK_SPACE_GB = env.MIN_DISK_SPACE_GB;
+export const JOB_TIMEOUT_SECONDS = env.JOB_TIMEOUT_SECONDS;
+export const FFMPEG_THREADS = env.FFMPEG_THREADS;
 
-// S3 Configuration
-export const S3_TMP_BUCKET = process.env.S3_TMP_BUCKET || "video-tmp";
-export const S3_PROD_BUCKET = process.env.S3_PROD_BUCKET || "video-prod";
-export const S3_REGION = process.env.S3_REGION || "ap-northeast-1";
-export const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || "";
-export const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || "";
-export const S3_ENDPOINT = process.env.S3_ENDPOINT;
-export const S3_FORCE_PATH_STYLE = process.env.S3_FORCE_PATH_STYLE === "true";
-
-// Backend callback
-export const BACKEND_CALLBACK_URL =
-  process.env.BACKEND_CALLBACK_URL ||
-  "http://localhost:3001/api/v4/callback/encode-complete";
-export const CALLBACK_SECRET = requireEnv(
-  "CALLBACK_SECRET",
-  "dev-callback-secret",
-);
-
-// VOD streaming
-export const VOD_BASE_URL = process.env.VOD_BASE_URL || "http://localhost:3002";
-
-// Worker settings
-export const POLL_INTERVAL_MS = parseInt(
-  process.env.POLL_INTERVAL_MS || "5000",
-  10,
-);
-export const TEMP_DIR = process.env.TEMP_DIR || "/tmp/ffmpeg-worker";
-export const MIN_DISK_SPACE_GB = parseInt(
-  process.env.MIN_DISK_SPACE_GB || "1",
-  10,
-);
-export const JOB_TIMEOUT_SECONDS = parseInt(
-  process.env.JOB_TIMEOUT_SECONDS || "7200",
-  10,
-);
-export const FFMPEG_THREADS = process.env.FFMPEG_THREADS
-  ? parseInt(process.env.FFMPEG_THREADS, 10)
-  : undefined; // undefined means use default (all available CPUs)
-
-// OpenTelemetry metrics export (disabled when the endpoint is unset)
-export const OTEL_EXPORTER_OTLP_ENDPOINT =
-  process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+export const OTEL_EXPORTER_OTLP_ENDPOINT = env.OTEL_EXPORTER_OTLP_ENDPOINT;
 export const OTEL_EXPORTER_OTLP_METRICS_ENDPOINT =
-  process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
-export const OTEL_SERVICE_NAME = process.env.OTEL_SERVICE_NAME;
+  env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
+export const OTEL_SERVICE_NAME = env.OTEL_SERVICE_NAME;

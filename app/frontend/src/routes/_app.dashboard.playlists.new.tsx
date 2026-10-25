@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useAtomValue } from "jotai";
-import { type FormEvent, useState } from "react";
-import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { type FormEvent, useRef, useState } from "react";
+import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
+import { useProfileSelectionGeneration } from "@/hooks/useProfileSelectionGeneration";
 import { useSelf } from "@/hooks/useUser";
 import { client } from "@/lib/client";
 
@@ -12,7 +12,6 @@ export const Route = createFileRoute("/_app/dashboard/playlists/new")({
 
 function NewPlaylistPage() {
   const navigate = useNavigate();
-  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const { data: user, isLoading } = useSelf();
 
   const [title, setTitle] = useState("");
@@ -22,6 +21,18 @@ function NewPlaylistPage() {
   >("PUBLIC");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submissionIdRef = useRef(0);
+  const {
+    selectedAccountId,
+    selectedProfileId,
+    generationRef: selectionGenerationRef,
+  } = useProfileSelectionGeneration(() => {
+    setTitle("");
+    setDescription("");
+    setVisibility("PUBLIC");
+    setError(null);
+    setIsSubmitting(false);
+  });
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -29,29 +40,39 @@ function NewPlaylistPage() {
 
     setIsSubmitting(true);
     setError(null);
+    const selectionGeneration = selectionGenerationRef.current;
+    const submissionId = ++submissionIdRef.current;
 
     try {
-      const res = await client.api.v4.playlists.$post({
-        json: {
-          title: title.trim(),
-          description: description.trim(),
-          visibility,
-          asUserId: selectedAccountId || undefined,
+      const res = await client.api.v4.playlists.$post(
+        {
+          json: {
+            title: title.trim(),
+            description: description.trim(),
+            visibility,
+            asUserId: selectedAccountId || undefined,
+          },
         },
-      });
+        {
+          headers: { "X-Profile-Id": selectedProfileId ?? "" },
+        },
+      );
 
       if (!res.ok) {
         throw new Error("作成に失敗しました");
       }
 
-      await navigate({ to: "/dashboard/playlists" });
+      if (selectionGenerationRef.current === selectionGeneration)
+        await navigate({ to: "/dashboard/playlists" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "作成に失敗しました");
-      setIsSubmitting(false);
+      if (selectionGenerationRef.current === selectionGeneration)
+        setError(err instanceof Error ? err.message : "作成に失敗しました");
+    } finally {
+      if (submissionIdRef.current === submissionId) setIsSubmitting(false);
     }
   };
 
-  if (isLoading) return <div>Loading...</div>;
+  if (isLoading) return <DashboardLoading />;
   if (!user) return <div>ログインしてください</div>;
 
   return (
@@ -104,16 +125,6 @@ function NewPlaylistPage() {
           </button>
         </form>
       </div>
-      <style>{`
-        .new-playlist-page h1 { margin-bottom: 2rem; color: var(--text-primary, #fff); }
-        .form { max-width: 600px; display: flex; flex-direction: column; gap: 1.5rem; }
-        .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
-        .form-group label { color: var(--text-secondary, #999); font-size: 0.875rem; }
-        .form-group input, .form-group textarea, .form-group select { padding: 0.75rem; background: var(--background-primary, #0d0d0d); border: 1px solid var(--border-color, #333); border-radius: 8px; color: var(--text-primary, #fff); font-size: 1rem; }
-        .error-message { padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 8px; color: #ef4444; }
-        .submit-button { padding: 0.875rem 1.5rem; background: var(--primary-color, #3b82f6); color: white; border: none; border-radius: 8px; cursor: pointer; }
-        .submit-button:disabled { opacity: 0.5; cursor: not-allowed; }
-      `}</style>
     </>
   );
 }

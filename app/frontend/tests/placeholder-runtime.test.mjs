@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import http from "node:http";
@@ -37,23 +38,23 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
     {
       name: "unresolved",
       endpoint: "",
-      site: "_VITE_SITE_NAME_",
-      flag: false,
-      replace: false,
+      site: "Video Host",
+      replace: true,
+      siteEnv: false,
     },
     {
       name: "same-origin",
       endpoint: "",
       site: "Runtime same-origin",
-      flag: true,
       replace: true,
+      siteEnv: true,
     },
     {
       name: "explicit-origin",
       endpoint: "https://api.example.test",
-      site: "Runtime explicit-origin",
-      flag: false,
+      site: `Runtime O'Neil "quote" <tag> $HOME & | \\path \` ${String.fromCharCode(36)}{window.name}`,
       replace: true,
+      siteEnv: true,
     },
   ]) {
     await t.test(scenario.name, async () => {
@@ -72,9 +73,7 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
               env: {
                 ...process.env,
                 VITE_API_ENDPOINT: scenario.endpoint,
-                VITE_SITE_NAME: scenario.site,
-                VITE_ENABLE_COMMENTS: String(scenario.flag),
-                VITE_REQUIRE_SIGNUP_CODE: String(scenario.flag),
+                VITE_SITE_NAME: scenario.siteEnv ? scenario.site : "",
               },
               encoding: "utf8",
             },
@@ -88,12 +87,7 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
         );
         assert.deepEqual(
           Object.values(config).sort(),
-          [
-            scenario.endpoint,
-            scenario.site,
-            scenario.flag,
-            scenario.flag,
-          ].sort(),
+          [scenario.endpoint, scenario.site].sort(),
         );
 
         const reserve = http.createServer().listen(0, "127.0.0.1");
@@ -132,13 +126,51 @@ test("placeholder build prerenders a shell and survives runtime replacement", as
             }
           }
           assert.ok(ready, logs || "Server did not become ready");
+
+          const assetResponse = await fetch(`${origin}/assets/${assetName}`);
+          assert.equal(assetResponse.status, 200, logs);
+          const assetBody = Buffer.from(await assetResponse.arrayBuffer());
+          assert.equal(
+            Number(assetResponse.headers.get("content-length")),
+            assetBody.byteLength,
+            "The served env asset must match its Content-Length",
+          );
+          const expectedEtag = `"${assetBody.byteLength.toString(16)}-${createHash(
+            "sha1",
+          )
+            .update(assetBody)
+            .digest("base64")
+            .replace(/=$/, "")}"`;
+          assert.equal(
+            assetResponse.headers.get("etag"),
+            expectedEtag,
+            "The served env asset ETag must match its complete response body",
+          );
+          if (scenario.replace) {
+            assert.doesNotMatch(
+              assetBody.toString("utf8"),
+              /_VITE_[A-Z0-9_]+_/,
+            );
+          }
+
           for (const route of ["/", "/login"]) {
             const response = await fetch(origin + route);
             assert.equal(response.status, 200, logs);
             const html = await response.text();
             assert.match(html, /<html/);
             assert.ok(
-              html.includes(scenario.site),
+              html.includes(
+                scenario.site.replace(/[&<>"']/g, (character) => {
+                  const entities = {
+                    "&": "&amp;",
+                    "<": "&lt;",
+                    ">": "&gt;",
+                    '"': "&quot;",
+                    "'": "&#x27;",
+                  };
+                  return entities[character];
+                }),
+              ),
               `${route} must render the configured site name`,
             );
             if (scenario.replace)

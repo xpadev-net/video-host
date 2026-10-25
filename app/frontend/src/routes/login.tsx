@@ -5,8 +5,9 @@ import { AuthForm, AuthLayout, FormField } from "@/components/Auth";
 import { Button } from "@/components/ui/button";
 import { SiteName } from "@/contexts/env";
 import { getSafeCallback, useAuth } from "@/hooks/useAuth";
+import { useAuthConfig } from "@/hooks/useAuthConfig";
 import { authClient } from "@/lib/auth-client";
-import { type AuthConfig, getAuthConfig } from "@/service/getAuthConfig";
+import { getAuthErrorMessage } from "@/utils/authErrorMessage";
 
 type LoginSearch = { callback?: string; error?: string };
 
@@ -47,7 +48,8 @@ function LoginRoute() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
-  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+  const [sessionError, setSessionError] = useState(false);
+  const { authConfig, isLoading: isAuthConfigLoading } = useAuthConfig();
   const passwordAuthEnabled = authConfig?.passwordAuthEnabled ?? false;
   const ssoEnabled = Boolean(
     authConfig?.ssoEnabled && authConfig.ssoProviderId,
@@ -57,10 +59,7 @@ function LoginRoute() {
     let cancelled = false;
     void (async () => {
       try {
-        const [config, sessionResult] = await Promise.all([
-          getAuthConfig(),
-          authClient.getSession(),
-        ]);
+        const sessionResult = await authClient.getSession();
         if (cancelled) return;
         if (ssoError) {
           setError(ssoErrorMessages[ssoError] ?? "SSOログインに失敗しました");
@@ -68,16 +67,13 @@ function LoginRoute() {
           await navigate({ to: callback ?? "/", replace: true });
           return;
         }
-        setAuthConfig(config);
-        if (!config)
-          setError(
-            "認証設定を取得できませんでした。ページを再読み込みしてください",
-          );
       } catch {
-        if (!cancelled)
+        if (!cancelled) {
+          setSessionError(true);
           setError(
             "ネットワークエラーが発生しました。ページを再読み込みしてください",
           );
+        }
       } finally {
         if (!cancelled) setInitialLoading(false);
       }
@@ -87,13 +83,21 @@ function LoginRoute() {
     };
   }, [callback, navigate, setError, ssoError]);
 
+  useEffect(() => {
+    if (!isAuthConfigLoading && !authConfig) {
+      setError(
+        "認証設定を取得できませんでした。ページを再読み込みしてください",
+      );
+    }
+  }, [authConfig, isAuthConfigLoading, setError]);
+
   const handleSignIn = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!passwordAuthEnabled || !startAuth()) return;
     try {
       const { error } = await authClient.signIn.email({ email, password });
       if (error)
-        handleAuthError("メールアドレスまたはパスワードが正しくありません");
+        handleAuthError(getAuthErrorMessage(error, "ログインに失敗しました"));
       else await handleAuthSuccess();
     } catch {
       handleAuthError("ネットワークエラーが発生しました");
@@ -119,12 +123,22 @@ function LoginRoute() {
     }
   };
 
-  if (initialLoading) {
+  if (initialLoading || isAuthConfigLoading) {
     return (
       <AuthLayout title="ログイン" description="読み込み中...">
         <div className="flex justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
+      </AuthLayout>
+    );
+  }
+  if (sessionError) {
+    return (
+      <AuthLayout
+        title="ログイン"
+        description="ログイン状態を確認できませんでした"
+      >
+        <p role="alert">ページを再読み込みしてください。</p>
       </AuthLayout>
     );
   }

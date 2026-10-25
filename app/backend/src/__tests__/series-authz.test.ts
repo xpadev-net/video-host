@@ -1,0 +1,257 @@
+import type { User } from "@prisma/client";
+import { Hono } from "hono";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Env } from "../@types/hono";
+
+const database = vi.hoisted(() => ({
+  series: { findUnique: vi.fn() },
+  movieVariant: { findFirst: vi.fn().mockResolvedValue(null) },
+  movie: {
+    findUnique: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    aggregate: vi.fn(),
+    count: vi.fn(),
+  },
+  user: { findUnique: vi.fn(), findMany: vi.fn() },
+  movieOnPlaylist: {
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    aggregate: vi.fn(),
+    deleteMany: vi.fn(),
+    updateMany: vi.fn(),
+  },
+  playlist: { findUnique: vi.fn() },
+  $transaction: vi.fn(),
+}));
+vi.mock("@/lib/prisma", () => ({ prisma: database }));
+vi.mock("@/lib/s3", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/s3")>()),
+  deleteProdFile: vi.fn(),
+  deleteTmpFile: vi.fn(),
+  getTmpFileSize: vi.fn().mockResolvedValue(1024),
+}));
+vi.mock("@/lib/redis", () => ({
+  addEncodeJob: vi.fn(),
+  setEncodeProgress: vi.fn(),
+}));
+vi.mock("@/utils/systemAccountCache", () => ({
+  isSystemAccount: vi.fn().mockResolvedValue(false),
+}));
+
+import { moviesRoute } from "../routes/api/v4/movies";
+import { playlistDetailRoute } from "../routes/api/v4/playlists/[playlist]";
+import { seriesDetailRoute } from "../routes/api/v4/series/[series]";
+
+const person = (id: string, role: User["role"] = "USER"): User => ({
+  id,
+  name: id,
+  username: id,
+  role,
+  kind: "HUMAN",
+  authUserId: `auth-${id}`,
+  avatarUrl: null,
+  externalId: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+});
+const alice = person("alice");
+const bob = person("bob");
+
+const appFor = (actor?: User) => {
+  const app = new Hono<Env>();
+  app.use("*", async (c, next) => {
+    if (actor) c.set("user", actor);
+    await next();
+  });
+  app.route("/series", seriesDetailRoute);
+  app.route("/movies", moviesRoute);
+  app.route("/playlists", playlistDetailRoute);
+  return app;
+};
+
+const json = (method: string, body: unknown): RequestInit => ({
+  method,
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+const emptySeries = {
+  id: "s1",
+  authorId: "alice",
+  visibility: "PUBLIC",
+  author: alice,
+  movies: [],
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  database.series.findUnique.mockResolvedValue(emptySeries);
+  database.movie.aggregate.mockResolvedValue({ _max: { order: 0 } });
+  database.$transaction.mockImplementation((ops: unknown[]) =>
+    Promise.all(ops),
+  );
+});
+
+describe("series movie association authorization", () => {
+  it("rejects adding a movie owned by someone else", async () => {
+    database.movie.findUnique.mockResolvedValue({
+      id: "m1",
+      authorId: "bob",
+      seriesId: "other",
+    });
+    const res = await appFor(alice).request(
+      "/series/s1/movies",
+      json("POST", { movieId: "m1" }),
+    );
+    expect(res.status).toBe(404);
+    expect(database.movie.update).not.toHaveBeenCalled();
+  });
+
+  it("adds a movie owned by the caller", async () => {
+    database.movie.findUnique.mockResolvedValue({
+      id: "m1",
+      authorId: "alice",
+      seriesId: null,
+    });
+    const res = await appFor(alice).request(
+      "/series/s1/movies",
+      json("POST", { movieId: "m1" }),
+    );
+    expect(res.status).toBe(200);
+    expect(database.movie.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("scopes detaching to the series", async () => {
+    database.movie.updateMany.mockResolvedValue({ count: 0 });
+    const res = await appFor(alice).request("/series/s1/movies/m9", {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(404);
+    expect(database.movie.updateMany).toHaveBeenCalledWith({
+      where: { id: "m9", seriesId: "s1" },
+      data: { seriesId: null, order: 0 },
+    });
+  });
+
+  it("rejects reordering movies outside the series", async () => {
+    database.movie.count.mockResolvedValue(1);
+    const res = await appFor(alice).request(
+      "/series/s1/movies",
+      json("PATCH", { movieIds: ["m1", "foreign"] }),
+    );
+    expect(res.status).toBe(400);
+    expect(database.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("reorders in a transaction", async () => {
+    database.movie.count.mockResolvedValue(2);
+    const res = await appFor(alice).request(
+      "/series/s1/movies",
+      json("PATCH", { movieIds: ["m1", "m2"] }),
+    );
+    expect(res.status).toBe(200);
+    expect(database.$transaction).toHaveBeenCalledTimes(1);
+    expect(database.movie.update).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("seriesId on movie update", () => {
+  it("rejects moving a movie into someone else's series", async () => {
+    database.movie.findUnique.mockResolvedValue({
+      id: "m1",
+      authorId: "alice",
+    });
+    database.series.findUnique.mockResolvedValue({ authorId: "bob" });
+    const res = await appFor(alice).request(
+      "/movies/m1",
+      json("PATCH", { seriesId: "s2" }),
+    );
+    expect(res.status).toBe(403);
+    expect(database.movie.update).not.toHaveBeenCalled();
+  });
+
+  it("persists an explicit null description and rejects invalid paging input", async () => {
+    database.movie.findUnique.mockResolvedValue({
+      id: "m1",
+      authorId: "alice",
+      title: "Movie",
+      description: "old description",
+      visibility: "PUBLIC",
+      order: 0,
+    });
+    database.movie.update.mockResolvedValue({
+      id: "m1",
+      title: "Movie",
+      description: null,
+      duration: 0,
+      variants: [],
+      thumbnailUrl: null,
+      visibility: "PUBLIC",
+      author: alice,
+      series: null,
+      viewers: [],
+      createdAt: new Date(),
+    });
+
+    const updated = await appFor(alice).request(
+      "/movies/m1",
+      json("PATCH", { description: null }),
+    );
+    expect(updated.status).toBe(200);
+    expect(database.movie.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ description: null }),
+      }),
+    );
+
+    const invalidPage = await appFor(alice).request("/movies?page=0");
+    expect(invalidPage.status).toBe(400);
+    expect(database.movie.count).not.toHaveBeenCalled();
+  });
+});
+
+describe("playlist movie addition", () => {
+  const playlist = { id: "p1", authorId: "bob" };
+
+  it("hides other users' private movies", async () => {
+    database.playlist.findUnique.mockResolvedValue(playlist);
+    database.movie.findUnique.mockResolvedValue({
+      id: "m1",
+      authorId: "alice",
+      visibility: "PRIVATE",
+      viewers: [],
+      variants: [{ status: "READY" }],
+    });
+    const res = await appFor(bob).request(
+      "/playlists/p1/movies",
+      json("POST", { movieId: "m1" }),
+    );
+    expect(res.status).toBe(404);
+    expect(database.movieOnPlaylist.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects add, remove, and reorder operations on another user's playlist", async () => {
+    database.playlist.findUnique.mockResolvedValue(playlist);
+    const app = appFor(alice);
+
+    const added = await app.request(
+      "/playlists/p1/movies",
+      json("POST", { movieId: "m1" }),
+    );
+    const removed = await app.request("/playlists/p1/movies/m1", {
+      method: "DELETE",
+    });
+    const reordered = await app.request(
+      "/playlists/p1/movies",
+      json("PATCH", { movieIds: ["m1"] }),
+    );
+
+    expect([added.status, removed.status, reordered.status]).toEqual([
+      403, 403, 403,
+    ]);
+    expect(database.movieOnPlaylist.create).not.toHaveBeenCalled();
+    expect(database.movieOnPlaylist.deleteMany).not.toHaveBeenCalled();
+    expect(database.movieOnPlaylist.updateMany).not.toHaveBeenCalled();
+  });
+});

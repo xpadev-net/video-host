@@ -4,13 +4,13 @@ This is a breaking authentication cutover. It does not deploy anything automatic
 
 ## Preserved data and changed identities
 
-The application `User` table still owns video/series/playlist authorship, viewer lists, usernames, profiles, and USER/ADMIN roles. Its IDs and content relations are preserved. New `AuthUser`, `AuthAccount`, `AuthSession`, `AuthVerification`, and `AuthRateLimit` tables own authentication only. `User.authUserId` is an optional unique mapping; `User.kind` is explicitly HUMAN or SYSTEM. SYSTEM users must never acquire an AuthUser mapping.
+The application `User` table still owns video/series/playlist authorship, viewer lists, usernames, profiles, and USER/ADMIN roles. Its IDs and content relations are preserved. `AuthUser`, `AuthAccount`, `AuthSession`, `AuthVerification`, and `AuthRateLimit` own authentication. `User.authUserId` is an optional unique mapping for the default profile; `AuthProfile` links the same authenticated account to additional domain profiles. `User.kind` is explicitly HUMAN or SYSTEM. SYSTEM users must never acquire an AuthUser or AuthProfile mapping.
 
 The migration classifies old rows with both password=NULL and externalId=NULL as SYSTEM, using the prior system-administration definition. Other rows remain HUMAN. Review that classification against your data before applying it: custom imports may not follow this convention. Old SSO externalId values are retained only as historical domain data and are not used to authenticate or claim an account.
 
 OIDC subjects are case-sensitive. The configured provider ID hashes the exact issuer, and the provider account ID hashes the exact verified subject using SHA-256. This avoids MySQL case-insensitive and trailing-space comparisons conflating distinct subjects such as `abc`, `ABC`, and `abc `. Do not normalize these values or change the mapping for an existing provider.
 
-New logins create new HUMAN domain profiles with ordinary USER role. Old HUMAN author profiles remain unclaimed. The application never claims old content by matching email, display name, username, or a mutable provider profile. If preserving an author's access matters, an operator must explicitly verify the new authentication identity and map that AuthUser to the correct legacy HUMAN profile, preserving role and viewer relationships. First remove/reconcile the newly provisioned empty profile after confirming it owns no content or viewer memberships. This is a manual database-administration task, not an automatic migration or a public endpoint.
+New logins create a HUMAN domain profile with ordinary USER role. One AuthUser can own multiple domain profiles: the original `User.authUserId` mapping remains the fixed default profile, while additional profiles use `AuthProfile`. Profile switching is authenticated, checks account ownership, and scopes profile-owned video sharing. Old HUMAN author profiles remain unclaimed. The application never claims old content by matching email, display name, username, or a mutable provider profile. If preserving an author's access matters, an operator must explicitly verify the new authentication identity and map it to the correct legacy HUMAN profile, preserving role and viewer relationships. This is a manual database-administration task, not an automatic migration or a public endpoint.
 
 ## Before cutover
 
@@ -24,10 +24,11 @@ New logins create new HUMAN domain profiles with ordinary USER role. Old HUMAN a
 
 ## Apply schema and bootstrap
 
-With a backup and only the new build selected, run from the repository root:
+The backend container entrypoint takes a MySQL advisory lock on a dedicated database connection, runs `prisma migrate deploy`, releases the lock, then starts the API. Replicas therefore wait for one another instead of running migrations concurrently. The Kubernetes startup probe allows up to one hour for migrations and API startup. Take a database backup and review pending migrations before deploying. The lock does not stop old application replicas from using the database during a migration. For a migration that drops or renames data, or otherwise breaks compatibility with the previous backend, use a maintenance window: stop the old backend replicas before starting the new image, then verify migrations and the API before restoring traffic. Ordinary rolling updates are safe only when migrations retain compatibility with both application versions while old and new replicas overlap.
+
+To apply migrations manually when operating a disposable or stopped deployment, run from the repository root:
 
     pnpm -F @video-host/backend exec prisma migrate deploy
-    pnpm -F @video-host/backend prisma:generate
 
 Migration `20261001060000_better_auth` drops the old `Session` table and `User.password` column. It preserves content rows and adds the authentication models/mapping. Do not run `db push --accept-data-loss` as a substitute.
 

@@ -10,7 +10,7 @@ spec:
   selector:
     app.kubernetes.io/name: vod
   ports:
-    - port: 443
-      targetPort: 443
+    - port: 80
+      targetPort: 8080
       protocol: TCP
-      name: https
+      name: http
