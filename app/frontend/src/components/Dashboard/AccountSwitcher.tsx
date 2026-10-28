@@ -5,6 +5,7 @@ import {
   selectedAccountIdAtom,
   selectedProfileIdAtom,
 } from "@/atoms/SelectedAccount";
+import { ProfileVisibilityEditor } from "@/components/Dashboard/ProfileVisibilityEditor";
 import { useSystemAccounts } from "@/hooks/useDashboard";
 import { useProfiles } from "@/hooks/useProfiles";
 import { useSelf } from "@/hooks/useUser";
@@ -16,7 +17,7 @@ type SystemAccount = InferResponseType<
 >["data"][number];
 
 export const AccountSwitcher: FC = () => {
-  const { data: user } = useSelf();
+  const { data: user, mutate: mutateSelf } = useSelf();
   const { data: authSession } = authClient.useSession();
   const sessionUserId = authSession?.user.id;
   const isAdmin = user && "role" in user && user.role === "ADMIN";
@@ -189,6 +190,15 @@ export const AccountSwitcher: FC = () => {
               </option>
             ))}
           </select>
+          {user && (
+            <ProfileVisibilityEditor
+              key={user.id}
+              profile={user}
+              selectedProfileId={selectedProfileId}
+              isDefault={selectedProfileId === null}
+              onSaved={() => void mutateSelf()}
+            />
+          )}
           <form
             className="mt-3 flex flex-col gap-2"
             onSubmit={handleCreateProfile}

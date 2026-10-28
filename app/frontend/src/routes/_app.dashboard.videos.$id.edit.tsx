@@ -4,11 +4,7 @@ import {
   useBlocker,
   useNavigate,
 } from "@tanstack/react-router";
-import type {
-  FilteredUser,
-  FormattedMovie,
-  Visibility,
-} from "@video-host/backend";
+import type { FormattedMovie, Visibility } from "@video-host/backend";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -18,8 +14,8 @@ import {
   useState,
 } from "react";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
+import { ViewerManager } from "@/components/Dashboard/ViewerManager";
 import { useConfirm } from "@/components/Feedback/FeedbackProvider";
-import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { ApiEndpoint } from "@/contexts/env";
 import { useProfileSelectionGeneration } from "@/hooks/useProfileSelectionGeneration";
 import { useUpload } from "@/hooks/useUpload";
@@ -60,7 +56,6 @@ function EditVideoPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
-  const [viewers, setViewers] = useState<FilteredUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +127,6 @@ function EditVideoPage() {
           setTitle(movieData.title);
           setDescription(movieData.description || "");
           setVisibility(movieData.visibility);
-          setViewers(movieData.viewers ?? []);
         }
       } catch {
         if (generation === fetchGenerationRef.current)
@@ -279,10 +273,6 @@ function EditVideoPage() {
             title: title.trim(),
             description: description.trim(),
             visibility,
-            viewerIds:
-              visibility === "LIMITED"
-                ? viewers.map((viewer) => viewer.id)
-                : [],
           },
         },
         { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
@@ -456,11 +446,11 @@ function EditVideoPage() {
 
           {visibility === "LIMITED" && (
             <div className="form-group">
-              <label htmlFor="viewers">公開するユーザー</label>
-              <UserPicker
-                id="viewers"
-                selected={viewers}
-                onChange={setViewers}
+              <span className="text-sm font-medium">公開するユーザー</span>
+              <ViewerManager
+                targetType="MOVIE"
+                targetId={movie.id}
+                viewers={movie.viewers ?? []}
               />
             </div>
           )}

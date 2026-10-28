@@ -58,10 +58,14 @@ export const moviesRoute = app
     const movies = await prisma.movie.findMany({
       where,
       include: {
-        author: true,
+        author: {
+          include: { profileViewers: { select: { userId: true } } },
+        },
         series: {
           include: {
-            author: true,
+            author: {
+              include: { profileViewers: { select: { userId: true } } },
+            },
           },
         },
         variants: true,

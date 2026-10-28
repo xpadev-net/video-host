@@ -78,7 +78,9 @@ export const seriesDetailRoute = app
         id: seriesId,
       },
       include: {
-        author: true,
+        author: {
+          include: { profileViewers: { select: { userId: true } } },
+        },
         movies: {
           where: movieAccessWhere,
           orderBy: [
@@ -234,6 +236,11 @@ export const seriesDetailRoute = app
       const user = c.get("user");
       const series = await prisma.series.findFirst({
         where: { id: seriesId },
+        include: {
+          author: {
+            include: { profileViewers: { select: { userId: true } } },
+          },
+        },
       });
 
       if (!series) {

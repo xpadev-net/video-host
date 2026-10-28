@@ -2,7 +2,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
-import { filterUser } from "@/lib/filter";
+import { filterSelf, filterUser } from "@/lib/filter";
 import { prisma } from "@/lib/prisma";
 import {
   MAX_ADDITIONAL_PROFILES,
@@ -25,15 +25,23 @@ export const profilesRoute = app
     const account = await prisma.authUser.findUnique({
       where: { id: authUserId },
       include: {
-        profile: true,
-        additionalProfiles: { include: { profile: true } },
+        profile: {
+          include: { profileViewers: { include: { user: true } } },
+        },
+        additionalProfiles: {
+          include: {
+            profile: {
+              include: { profileViewers: { include: { user: true } } },
+            },
+          },
+        },
       },
     });
     if (!account?.profile) unauthorized("Profile not provisioned");
     const profiles = [
-      { ...filterUser(account.profile), isDefault: true },
+      { ...filterSelf(account.profile), isDefault: true },
       ...account.additionalProfiles.map((membership) => ({
-        ...filterUser(membership.profile),
+        ...filterSelf(membership.profile),
         isDefault: false,
       })),
     ];

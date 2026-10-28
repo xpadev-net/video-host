@@ -30,10 +30,21 @@ export const getDistinctSuggestPage = async ({
 }): Promise<SuggestPage> => {
   const conditions: Prisma.Sql[] = [];
   if (!user) {
-    conditions.push(Prisma.sql`visibility = 'PUBLIC'`);
-  } else if (user.role !== "ADMIN") {
     conditions.push(
-      Prisma.sql`(visibility = 'PUBLIC' OR authorId = ${user.id})`,
+      Prisma.sql`(visibility = 'PUBLIC' AND authorId IN (SELECT id FROM \`User\` WHERE visibility = 'PUBLIC'))`,
+    );
+  } else if (user.role !== "ADMIN") {
+    // Suggestions are capped by the author profile's visibility, exactly like
+    // buildVisibilityFilter: own rows always pass, others' PUBLIC rows pass
+    // only while the author profile is PUBLIC or shared with this user.
+    conditions.push(
+      Prisma.sql`(
+        (visibility = 'PUBLIC' AND (
+          authorId IN (SELECT id FROM \`User\` WHERE visibility = 'PUBLIC')
+          OR authorId IN (SELECT profileId FROM \`ProfileViewer\` WHERE userId = ${user.id})
+        ))
+        OR authorId = ${user.id}
+      )`,
     );
   }
   if (query) {

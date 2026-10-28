@@ -2,8 +2,11 @@ import type { User } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import {
   buildMovieAccessWhere,
+  buildProfileAccessFilter,
   buildVisibilityFilter,
   canViewMovie,
+  canViewOwnedEntity,
+  canViewProfile,
   readyOrOwnMovieFilter,
 } from "../utils/buildVisibilityFilter";
 
@@ -12,7 +15,8 @@ import {
  * These tests verify that content visibility is correctly enforced based on:
  * - User authentication status (logged in vs. anonymous)
  * - User role (regular user vs. admin)
- * - Content visibility settings (PUBLIC, UNLISTED, PRIVATE)
+ * - Content visibility settings (PUBLIC, UNLISTED, PRIVATE, LIMITED)
+ * - The author profile's visibility (content is never more visible than its author)
  */
 describe("Authorization - Visibility Filtering", () => {
   const regularUser: User = {
@@ -21,6 +25,7 @@ describe("Authorization - Visibility Filtering", () => {
     name: "Regular User",
     role: "USER",
     avatarUrl: null,
+    visibility: "PUBLIC",
     kind: "HUMAN",
     authUserId: null,
     externalId: null,
@@ -34,6 +39,7 @@ describe("Authorization - Visibility Filtering", () => {
     name: "Admin User",
     role: "ADMIN",
     avatarUrl: null,
+    visibility: "PUBLIC",
     kind: "HUMAN",
     authUserId: null,
     externalId: null,
@@ -47,6 +53,7 @@ describe("Authorization - Visibility Filtering", () => {
     name: "Other User",
     role: "USER",
     avatarUrl: null,
+    visibility: "PUBLIC",
     kind: "HUMAN",
     authUserId: null,
     externalId: null,
@@ -54,12 +61,35 @@ describe("Authorization - Visibility Filtering", () => {
     updatedAt: new Date(),
   };
 
+  // The author-profile cap nested under `author` for a non-admin requester.
+  const profileCap = {
+    OR: [
+      { visibility: "PUBLIC" },
+      { id: "user-123" },
+      {
+        visibility: { in: ["LIMITED", "PRIVATE"] },
+        profileViewers: { some: { userId: "user-123" } },
+      },
+    ],
+  };
+  const unlistedProfileCap = {
+    OR: [
+      { visibility: { in: ["PUBLIC", "UNLISTED"] } },
+      { id: "user-123" },
+      {
+        visibility: { in: ["LIMITED", "PRIVATE"] },
+        profileViewers: { some: { userId: "user-123" } },
+      },
+    ],
+  };
+
   describe("Unauthenticated users (no user context)", () => {
-    it("should only see PUBLIC content when no user is provided", () => {
+    it("should only see PUBLIC content by PUBLIC authors", () => {
       const filter = buildVisibilityFilter(undefined);
 
       expect(filter).toEqual({
         visibility: "PUBLIC",
+        author: { visibility: "PUBLIC" },
       });
     });
 
@@ -68,6 +98,7 @@ describe("Authorization - Visibility Filtering", () => {
 
       expect(filter).toEqual({
         visibility: "PUBLIC",
+        author: { visibility: "PUBLIC" },
         OR: [
           { title: { contains: "test query" } },
           { description: { contains: "test query" } },
@@ -80,6 +111,7 @@ describe("Authorization - Visibility Filtering", () => {
 
       expect(filter).toEqual({
         visibility: "PUBLIC",
+        author: { visibility: "PUBLIC" },
         authorId: "author-123",
       });
     });
@@ -93,6 +125,7 @@ describe("Authorization - Visibility Filtering", () => {
 
       expect(filter).toEqual({
         visibility: "PUBLIC",
+        author: { visibility: "PUBLIC" },
         authorId: "author-456",
         OR: [
           { title: { contains: "search term" } },
@@ -108,7 +141,7 @@ describe("Authorization - Visibility Filtering", () => {
 
       expect(filter).toEqual({
         OR: [
-          { visibility: "PUBLIC" },
+          { visibility: "PUBLIC", author: profileCap },
           { authorId: "user-123" }, // Own content
         ],
       });
@@ -118,9 +151,12 @@ describe("Authorization - Visibility Filtering", () => {
       const filter = buildVisibilityFilter(regularUser);
 
       // User should be able to see:
-      // 1. All PUBLIC content (regardless of author)
+      // 1. All PUBLIC content by visible authors (regardless of author)
       // 2. All own content (PUBLIC, UNLISTED, or PRIVATE)
-      expect(filter.OR).toContainEqual({ visibility: "PUBLIC" });
+      expect(filter.OR).toContainEqual({
+        visibility: "PUBLIC",
+        author: profileCap,
+      });
       expect(filter.OR).toContainEqual({ authorId: regularUser.id });
     });
 
@@ -129,11 +165,6 @@ describe("Authorization - Visibility Filtering", () => {
 
       // Filter should not include other authors' IDs
       expect(filter.OR).not.toContainEqual({ authorId: otherUser.id });
-
-      // The filter structure ensures that content must be either:
-      // - PUBLIC (any author), OR
-      // - Owned by the current user (any visibility)
-      // This implicitly blocks PRIVATE content from other users
     });
 
     it("should see PUBLIC and own content matching search query", () => {
@@ -142,7 +173,10 @@ describe("Authorization - Visibility Filtering", () => {
       expect(filter).toEqual({
         AND: [
           {
-            OR: [{ visibility: "PUBLIC" }, { authorId: "user-123" }],
+            OR: [
+              { visibility: "PUBLIC", author: profileCap },
+              { authorId: "user-123" },
+            ],
           },
           {
             OR: [
@@ -158,14 +192,12 @@ describe("Authorization - Visibility Filtering", () => {
       const filter = buildVisibilityFilter(regularUser, undefined, "other-789");
 
       expect(filter).toEqual({
-        OR: [{ visibility: "PUBLIC" }, { authorId: "user-123" }],
+        OR: [
+          { visibility: "PUBLIC", author: profileCap },
+          { authorId: "user-123" },
+        ],
         authorId: "other-789",
       });
-
-      // This means: Show content where author is "other-789"
-      // AND (visibility is PUBLIC OR authorId is user-123)
-      // In practice, this will only show "other-789"'s PUBLIC content
-      // because content can't simultaneously be authored by "other-789" and "user-123"
     });
 
     it("should see own content when filtering by own authorId", () => {
@@ -176,11 +208,12 @@ describe("Authorization - Visibility Filtering", () => {
       );
 
       expect(filter).toEqual({
-        OR: [{ visibility: "PUBLIC" }, { authorId: "user-123" }],
+        OR: [
+          { visibility: "PUBLIC", author: profileCap },
+          { authorId: "user-123" },
+        ],
         authorId: "user-123",
       });
-
-      // This shows all of the user's own content (PUBLIC, UNLISTED, PRIVATE)
     });
   });
 
@@ -240,9 +273,6 @@ describe("Authorization - Visibility Filtering", () => {
       const filterWithEmpty = buildVisibilityFilter(regularUser, "");
       const filterWithUndefined = buildVisibilityFilter(regularUser, undefined);
 
-      // Empty string should be treated as no query
-      // The buildVisibilityFilter function checks truthiness with if (query)
-      // so "" would be falsy and treated the same as undefined
       expect(filterWithEmpty).toEqual(filterWithUndefined);
     });
 
@@ -251,6 +281,7 @@ describe("Authorization - Visibility Filtering", () => {
 
       expect(filter).toEqual({
         visibility: "PUBLIC",
+        author: { visibility: "PUBLIC" },
       });
     });
 
@@ -267,8 +298,6 @@ describe("Authorization - Visibility Filtering", () => {
       const specialQuery = "test@#$%^&*()";
       const filter = buildVisibilityFilter(regularUser, specialQuery);
 
-      // Special characters should be passed through to the database query
-      // The database layer handles escaping
       expect(filter.AND?.[1]?.OR?.[0]).toEqual({
         title: { contains: specialQuery },
       });
@@ -279,8 +308,8 @@ describe("Authorization - Visibility Filtering", () => {
     it("should create valid Prisma query structure for unauthenticated users", () => {
       const filter = buildVisibilityFilter(undefined, "query", "author-id");
 
-      // Validate the structure can be used in a Prisma query
       expect(filter).toHaveProperty("visibility");
+      expect(filter).toHaveProperty("author");
       expect(filter).toHaveProperty("authorId");
       expect(filter).toHaveProperty("OR");
       expect(Array.isArray(filter.OR)).toBe(true);
@@ -289,7 +318,6 @@ describe("Authorization - Visibility Filtering", () => {
     it("should create valid Prisma query structure for regular users", () => {
       const filter = buildVisibilityFilter(regularUser, "query", "author-id");
 
-      // Validate AND structure for combining multiple OR conditions
       expect(filter).toHaveProperty("AND");
       expect(Array.isArray(filter.AND)).toBe(true);
       expect(filter.AND?.length).toBe(2);
@@ -298,23 +326,19 @@ describe("Authorization - Visibility Filtering", () => {
     it("should create valid Prisma query structure for admins", () => {
       const filter = buildVisibilityFilter(adminUser, "query", "author-id");
 
-      // Admin filter should only have authorId and OR (for query)
       expect(filter).toHaveProperty("authorId");
       expect(filter).toHaveProperty("OR");
       expect(filter).not.toHaveProperty("visibility");
     });
 
     it("should handle single OR condition correctly", () => {
-      // When there's only one OR condition, it should be unwrapped
       const filter = buildVisibilityFilter(regularUser);
 
-      // Should have OR at top level, not wrapped in AND
       expect(filter).toHaveProperty("OR");
       expect(Array.isArray(filter.OR)).toBe(true);
     });
 
     it("should handle multiple OR conditions with AND", () => {
-      // When there are multiple OR conditions, they should be in AND
       const filter = buildVisibilityFilter(regularUser, "query");
 
       expect(filter).toHaveProperty("AND");
@@ -334,11 +358,12 @@ describe("Authorization - Visibility Filtering", () => {
 
       expect(filter).toEqual({
         OR: [
-          { visibility: "PUBLIC" },
+          { visibility: "PUBLIC", author: profileCap },
           { authorId: "user-123" },
           {
             visibility: "LIMITED",
             viewers: { some: { userId: "user-123" } },
+            author: profileCap,
           },
         ],
       });
@@ -348,7 +373,10 @@ describe("Authorization - Visibility Filtering", () => {
       const filter = buildVisibilityFilter(regularUser);
 
       expect(filter).toEqual({
-        OR: [{ visibility: "PUBLIC" }, { authorId: "user-123" }],
+        OR: [
+          { visibility: "PUBLIC", author: profileCap },
+          { authorId: "user-123" },
+        ],
       });
     });
 
@@ -360,7 +388,10 @@ describe("Authorization - Visibility Filtering", () => {
         true,
       );
 
-      expect(filter).toEqual({ visibility: "PUBLIC" });
+      expect(filter).toEqual({
+        visibility: "PUBLIC",
+        author: { visibility: "PUBLIC" },
+      });
     });
 
     it("should apply no filter for admins even with includeLimitedViewers", () => {
@@ -386,11 +417,12 @@ describe("Authorization - Visibility Filtering", () => {
         AND: [
           {
             OR: [
-              { visibility: "PUBLIC" },
+              { visibility: "PUBLIC", author: profileCap },
               { authorId: "user-123" },
               {
                 visibility: "LIMITED",
                 viewers: { some: { userId: "user-123" } },
+                author: profileCap,
               },
             ],
           },
@@ -406,10 +438,11 @@ describe("Authorization - Visibility Filtering", () => {
   });
 
   describe("buildMovieAccessWhere", () => {
-    it("should restrict anonymous users to PUBLIC and UNLISTED", () => {
+    it("should restrict anonymous users to PUBLIC and UNLISTED by visible authors", () => {
       expect(buildMovieAccessWhere(undefined)).toEqual({
         visibility: { in: ["PUBLIC", "UNLISTED"] },
         variants: { some: { status: "READY" } },
+        author: { visibility: { in: ["PUBLIC", "UNLISTED"] } },
       });
     });
 
@@ -419,12 +452,14 @@ describe("Authorization - Visibility Filtering", () => {
           {
             visibility: { in: ["PUBLIC", "UNLISTED"] },
             variants: { some: { status: "READY" } },
+            author: unlistedProfileCap,
           },
           { authorId: "user-123" },
           {
             visibility: "LIMITED",
             viewers: { some: { userId: "user-123" } },
             variants: { some: { status: "READY" } },
+            author: unlistedProfileCap,
           },
         ],
       });
@@ -515,6 +550,139 @@ describe("Authorization - Visibility Filtering", () => {
       };
       expect(canViewMovie(movieNoViewers, regularUser)).toBe(false);
       expect(canViewMovie(movieNoViewers, adminUser)).toBe(true);
+    });
+
+    it("should cap a PUBLIC movie by its PRIVATE author profile", () => {
+      const movie = {
+        visibility: "PUBLIC" as const,
+        authorId: "other-789",
+        author: { id: "other-789", visibility: "PRIVATE" as const },
+      };
+      expect(canViewMovie(movie, undefined)).toBe(false);
+      expect(canViewMovie(movie, regularUser)).toBe(false);
+      expect(canViewMovie(movie, otherUser)).toBe(true);
+      expect(canViewMovie(movie, adminUser)).toBe(true);
+    });
+
+    it("should cap a PUBLIC movie by its LIMITED author profile", () => {
+      const movie = {
+        visibility: "PUBLIC" as const,
+        authorId: "other-789",
+        author: {
+          id: "other-789",
+          visibility: "LIMITED" as const,
+          profileViewers: [{ userId: "user-123" }],
+        },
+      };
+      expect(canViewMovie(movie, undefined)).toBe(false);
+      expect(canViewMovie(movie, regularUser)).toBe(true);
+      expect(canViewMovie(movie, otherUser)).toBe(true);
+    });
+
+    it("should still let the author view their PRIVATE-profile PUBLIC movie", () => {
+      const movie = {
+        visibility: "PUBLIC" as const,
+        authorId: "user-123",
+        author: { id: "user-123", visibility: "PRIVATE" as const },
+      };
+      expect(canViewMovie(movie, regularUser)).toBe(true);
+    });
+  });
+
+  describe("canViewOwnedEntity", () => {
+    it("should cap a PUBLIC series by an UNLISTED author profile", () => {
+      const series = {
+        visibility: "PUBLIC" as const,
+        authorId: "other-789",
+        author: { id: "other-789", visibility: "UNLISTED" as const },
+      };
+      expect(canViewOwnedEntity(series, undefined)).toBe(true);
+      expect(canViewOwnedEntity(series, regularUser)).toBe(true);
+    });
+
+    it("should cap a PUBLIC series by a PRIVATE author profile", () => {
+      const series = {
+        visibility: "PUBLIC" as const,
+        authorId: "other-789",
+        author: { id: "other-789", visibility: "PRIVATE" as const },
+      };
+      expect(canViewOwnedEntity(series, regularUser)).toBe(false);
+      expect(canViewOwnedEntity(series, otherUser)).toBe(true);
+      expect(canViewOwnedEntity(series, adminUser)).toBe(true);
+    });
+  });
+
+  describe("canViewProfile", () => {
+    it("allows PUBLIC and UNLISTED profiles to everyone", () => {
+      expect(canViewProfile({ id: "p", visibility: "PUBLIC" }, undefined)).toBe(
+        true,
+      );
+      expect(
+        canViewProfile({ id: "p", visibility: "UNLISTED" }, undefined),
+      ).toBe(true);
+    });
+
+    it("restricts PRIVATE profiles to owner and admin (no viewers)", () => {
+      const profile = { id: "other-789", visibility: "PRIVATE" as const };
+      expect(canViewProfile(profile, undefined)).toBe(false);
+      expect(canViewProfile(profile, regularUser)).toBe(false);
+      expect(canViewProfile(profile, otherUser)).toBe(true);
+      expect(canViewProfile(profile, adminUser)).toBe(true);
+    });
+
+    it("allows PRIVATE profiles to their listed viewers", () => {
+      const profile = {
+        id: "other-789",
+        visibility: "PRIVATE" as const,
+        profileViewers: [{ userId: "user-123" }],
+      };
+      expect(canViewProfile(profile, undefined)).toBe(false);
+      expect(canViewProfile(profile, regularUser)).toBe(true);
+      expect(canViewProfile(profile, otherUser)).toBe(true);
+      expect(canViewProfile(profile, adminUser)).toBe(true);
+    });
+
+    it("restricts LIMITED profiles to listed viewers", () => {
+      const profile = {
+        id: "other-789",
+        visibility: "LIMITED" as const,
+        profileViewers: [{ userId: "user-123" }],
+      };
+      expect(canViewProfile(profile, undefined)).toBe(false);
+      expect(canViewProfile(profile, regularUser)).toBe(true);
+      expect(canViewProfile(profile, otherUser)).toBe(true);
+      expect(canViewProfile(profile, adminUser)).toBe(true);
+    });
+  });
+
+  describe("buildProfileAccessFilter", () => {
+    it("keeps anonymous to PUBLIC profiles only", () => {
+      expect(buildProfileAccessFilter(undefined)).toEqual({
+        visibility: "PUBLIC",
+      });
+    });
+
+    it("lets non-admin see PUBLIC, own, and shared non-public profiles", () => {
+      expect(buildProfileAccessFilter(regularUser)).toEqual({
+        OR: [
+          { visibility: "PUBLIC" },
+          { id: "user-123" },
+          {
+            visibility: { in: ["LIMITED", "PRIVATE"] },
+            profileViewers: { some: { userId: "user-123" } },
+          },
+        ],
+      });
+    });
+
+    it("lets admins see everything", () => {
+      expect(buildProfileAccessFilter(adminUser)).toEqual({});
+    });
+
+    it("includes UNLISTED when requested", () => {
+      expect(
+        buildProfileAccessFilter(undefined, { includeUnlisted: true }),
+      ).toEqual({ visibility: { in: ["PUBLIC", "UNLISTED"] } });
     });
   });
 });

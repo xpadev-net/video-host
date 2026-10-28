@@ -20,6 +20,14 @@ type AccessFilterOptions = {
   requireReadyVariant?: boolean;
 };
 
+// The author profile fields needed to enforce the profile visibility cap on a
+// single, already-fetched entity.
+export type ProfileAccess = {
+  id: string;
+  visibility: Visibility;
+  profileViewers?: { userId: string }[];
+};
+
 const readyVariantClause = <T extends WhereInput>(
   requireReadyVariant?: boolean,
 ): FilterSchema<T> =>
@@ -39,24 +47,79 @@ const anyoneClause = <T extends WhereInput>(
 };
 
 /**
+ * Whether a single profile (a User row) is visible to the requester.
+ * PUBLIC and UNLISTED profiles are visible to anyone who reaches them;
+ * non-public profiles (LIMITED or PRIVATE) grant access to their listed
+ * viewers, so those viewers also see the profile's public content.
+ */
+export const canViewProfile = (
+  profile: ProfileAccess,
+  user?: User,
+): boolean => {
+  if (profile.visibility === "PUBLIC" || profile.visibility === "UNLISTED") {
+    return true;
+  }
+  if (!user) return false;
+  if (user.role === "ADMIN" || user.id === profile.id) return true;
+  return (
+    (profile.visibility === "LIMITED" || profile.visibility === "PRIVATE") &&
+    (profile.profileViewers ?? []).some((viewer) => viewer.userId === user.id)
+  );
+};
+
+/**
+ * Where clause describing the profiles the requester may see, used to cap
+ * content visibility: content can never be more widely visible than its
+ * author's profile. Keys ownership off the profile's own `id` (not authorId).
+ */
+export const buildProfileAccessFilter = (
+  user?: User,
+  opts?: { includeUnlisted?: boolean },
+): Prisma.UserWhereInput => {
+  const anyone: Prisma.UserWhereInput = opts?.includeUnlisted
+    ? { visibility: { in: ["PUBLIC", "UNLISTED"] } }
+    : { visibility: "PUBLIC" };
+  if (!user) return anyone;
+  if (user.role === "ADMIN") return {};
+  return {
+    OR: [
+      anyone,
+      { id: user.id },
+      {
+        visibility: { in: ["LIMITED", "PRIVATE"] },
+        profileViewers: { some: { userId: user.id } },
+      },
+    ],
+  };
+};
+
+/**
  * Access predicate shared by list queries and nested includes.
  * - anonymous: PUBLIC only (+ UNLISTED when includeUnlisted)
  * - non-admin: PUBLIC, own content (any visibility), and (movies only)
  *   LIMITED entries whose viewer list contains the user
  * - admin: everything
+ * Every branch is additionally capped by the author profile's visibility so
+ * content is never exposed more widely than the profile that published it.
  */
 const buildAccessFilter = <T extends WhereInput>(
   user?: User,
   opts?: AccessFilterOptions,
 ): FilterSchema<T> => {
   if (!user) {
-    return anyoneClause<T>(opts);
+    return {
+      ...anyoneClause<T>(opts),
+      author: buildProfileAccessFilter(undefined, opts),
+    } as FilterSchema<T>;
   }
   if (user.role === "ADMIN") {
     return {} as FilterSchema<T>;
   }
   const or: FilterSchema<T>[] = [
-    anyoneClause<T>(opts),
+    {
+      ...anyoneClause<T>(opts),
+      author: buildProfileAccessFilter(user, opts),
+    } as FilterSchema<T>,
     { authorId: user.id } as FilterSchema<T>,
   ];
   if (opts?.includeLimitedViewers) {
@@ -64,6 +127,7 @@ const buildAccessFilter = <T extends WhereInput>(
       visibility: "LIMITED",
       viewers: { some: { userId: user.id } },
       ...readyVariantClause<T>(opts?.requireReadyVariant),
+      author: buildProfileAccessFilter(user, opts),
     } as FilterSchema<T>);
   }
   return { OR: or } as unknown as FilterSchema<T>;
@@ -113,39 +177,54 @@ export const buildMovieAccessWhere = (
 /**
  * Whether a single entity (series / playlist) is visible to the requester.
  * LIMITED has no viewer list for these entities, so it is treated like
- * PRIVATE (author and admins only).
+ * PRIVATE (author and admins only). Content is additionally capped by the
+ * author profile's visibility when that profile is supplied.
  */
 export const canViewOwnedEntity = (
-  entity: { visibility: Visibility; authorId: string },
+  entity: {
+    visibility: Visibility;
+    authorId: string;
+    author?: ProfileAccess;
+  },
   user?: User,
 ): boolean => {
-  if (entity.visibility === "PUBLIC" || entity.visibility === "UNLISTED") {
-    return true;
-  }
-  return !!user && (user.role === "ADMIN" || user.id === entity.authorId);
+  const contentVisible =
+    entity.visibility === "PUBLIC" || entity.visibility === "UNLISTED"
+      ? true
+      : !!user && (user.role === "ADMIN" || user.id === entity.authorId);
+  if (!contentVisible) return false;
+  return !entity.author || canViewProfile(entity.author, user);
 };
 
 /**
  * Whether a single movie is visible to the requester.
- * LIMITED movies are visible to the author, admins, and listed viewers.
+ * LIMITED movies are visible to the author, admins, and listed viewers, and
+ * every movie is additionally capped by its author profile's visibility.
  */
 export const canViewMovie = (
   movie: {
     visibility: Visibility;
     authorId: string;
     viewers?: { userId: string }[];
+    author?: ProfileAccess;
   },
   user?: User,
 ): boolean => {
+  let contentVisible: boolean;
   if (movie.visibility === "LIMITED") {
-    return (
+    contentVisible =
       !!user &&
       (user.role === "ADMIN" ||
         user.id === movie.authorId ||
-        (movie.viewers ?? []).some((viewer) => viewer.userId === user.id))
-    );
+        (movie.viewers ?? []).some((viewer) => viewer.userId === user.id));
+  } else {
+    contentVisible =
+      movie.visibility === "PUBLIC" || movie.visibility === "UNLISTED"
+        ? true
+        : !!user && (user.role === "ADMIN" || user.id === movie.authorId);
   }
-  return canViewOwnedEntity(movie, user);
+  if (!contentVisible) return false;
+  return !movie.author || canViewProfile(movie.author, user);
 };
 
 export const buildVisibilityFilter = <
@@ -162,8 +241,10 @@ export const buildVisibilityFilter = <
   const access = buildAccessFilter<T>(user, { includeLimitedViewers });
   if (access.OR) {
     or.push({ OR: access.OR });
-  } else if (access.visibility) {
-    where.visibility = access.visibility;
+  } else {
+    // Anonymous (and admin, whose filter is empty) flatten their full access
+    // predicate — including the author profile cap — directly into the where.
+    Object.assign(where, access);
   }
 
   if (query) {

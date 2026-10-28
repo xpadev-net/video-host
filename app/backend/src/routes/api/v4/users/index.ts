@@ -1,4 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
+import type { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env, HonoApp } from "@/@types/hono";
@@ -20,15 +21,26 @@ const app = new Hono<Env>();
 export const usersRoute = app
   .get("/", zValidator("query", QuerySchema), async (c) => {
     const { page, limit, query } = c.req.valid("query");
+    const user = c.get("user");
 
-    const where = query
-      ? {
-          OR: [
-            { username: { contains: query } },
-            { name: { contains: query } },
-          ],
-        }
-      : {};
+    // The user search feeds viewer invitations and must not leak non-public
+    // profiles: only PUBLIC profiles (default profiles are always public) are
+    // searchable, plus the requester's own profiles and everything for admins.
+    const conditions: Prisma.UserWhereInput[] = [];
+    if (query) {
+      conditions.push({
+        OR: [{ username: { contains: query } }, { name: { contains: query } }],
+      });
+    }
+    if (!user) {
+      conditions.push({ visibility: "PUBLIC" });
+    } else if (user.role !== "ADMIN") {
+      conditions.push({
+        OR: [{ visibility: "PUBLIC" }, { id: user.id }],
+      });
+    }
+    const where: Prisma.UserWhereInput =
+      conditions.length > 0 ? { AND: conditions } : {};
 
     const totalCount = await prisma.user.count({ where });
 

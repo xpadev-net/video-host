@@ -7,6 +7,11 @@ export type FilteredUser = {
   // Only returned to the user themself (GET/PATCH /users/me); other users' roles are not public.
   role?: "USER" | "ADMIN";
   avatarUrl?: string | null;
+  // Profile visibility and the profiles allowed to see this one. Only the
+  // owner (GET/PATCH /users/me, GET /users/profiles) receives these; other
+  // requesters get the public shape above.
+  visibility?: Visibility;
+  viewers?: FilteredUser[];
 };
 
 export type FilteredSeries = {
@@ -94,4 +99,19 @@ export type PaginationMeta = {
 export type PaginatedResponse<T> = {
   items: T[];
   pagination: PaginationMeta;
+};
+
+export type InvitationSummary = {
+  id: string;
+  status: "PENDING" | "ACCEPTED" | "DECLINED";
+  targetType: "MOVIE" | "PROFILE";
+  targetId: string;
+  targetLabel: string;
+  // Present on received invitations: the profile that sent it.
+  inviter?: FilteredUser;
+  // Present on sent invitations: the account (default profile) it was sent to.
+  invitee?: FilteredUser;
+  // Present on accepted sent invitations: the profile the invitee granted.
+  grantedProfile?: FilteredUser;
+  createdAt: string;
 };

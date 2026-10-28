@@ -31,6 +31,17 @@ enum MovieStatus {
   FAILED
 }
 
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum InvitationTargetType {
+  MOVIE
+  PROFILE
+}
+
 model User {
   id                String        @id @default(uuid())
   name              String
@@ -41,6 +52,7 @@ model User {
   additionalProfile AuthProfile?
   role              Role          @default(USER)
   avatarUrl         String?       @db.Text
+  visibility        Visibility    @default(PUBLIC)
   series            Series[]
   movies            Movie[]
   externalId        String?       @unique @db.VarChar(512)
@@ -48,8 +60,12 @@ model User {
   updatedAt         DateTime      @updatedAt
   playlists         Playlist[]
   viewableMovies    MovieViewer[]
+  profileViewers    ProfileViewer[] @relation("ProfileViewer_profile")
+  viewableProfiles  ProfileViewer[] @relation("ProfileViewer_user")
+  sentInvitations   AccessInvitation[]
 
   @@index([kind, createdAt])
+  @@index([visibility])
 }
 
 // Better Auth owns credentials, provider identities and sessions. Domain User
@@ -66,6 +82,7 @@ model AuthUser {
   accounts           AuthAccount[]
   profile            User?
   additionalProfiles AuthProfile[]
+  receivedInvitations AccessInvitation[]
 }
 
 // The existing User.authUserId relation remains the account's default
@@ -178,6 +195,38 @@ model MovieViewer {
   createdAt DateTime @default(now())
 
   @@id([movieId, userId])
+}
+
+model ProfileViewer {
+  profile   User     @relation("ProfileViewer_profile", fields: [profileId], references: [id], onDelete: Cascade)
+  profileId String
+  user      User     @relation("ProfileViewer_user", fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime @default(now())
+
+  @@id([profileId, userId])
+  @@index([userId])
+}
+
+// A pending grant of viewer access on a target (a LIMITED movie or a
+// non-public profile). The inviter shares the target with an account; the
+// invitee accepts and chooses which of their profiles receives the access.
+model AccessInvitation {
+  id                String               @id @default(uuid())
+  inviterId         String
+  inviter           User                 @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+  inviteeAuthUserId String
+  invitee           AuthUser             @relation(fields: [inviteeAuthUserId], references: [id], onDelete: Cascade)
+  targetType        InvitationTargetType
+  targetId          String
+  status            InvitationStatus     @default(PENDING)
+  grantedProfileId  String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([inviteeAuthUserId, status])
+  @@index([inviterId])
+  @@index([targetType, targetId])
 }
 
 model MovieOnPlaylist {

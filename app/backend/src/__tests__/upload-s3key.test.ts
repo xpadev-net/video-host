@@ -47,6 +47,7 @@ const alice: User = {
   kind: "HUMAN",
   authUserId: "auth-alice",
   avatarUrl: null,
+  visibility: "PUBLIC",
   externalId: null,
   createdAt: new Date(),
   updatedAt: new Date(),
