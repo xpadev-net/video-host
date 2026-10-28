@@ -4,6 +4,7 @@ import type {
   FilteredPlaylist,
   FilteredSeries,
   FilteredUser,
+  Visibility,
 } from "@/@types/models";
 import { signVodContentUrl, signVodThumbnailUrl } from "@/lib/vod-token";
 
@@ -16,9 +17,23 @@ export const filterUser = (user: FilteredUser): FilteredUser => {
   };
 };
 
+// A User row plus its viewer memberships, as loaded for the owner.
+type OwnedUser = FilteredUser & {
+  role?: "USER" | "ADMIN";
+  visibility?: Visibility;
+  profileViewers?: { user: FilteredUser }[];
+};
+
 /** The requester's own profile: the only place `role` is exposed. */
-export const filterSelf = (user: FilteredUser): FilteredUser => {
-  return { ...filterUser(user), role: user.role };
+export const filterSelf = (user: OwnedUser): FilteredUser => {
+  return {
+    ...filterUser(user),
+    role: user.role,
+    visibility: user.visibility,
+    viewers: user.profileViewers?.map((membership) =>
+      filterUser(membership.user),
+    ),
+  };
 };
 
 export const filterSeries = (series: FilteredSeries): FilteredSeries => {

@@ -12,11 +12,7 @@ import {
   canViewMovie,
   canViewOwnedEntity,
 } from "@/utils/buildVisibilityFilter";
-import {
-  DescriptionSchema,
-  MAX_VIEWER_IDS,
-  TitleSchema,
-} from "@/utils/inputSchemas";
+import { DescriptionSchema, TitleSchema } from "@/utils/inputSchemas";
 import { assertCanManageSeries, canManageOwned } from "@/utils/movieAuth";
 import { MAX_RELATION_MOVIES } from "@/utils/pagination";
 import {
@@ -32,7 +28,6 @@ const MoviePatchSchema = z.object({
   description: DescriptionSchema.nullable().optional(),
   seriesId: z.string().optional().nullable(),
   visibility: ZVisibility.optional(),
-  viewerIds: z.array(z.string()).max(MAX_VIEWER_IDS).optional(),
   order: z.number().optional(),
 });
 
@@ -50,10 +45,14 @@ export const movieRoute = app
         id: param,
       },
       include: {
-        author: true,
+        author: {
+          include: { profileViewers: { select: { userId: true } } },
+        },
         series: {
           include: {
-            author: true,
+            author: {
+              include: { profileViewers: { select: { userId: true } } },
+            },
             movies: {
               where: buildMovieAccessWhere(user),
               orderBy: [
@@ -66,7 +65,9 @@ export const movieRoute = app
               ],
               take: MAX_RELATION_MOVIES,
               include: {
-                author: true,
+                author: {
+                  include: { profileViewers: { select: { userId: true } } },
+                },
                 variants: true,
               },
             },
@@ -139,22 +140,11 @@ export const movieRoute = app
       forbidden("Not authorized to edit this movie");
     }
 
-    const { title, description, seriesId, visibility, viewerIds, order } =
+    const { title, description, seriesId, visibility, order } =
       c.req.valid("json");
 
     if (seriesId) {
       await assertCanManageSeries(user, seriesId);
-    }
-
-    const uniqueViewerIds = viewerIds ? [...new Set(viewerIds)] : undefined;
-    if (uniqueViewerIds && uniqueViewerIds.length > 0) {
-      const existing = await prisma.user.findMany({
-        where: { id: { in: uniqueViewerIds } },
-        select: { id: true },
-      });
-      if (existing.length !== uniqueViewerIds.length) {
-        badRequest("viewerIds contains unknown users");
-      }
     }
 
     const movie = await prisma.movie.update({
@@ -169,12 +159,6 @@ export const movieRoute = app
           seriesId === null ? null : (seriesId ?? existingMovie.seriesId),
         visibility: visibility ?? existingMovie.visibility,
         order: order ?? existingMovie.order,
-        viewers: uniqueViewerIds
-          ? {
-              deleteMany: {},
-              create: uniqueViewerIds.map((userId) => ({ userId })),
-            }
-          : undefined,
       },
       include: {
         author: true,

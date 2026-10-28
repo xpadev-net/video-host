@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
-import type { FilteredUser, Visibility } from "@video-host/backend";
+import type { Visibility } from "@video-host/backend";
 import { useAtomValue } from "jotai";
 import { Film } from "lucide-react";
 import {
@@ -14,7 +14,6 @@ import {
 import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { useConfirm } from "@/components/Feedback/FeedbackProvider";
-import { UserPicker } from "@/components/UserPicker/UserPicker";
 import { useUpload } from "@/hooks/useUpload";
 import { useSelf } from "@/hooks/useUser";
 import { authClient } from "@/lib/auth-client";
@@ -45,7 +44,6 @@ function NewVideoPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
-  const [viewers, setViewers] = useState<FilteredUser[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savePending, setSavePending] = useState(false);
@@ -63,10 +61,10 @@ function NewVideoPage() {
   // Latest form values for the auto-save that fires when the upload lands;
   // the .then callback registered at file-select time would otherwise save
   // stale values and clobber whatever the user typed while uploading.
-  const metadataRef = useRef({ title, description, visibility, viewers });
+  const metadataRef = useRef({ title, description, visibility });
   useEffect(() => {
-    metadataRef.current = { title, description, visibility, viewers };
-  }, [title, description, visibility, viewers]);
+    metadataRef.current = { title, description, visibility };
+  }, [title, description, visibility]);
   const movieIdRef = useRef<string | null>(null);
   useEffect(() => {
     movieIdRef.current = movieId;
@@ -115,7 +113,6 @@ function NewVideoPage() {
       title: current.title.trim(),
       description: current.description.trim(),
       visibility: current.visibility,
-      viewerIds: current.viewers.map((viewer) => viewer.id),
     };
     const res = await client.api.v4.movies[":movie"].$patch(
       {
@@ -132,9 +129,7 @@ function NewVideoPage() {
     setSaved(
       submitted.title === latest.title.trim() &&
         submitted.description === latest.description.trim() &&
-        submitted.visibility === latest.visibility &&
-        submitted.viewerIds.join("\0") ===
-          latest.viewers.map((viewer) => viewer.id).join("\0"),
+        submitted.visibility === latest.visibility,
     );
     return true;
   };
@@ -160,7 +155,6 @@ function NewVideoPage() {
     setTitle("");
     setDescription("");
     setVisibility("PUBLIC");
-    setViewers([]);
     setIsSaving(false);
     setSaved(false);
     setSavePending(false);
@@ -440,7 +434,6 @@ function NewVideoPage() {
     setTitle("");
     setDescription("");
     setVisibility("PUBLIC");
-    setViewers([]);
     setSaved(false);
     setError(null);
     fileInputRef.current?.click();
@@ -647,21 +640,9 @@ function NewVideoPage() {
               </div>
 
               {visibility === "LIMITED" && (
-                <div className="form-group">
-                  <label htmlFor="viewers">公開するユーザー</label>
-                  <UserPicker
-                    id="viewers"
-                    selected={viewers}
-                    onChange={(next) => {
-                      metadataRef.current = {
-                        ...metadataRef.current,
-                        viewers: next,
-                      };
-                      setViewers(next);
-                      setSaved(false);
-                    }}
-                  />
-                </div>
+                <p className="m-0 text-[0.8rem] text-muted-foreground">
+                  指定ユーザーへの招待は保存後、動画編集画面から行えます
+                </p>
               )}
 
               {error && <div className="error-message">{error}</div>}

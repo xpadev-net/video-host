@@ -51,6 +51,7 @@ const person = (id: string, role: User["role"] = "USER"): User => ({
   kind: "HUMAN",
   authUserId: `auth-${id}`,
   avatarUrl: null,
+  visibility: "PUBLIC",
   externalId: null,
   createdAt: new Date(),
   updatedAt: new Date(),

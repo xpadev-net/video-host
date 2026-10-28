@@ -18,6 +18,7 @@ import { Route as ApiHealthzRouteImport } from "./routes/api.healthz";
 import { Route as AuthCallbackRouteImport } from "./routes/auth.callback";
 import { Route as AuthLinkRouteImport } from "./routes/auth.link";
 import { Route as AppDashboardIndexRouteImport } from "./routes/_app.dashboard.index";
+import { Route as AppDashboardInvitationsRouteImport } from "./routes/_app.dashboard.invitations";
 import { Route as AppMoviesMovieRouteImport } from "./routes/_app.movies.$movie";
 import { Route as AppSearchQueryRouteImport } from "./routes/_app.search.$query";
 import { Route as AppSeriesSeriesRouteImport } from "./routes/_app.series.$series";
@@ -80,6 +81,11 @@ const AuthLinkRoute = AuthLinkRouteImport.update({
 const AppDashboardIndexRoute = AppDashboardIndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => AppDashboardRoute,
+} as any);
+const AppDashboardInvitationsRoute = AppDashboardInvitationsRouteImport.update({
+  id: "/invitations",
+  path: "/invitations",
   getParentRoute: () => AppDashboardRoute,
 } as any);
 const AppMoviesMovieRoute = AppMoviesMovieRouteImport.update({
@@ -168,6 +174,7 @@ export interface FileRoutesByFullPath {
   "/api/healthz": typeof ApiHealthzRoute;
   "/auth/callback": typeof AuthCallbackRoute;
   "/auth/link": typeof AuthLinkRoute;
+  "/dashboard/invitations": typeof AppDashboardInvitationsRoute;
   "/movies/$movie": typeof AppMoviesMovieRoute;
   "/search/$query": typeof AppSearchQueryRoute;
   "/series/$series": typeof AppSeriesSeriesRoute;
@@ -192,6 +199,7 @@ export interface FileRoutesByTo {
   "/auth/callback": typeof AuthCallbackRoute;
   "/auth/link": typeof AuthLinkRoute;
   "/": typeof AppIndexRoute;
+  "/dashboard/invitations": typeof AppDashboardInvitationsRoute;
   "/movies/$movie": typeof AppMoviesMovieRoute;
   "/search/$query": typeof AppSearchQueryRoute;
   "/series/$series": typeof AppSeriesSeriesRoute;
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   "/auth/callback": typeof AuthCallbackRoute;
   "/auth/link": typeof AuthLinkRoute;
   "/_app/": typeof AppIndexRoute;
+  "/_app/dashboard/invitations": typeof AppDashboardInvitationsRoute;
   "/_app/movies/$movie": typeof AppMoviesMovieRoute;
   "/_app/search/$query": typeof AppSearchQueryRoute;
   "/_app/series/$series": typeof AppSeriesSeriesRoute;
@@ -246,6 +255,7 @@ export interface FileRouteTypes {
     | "/api/healthz"
     | "/auth/callback"
     | "/auth/link"
+    | "/dashboard/invitations"
     | "/movies/$movie"
     | "/search/$query"
     | "/series/$series"
@@ -270,6 +280,7 @@ export interface FileRouteTypes {
     | "/auth/callback"
     | "/auth/link"
     | "/"
+    | "/dashboard/invitations"
     | "/movies/$movie"
     | "/search/$query"
     | "/series/$series"
@@ -296,6 +307,7 @@ export interface FileRouteTypes {
     | "/auth/callback"
     | "/auth/link"
     | "/_app/"
+    | "/_app/dashboard/invitations"
     | "/_app/movies/$movie"
     | "/_app/search/$query"
     | "/_app/series/$series"
@@ -392,6 +404,13 @@ declare module "@tanstack/react-router" {
       path: "/";
       fullPath: "/dashboard/";
       preLoaderRoute: typeof AppDashboardIndexRouteImport;
+      parentRoute: typeof AppDashboardRoute;
+    };
+    "/_app/dashboard/invitations": {
+      id: "/_app/dashboard/invitations";
+      path: "/invitations";
+      fullPath: "/dashboard/invitations";
+      preLoaderRoute: typeof AppDashboardInvitationsRouteImport;
       parentRoute: typeof AppDashboardRoute;
     };
     "/_app/movies/$movie": {
@@ -496,6 +515,7 @@ declare module "@tanstack/react-router" {
 }
 
 interface AppDashboardRouteChildren {
+  AppDashboardInvitationsRoute: typeof AppDashboardInvitationsRoute;
   AppDashboardIndexRoute: typeof AppDashboardIndexRoute;
   AppDashboardAdminSystemAccountsRoute: typeof AppDashboardAdminSystemAccountsRoute;
   AppDashboardPlaylistsNewRoute: typeof AppDashboardPlaylistsNewRoute;
@@ -510,6 +530,7 @@ interface AppDashboardRouteChildren {
 }
 
 const AppDashboardRouteChildren: AppDashboardRouteChildren = {
+  AppDashboardInvitationsRoute: AppDashboardInvitationsRoute,
   AppDashboardIndexRoute: AppDashboardIndexRoute,
   AppDashboardAdminSystemAccountsRoute: AppDashboardAdminSystemAccountsRoute,
   AppDashboardPlaylistsNewRoute: AppDashboardPlaylistsNewRoute,

@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Film, House, Library, ListVideo, Users } from "lucide-react";
+import { Film, House, Inbox, Library, ListVideo, Users } from "lucide-react";
 import type { FC, ReactNode } from "react";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { useSelf } from "@/hooks/useUser";
@@ -14,6 +14,7 @@ const navItems = [
   { href: "/dashboard/videos", label: "動画", icon: Film },
   { href: "/dashboard/series", label: "シリーズ", icon: Library },
   { href: "/dashboard/playlists", label: "プレイリスト", icon: ListVideo },
+  { href: "/dashboard/invitations", label: "招待", icon: Inbox },
 ] as const;
 
 const adminNavItems = [

@@ -51,7 +51,9 @@ export const playlistDetailRoute = app
         id: playlistId,
       },
       include: {
-        author: true,
+        author: {
+          include: { profileViewers: { select: { userId: true } } },
+        },
         movies: {
           where: { movie: buildMovieAccessWhere(user) },
           orderBy: { order: "asc" },
@@ -188,7 +190,13 @@ export const playlistDetailRoute = app
 
     const movie = await prisma.movie.findUnique({
       where: { id: movieId },
-      include: { viewers: true, variants: true },
+      include: {
+        viewers: true,
+        variants: true,
+        author: {
+          include: { profileViewers: { select: { userId: true } } },
+        },
+      },
     });
     // Movies the caller cannot watch are reported as missing so the
     // endpoint is not an existence oracle for private movies.
