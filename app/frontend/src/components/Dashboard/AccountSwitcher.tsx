@@ -190,11 +190,12 @@ export const AccountSwitcher: FC = () => {
               </option>
             ))}
           </select>
-          {user && selectedProfileId && (
+          {user && (
             <ProfileVisibilityEditor
               key={user.id}
               profile={user}
               selectedProfileId={selectedProfileId}
+              isDefault={selectedProfileId === null}
               onSaved={() => void mutateSelf()}
             />
           )}
