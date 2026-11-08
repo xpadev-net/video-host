@@ -1,6 +1,5 @@
 import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
 import type { Visibility } from "@video-host/backend";
-import { useAtomValue } from "jotai";
 import { Film } from "lucide-react";
 import {
   type ChangeEvent,
@@ -11,7 +10,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { useConfirm } from "@/components/Feedback/FeedbackProvider";
 import { useUpload } from "@/hooks/useUpload";
@@ -25,7 +23,6 @@ export const Route = createFileRoute("/_app/dashboard/videos/new")({
 });
 
 function NewVideoPage() {
-  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const confirm = useConfirm();
   const { data: user, isLoading: isUserLoading } = useSelf();
   const { data: authSession } = authClient.useSession();
@@ -194,7 +191,7 @@ function NewVideoPage() {
     // Create the movie record as soon as the file is picked, YouTube-style:
     // metadata below is already editable while the upload progresses.
     const result = await init(selectedFile, {
-      asUserId: selectedAccountId || undefined,
+      asUserId: undefined,
     });
     if (!result) {
       uploadActiveRef.current = false;
@@ -296,7 +293,7 @@ function NewVideoPage() {
         ? await resume(movieId, file)
         : await (async () => {
             const result = await init(file, {
-              asUserId: selectedAccountId || undefined,
+              asUserId: undefined,
             });
             if (!result) return false;
             if (currentSessionUserIdRef.current !== sessionId) return false;

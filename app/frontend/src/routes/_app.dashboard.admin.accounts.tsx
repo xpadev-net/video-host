@@ -2,25 +2,25 @@ import { createFileRoute } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { useConfirm, useNotify } from "@/components/Feedback/FeedbackProvider";
-import { useSystemAccounts } from "@/hooks/useDashboard";
-import { useSelf } from "@/hooks/useUser";
+import { useAccount } from "@/hooks/useAccount";
+import { useAccounts } from "@/hooks/useDashboard";
 import { client } from "@/lib/client";
 
-export const Route = createFileRoute("/_app/dashboard/admin/system-accounts")({
-  head: () => ({ meta: [{ title: "システムアカウント管理" }] }),
-  component: SystemAccountsPage,
+export const Route = createFileRoute("/_app/dashboard/admin/accounts")({
+  head: () => ({ meta: [{ title: "アカウント管理" }] }),
+  component: AccountsPage,
 });
 
-interface SystemAccount {
+interface Account {
   id: string;
-  username: string;
+  profiles: { id: string; username: string; name: string }[];
   name: string;
   createdAt: string;
 }
 
-function SystemAccountsPage() {
-  const { data: user, isLoading: isUserLoading } = useSelf();
-  const { data: accounts, mutate } = useSystemAccounts();
+function AccountsPage() {
+  const { data: user, isLoading: isUserLoading } = useAccount();
+  const { data: accounts, mutate } = useAccounts();
   const confirm = useConfirm();
   const notify = useNotify();
   const [username, setUsername] = useState("");
@@ -37,7 +37,7 @@ function SystemAccountsPage() {
     setError(null);
 
     try {
-      const res = await client.api.v4["system-accounts"].$post({
+      const res = await client.api.v4.accounts.$post({
         json: { username: username.trim(), name: name.trim() },
       });
 
@@ -56,8 +56,9 @@ function SystemAccountsPage() {
   const handleDelete = async (id: string) => {
     if (
       !(await confirm({
-        title: "システムアカウントを削除しますか？",
-        description: "このアカウントと関連するコンテンツも削除されます。",
+        title: "アカウントを削除しますか？",
+        description:
+          "このアカウントとプロフィールを削除します。投稿がある場合は先に削除してください。",
         confirmLabel: "削除",
         destructive: true,
       }))
@@ -66,7 +67,7 @@ function SystemAccountsPage() {
 
     setDeletingId(id);
     try {
-      const res = await client.api.v4["system-accounts"][":id"].$delete({
+      const res = await client.api.v4.accounts[":id"].$delete({
         param: { id },
       });
 
@@ -84,12 +85,12 @@ function SystemAccountsPage() {
   if (!user || !("role" in user) || user.role !== "ADMIN")
     return <div>管理者権限が必要です</div>;
 
-  const accountsList: SystemAccount[] = accounts || [];
+  const accountsList: Account[] = accounts || [];
 
   return (
     <>
-      <div className="system-accounts-page">
-        <h1>システムアカウント管理</h1>
+      <div className="accounts-page">
+        <h1>アカウント管理</h1>
 
         <form onSubmit={handleCreate} className="create-form">
           <h3>新規作成</h3>
@@ -120,13 +121,17 @@ function SystemAccountsPage() {
         <div className="accounts-list">
           <h3>アカウント一覧</h3>
           {accountsList.length === 0 ? (
-            <p className="empty">システムアカウントがありません</p>
+            <p className="empty">アカウントがありません</p>
           ) : (
             accountsList.map((account) => (
               <div key={account.id} className="account-item">
                 <div className="account-info">
                   <span className="account-name">{account.name}</span>
-                  <span className="account-username">@{account.username}</span>
+                  <span className="account-username">
+                    {account.profiles
+                      .map((profile) => `@${profile.username}`)
+                      .join(" / ")}
+                  </span>
                 </div>
                 <button
                   type="button"

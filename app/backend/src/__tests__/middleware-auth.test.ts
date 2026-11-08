@@ -7,7 +7,7 @@ import type { Env } from "@/@types/hono";
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   findProfile: vi.fn(),
-  provisionProfile: vi.fn(),
+  findAccount: vi.fn(),
 }));
 vi.mock("@/env", () => ({
   AUTH_TRUSTED_ORIGINS: ["https://video.example.com"],
@@ -24,10 +24,10 @@ vi.mock("@/lib/auth", () => ({
   ssoProviderId: null,
 }));
 vi.mock("@/lib/prisma", () => ({
-  prisma: { authProfile: { findFirst: mocks.findProfile } },
-}));
-vi.mock("@/lib/auth-profile", () => ({
-  provisionAuthProfile: mocks.provisionProfile,
+  prisma: {
+    user: { findUnique: mocks.findProfile },
+    authUser: { findUnique: mocks.findAccount },
+  },
 }));
 
 import { handleAuth } from "@/middleware/auth";
@@ -37,8 +37,8 @@ const profile = {
   id: "domain-id",
   username: "domain_user",
   name: "Default profile",
-  authUserId: "auth-id",
-  kind: "HUMAN",
+  accountId: "auth-id",
+
   role: "ADMIN",
   avatarUrl: null,
 };
@@ -69,8 +69,12 @@ describe("cookie-backed domain authentication", () => {
       response: null,
       headers: new Headers(),
     });
-    mocks.provisionProfile.mockResolvedValue(profile);
-    mocks.findProfile.mockResolvedValue(null);
+    mocks.findAccount.mockResolvedValue({
+      id: "auth-id",
+      name: "Account",
+      role: "ADMIN",
+    });
+    mocks.findProfile.mockResolvedValue(profile);
   });
   it("rejects missing, expired or revoked sessions", async () => {
     expect((await appUnderTest().request("/api/v4/users")).status).toBe(401);
@@ -90,11 +94,17 @@ describe("cookie-backed domain authentication", () => {
       headers: new Headers(),
     });
     const res = await appUnderTest().request("/api/v4/users", {
-      headers: { cookie: "better-auth.session_token=signed" },
+      headers: {
+        cookie: "better-auth.session_token=signed",
+        "x-profile-id": profile.id,
+      },
     });
     expect(res.status).toBe(200);
     expect((await res.json()).user).toEqual(profile);
-    expect(mocks.provisionProfile).toHaveBeenCalledWith({ id: "auth-id" });
+    expect(mocks.findAccount).toHaveBeenCalledWith({
+      where: { id: "auth-id" },
+      select: { id: true, name: true, role: true },
+    });
     expect(mocks.getSession.mock.calls[0][0].headers.get("cookie")).toContain(
       "session_token",
     );
@@ -104,17 +114,11 @@ describe("cookie-backed domain authentication", () => {
       response: { user: { id: "auth-id" } },
       headers: new Headers({ "set-cookie": "session=renewed; HttpOnly" }),
     });
-    const response = await appUnderTest().request("/api/v4/users");
+    const response = await appUnderTest().request("/api/v4/users", {
+      headers: { "x-profile-id": profile.id },
+    });
     expect(response.headers.get("set-cookie")).toContain("session=renewed");
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-  });
-  it("rejects SYSTEM default profiles", async () => {
-    mocks.getSession.mockResolvedValue({
-      response: { user: { id: "auth-id" } },
-      headers: new Headers(),
-    });
-    mocks.provisionProfile.mockResolvedValue({ ...profile, kind: "SYSTEM" });
-    expect((await appUnderTest().request("/api/v4/users")).status).toBe(401);
   });
   it("uses only additional profiles owned by the authenticated account", async () => {
     mocks.getSession.mockResolvedValue({
@@ -122,12 +126,10 @@ describe("cookie-backed domain authentication", () => {
       headers: new Headers(),
     });
     mocks.findProfile.mockResolvedValue({
-      profile: {
-        ...profile,
-        id: "extra-profile-id",
-        authUserId: null,
-        role: "USER",
-      },
+      ...profile,
+      id: "extra-profile-id",
+      accountId: "auth-id",
+      role: "USER",
     });
     const own = await appUnderTest().request("/api/v4/users", {
       headers: { "x-profile-id": "extra-profile-id" },
@@ -137,15 +139,93 @@ describe("cookie-backed domain authentication", () => {
       role: "ADMIN",
     });
     expect(mocks.findProfile).toHaveBeenCalledWith({
-      where: { authUserId: "auth-id", profileId: "extra-profile-id" },
-      include: { profile: true },
+      where: { id: "extra-profile-id" },
     });
 
     mocks.findProfile.mockResolvedValue(null);
     const forged = await appUnderTest().request("/api/v4/users", {
       headers: { "x-profile-id": "someone-elses-profile" },
     });
-    expect((await forged.json()).user).toMatchObject({ id: "domain-id" });
+    expect(forged.status).toBe(403);
+  });
+  it("uses account permissions while selecting another account's profile", async () => {
+    mocks.getSession.mockResolvedValue({
+      response: { user: { id: "auth-id" } },
+      headers: new Headers(),
+    });
+    mocks.findProfile.mockResolvedValue({
+      ...profile,
+      id: "shared-profile",
+      accountId: "shared",
+      role: "USER",
+    });
+    const response = await appUnderTest().request("/api/v4/users", {
+      headers: { "x-account-id": "shared", "x-profile-id": "shared-profile" },
+    });
+    expect(response.status).toBe(200);
+    expect((await response.json()).user).toMatchObject({
+      id: "shared-profile",
+      accountId: "shared",
+      role: "ADMIN",
+    });
+  });
+  it("rejects another account selection for an ordinary account", async () => {
+    mocks.getSession.mockResolvedValue({
+      response: { user: { id: "auth-id" } },
+      headers: new Headers(),
+    });
+    mocks.findAccount.mockResolvedValue({
+      id: "auth-id",
+      name: "Account",
+      role: "USER",
+    });
+    expect(
+      (
+        await appUnderTest().request("/api/v4/users", {
+          headers: { "x-account-id": "other" },
+        })
+      ).status,
+    ).toBe(403);
+    mocks.findProfile.mockResolvedValue({
+      ...profile,
+      id: "other-profile",
+      accountId: "other",
+    });
+    expect(
+      (
+        await appUnderTest().request("/api/v4/users", {
+          headers: { "x-profile-id": "other-profile" },
+        })
+      ).status,
+    ).toBe(403);
+  });
+  it("requires explicit selection even when an account has profiles", async () => {
+    mocks.getSession.mockResolvedValue({
+      response: { user: { id: "auth-id" } },
+      headers: new Headers(),
+    });
+    expect((await appUnderTest().request("/api/v4/users/me")).status).toBe(409);
+    expect(mocks.findProfile).not.toHaveBeenCalled();
+    expect(
+      (await appUnderTest().request("/api/v4/users/profiles")).status,
+    ).toBe(200);
+    expect((await appUnderTest().request("/api/v4/accounts/me")).status).toBe(
+      200,
+    );
+  });
+  it("does not select a profile when switching to another account", async () => {
+    mocks.getSession.mockResolvedValue({
+      response: { user: { id: "auth-id" } },
+      headers: new Headers(),
+    });
+    expect(
+      (
+        await appUnderTest().request("/api/v4/movies", {
+          headers: { "x-account-id": "shared" },
+        })
+      ).status,
+    ).toBe(409);
+    expect(mocks.findProfile).not.toHaveBeenCalled();
   });
   it("allows configured public reads and exact auth config only", async () => {
     for (const path of [
@@ -182,7 +262,7 @@ describe("cookie-backed domain authentication", () => {
           data: { passwordAuthEnabled: true, signupEnabled: false },
         });
       }
-      expect(mocks.provisionProfile).not.toHaveBeenCalled();
+      expect(mocks.findAccount).not.toHaveBeenCalled();
     },
   );
   it("answers anonymous requests to unknown paths with 404, not 401", async () => {
@@ -248,7 +328,10 @@ describe("cookie-backed domain authentication", () => {
       (
         await appUnderTest().request("/api/v4/users/me", {
           method: "PATCH",
-          headers: { origin: "https://video.example.com" },
+          headers: {
+            origin: "https://video.example.com",
+            "x-profile-id": profile.id,
+          },
         })
       ).status,
     ).toBe(200);

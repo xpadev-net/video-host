@@ -40,12 +40,16 @@ vi.mock("better-auth/adapters/prisma", async () => {
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: {
-      findUnique: vi.fn(
-        async ({ where }) => fixture.profiles.get(where.authUserId) ?? null,
+      findFirst: vi.fn(
+        async ({ where }) => fixture.profiles.get(where.accountId) ?? null,
       ),
       create: vi.fn(async ({ data }) => {
-        const profile = { id: `domain-${data.authUserId}`, ...data };
-        fixture.profiles.set(data.authUserId, profile);
+        const profile = {
+          id: `domain-${data.accountId}`,
+          ...data,
+          account: { role: "USER" },
+        };
+        fixture.profiles.set(data.accountId, profile);
         return profile;
       }),
     },
@@ -233,7 +237,7 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("real generic OIDC redirect flow", () => {
-  it("verifies a signed ID token, provisions a HUMAN and binds immutable provider identity", async () => {
+  it("verifies a signed ID token, does not create a profile and binds immutable provider identity", async () => {
     const flow = await startFlow();
     const response = await finishFlow(flow);
     expect(response.status).toBe(302);
@@ -245,10 +249,7 @@ describe("real generic OIDC redirect flow", () => {
       providerId,
       accountId: createHash("sha256").update("provider-subject").digest("hex"),
     });
-    expect([...fixture.profiles.values()][0]).toMatchObject({
-      kind: "HUMAN",
-      role: "USER",
-    });
+    expect(fixture.profiles.size).toBe(0);
     expect((await finishFlow(flow)).headers.get("location")).toContain(
       "error=",
     );

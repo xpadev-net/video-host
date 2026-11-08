@@ -33,7 +33,38 @@ The root Compose file provides a disposable MySQL 8.4 database on `127.0.0.1:330
 | `PUBLIC_ENDPOINTS` | Optional comma-separated application API path prefixes; visibility/ownership guards still apply |
 | `CALLBACK_SECRET`, `VOD_INTERNAL_SECRET` | Independent machine authentication secrets; not browser credentials |
 
-Email/password signup requires name, a valid email address and an 8–128 character password. Email delivery/verification and password recovery are not configured by this migration; an email address is not proof of ownership. Automatic same-email OAuth account linking is disabled. Domain profile names and avatars remain application-owned after initial provisioning; Better Auth names are authentication metadata.
+Email/password signup requires name, a valid email address and an 8–128 character password. Email delivery/verification and password recovery are not configured by this migration; an email address is not proof of ownership. Automatic same-email OAuth account linking is disabled. Profile names and avatars are application-owned; Better Auth names are account authentication metadata. Profiles are created explicitly after login.
+
+## Accounts and profiles
+
+An account owns any number of profiles up to the configured profile limit.
+`AuthUser` is the common account model: it holds the account role, optional
+login email, credentials and sessions. `User` stores a profile, linked directly
+by its required `accountId`. There is no system/user classification or separate
+subaccount membership table. Every profile has the same visibility and content
+ownership rules. There is no default profile. Accounts may have zero profiles; authentication
+does not automatically create or select one. Each device explicitly selects a
+profile and remembers that selection. Missing or invalid selections show the
+profile picker, or the profile creation form when the account has none.
+
+Administrators manage all accounts at `/api/v4/accounts` and can select an
+account with `X-Account-Id`; `X-Profile-Id` must identify a profile belonging to
+that account. Requests always use the authenticated account's permissions.
+`/api/v4/accounts/me` returns that account independently of profile selection.
+Profile-dependent protected APIs return 409 when `X-Profile-Id` is missing;
+invalid or foreign selections return 403. Public reads remain available without
+a selected profile and follow anonymous visibility rules.
+`/api/v4/users/profiles` lists or creates profiles for the signed-in account;
+an administrator can supply `accountId` to manage another account's profiles.
+Creating an account from administration creates its first profile atomically;
+login credentials are optional. Account deletion is blocked while its profiles
+own content and cannot delete the signed-in account.
+
+The schema migration keeps fresh database initialization through
+`pnpm -F @video-host/backend exec prisma migrate deploy` and the container
+entrypoint aligned with this model. It includes no existing-data backfill or
+compatibility layer; existing populated databases are outside this change's
+scope. Use a new disposable database to validate the complete migration history.
 
 ## Schema and search behavior
 

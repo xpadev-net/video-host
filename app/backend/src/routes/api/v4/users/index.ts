@@ -24,7 +24,7 @@ export const usersRoute = app
     const user = c.get("user");
 
     // The user search feeds viewer invitations and must not leak non-public
-    // profiles: only PUBLIC profiles (default profiles are always public) are
+    // profiles: only PUBLIC profiles are
     // searchable, plus the requester's own profiles and everything for admins.
     const conditions: Prisma.UserWhereInput[] = [];
     if (query) {

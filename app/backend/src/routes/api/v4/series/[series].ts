@@ -153,7 +153,7 @@ export const seriesDetailRoute = app
       notFound("Series not found");
     }
 
-    // Check ownership: owner or admin (for system accounts)
+    // Check ownership: owner or admin
     if (!(await canManageOwned(user, existingSeries.authorId))) {
       forbidden("Not authorized to edit this series");
     }
@@ -203,7 +203,7 @@ export const seriesDetailRoute = app
       notFound("Series not found");
     }
 
-    // Check ownership: owner or admin (for system accounts)
+    // Check ownership: owner or admin
     if (!(await canManageOwned(user, series.authorId))) {
       forbidden("Not authorized to delete this series");
     }

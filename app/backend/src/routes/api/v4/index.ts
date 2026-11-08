@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env, HonoApp } from "@/@types/hono";
+import { accountsRoute } from "./accounts";
 import { authRoute } from "./auth";
 import { callbackRoute } from "./callback";
 import { invitationsRoute } from "./invitations";
@@ -7,7 +8,6 @@ import { moviesRoute } from "./movies";
 import { playlistsRoute } from "./playlists";
 import { progressRoute } from "./progress";
 import { seriesRoute } from "./series";
-import { systemAccountsRoute } from "./system-accounts";
 import { uploadRoute } from "./upload";
 import { usersRoute } from "./users";
 import { vodRoute } from "./vod";
@@ -20,7 +20,7 @@ export const v4Route = app
   .route("/movies", moviesRoute)
   .route("/series", seriesRoute)
   .route("/playlists", playlistsRoute)
-  .route("/system-accounts", systemAccountsRoute)
+  .route("/accounts", accountsRoute)
   .route("/invitations", invitationsRoute)
   .route("/upload", uploadRoute)
   .route("/callback", callbackRoute)

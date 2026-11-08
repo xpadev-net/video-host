@@ -5,7 +5,7 @@ export const MAX_NAME_LENGTH = 191;
 export const MAX_TITLE_LENGTH = 512;
 export const MAX_TEXT_COLUMN_BYTES = 65_535;
 export const MAX_VIEWER_IDS = 100;
-export const MAX_ADDITIONAL_PROFILES = 10;
+export const MAX_PROFILES_PER_ACCOUNT = 11;
 
 export const NameSchema = z.string().trim().min(1).max(MAX_NAME_LENGTH);
 export const UsernameSchema = z.string().regex(/^[a-zA-Z0-9_-]{3,32}$/);

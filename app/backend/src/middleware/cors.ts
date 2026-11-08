@@ -9,7 +9,12 @@ export const handleCors = (app: HonoApp) => {
       origin: CORS_ORIGIN,
       credentials: true,
       allowMethods: ["GET", "POST", "OPTIONS", "DELETE", "PUT", "PATCH"],
-      allowHeaders: ["Authorization", "Content-Type", "X-Profile-Id"],
+      allowHeaders: [
+        "Authorization",
+        "Content-Type",
+        "X-Profile-Id",
+        "X-Account-Id",
+      ],
     }),
   );
 };

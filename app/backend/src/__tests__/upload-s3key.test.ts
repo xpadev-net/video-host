@@ -1,6 +1,6 @@
-import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { User } from "@/@types/account";
 import type { Env } from "../@types/hono";
 
 const database = vi.hoisted(() => ({
@@ -31,9 +31,6 @@ vi.mock("@/lib/s3", async (importOriginal) => ({
   ...s3,
   deleteProdFile: vi.fn(),
 }));
-vi.mock("@/utils/systemAccountCache", () => ({
-  isSystemAccount: vi.fn().mockResolvedValue(false),
-}));
 
 import { generateUploadKey } from "../lib/s3";
 import { moviesRoute } from "../routes/api/v4/movies";
@@ -44,8 +41,8 @@ const alice: User = {
   name: "alice",
   username: "alice",
   role: "USER",
-  kind: "HUMAN",
-  authUserId: "auth-alice",
+
+  accountId: "auth-alice",
   avatarUrl: null,
   visibility: "PUBLIC",
   externalId: null,

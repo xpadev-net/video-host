@@ -36,12 +36,16 @@ vi.mock("better-auth/adapters/prisma", async () => {
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: {
-      findUnique: vi.fn(
-        async ({ where }) => fixture.profiles.get(where.authUserId) ?? null,
+      findFirst: vi.fn(
+        async ({ where }) => fixture.profiles.get(where.accountId) ?? null,
       ),
       create: vi.fn(async ({ data }) => {
-        const profile = { id: `domain-${data.authUserId}`, ...data };
-        fixture.profiles.set(data.authUserId, profile);
+        const profile = {
+          id: `domain-${data.accountId}`,
+          ...data,
+          account: { role: "USER" },
+        };
+        fixture.profiles.set(data.accountId, profile);
         return profile;
       }),
     },
@@ -129,10 +133,7 @@ describe("real Better Auth HTTP handler", () => {
     expect(fixture.db.AuthAccount[0].password).not.toEqual(
       credentials.password,
     );
-    expect([...fixture.profiles.values()][0]).toMatchObject({
-      kind: "HUMAN",
-      role: "USER",
-    });
+    expect(fixture.profiles.size).toBe(0);
   });
   it("issues secure HttpOnly cookies, reads the session and logs out with revocation", async () => {
     const response = await signup();
@@ -313,49 +314,11 @@ describe("real Better Auth HTTP handler", () => {
         .status,
     ).toBe(401);
   });
-  it("can recover when profile provisioning fails during the first signup", async () => {
-    const { prisma } = await import("../lib/prisma.js");
-    vi.mocked(prisma.user.create).mockRejectedValueOnce(
-      new Error("Simulated first-signup profile failure"),
-    );
-    const failed = await call("/sign-up/email", credentials);
-    expect(failed.status).not.toBe(200);
-    expect(fixture.db.AuthSession).toHaveLength(0);
-    expect(fixture.db.AuthAccount).toHaveLength(1);
-    expect(fixture.db.AuthAccount[0].providerId).toBe("credential");
-    const retry = await call("/sign-in/email", credentials);
-    expect(retry.status).toBe(200);
-    expect(fixture.profiles.size).toBe(1);
-    expect(fixture.db.AuthSession).toHaveLength(1);
-  });
-  it("repairs a missing profile idempotently and withholds sessions if provisioning fails", async () => {
+  it("allows signing in with zero profiles without creating or selecting one", async () => {
     await signup();
     fixture.db.AuthSession.splice(0);
-    fixture.profiles.clear();
-    const { prisma } = await import("../lib/prisma.js");
-    vi.mocked(prisma.user.create).mockRejectedValueOnce(
-      new Error("Simulated profile database failure"),
-    );
-    const failed = await call("/sign-in/email", credentials);
-    expect(failed.status).not.toBe(200);
-    expect(fixture.db.AuthSession).toHaveLength(0);
-    const retry = await call("/sign-in/email", credentials);
-    expect(retry.status).toBe(200);
-    expect(fixture.profiles.size).toBe(1);
-    const profile = [...fixture.profiles.values()][0];
-    profile.role = "ADMIN";
-    const domainId = profile.id;
     expect((await call("/sign-in/email", credentials)).status).toBe(200);
-    expect([...fixture.profiles.values()][0]).toMatchObject({
-      id: domainId,
-      role: "ADMIN",
-    });
-  });
-  it("never issues a human session for a SYSTEM profile mapping", async () => {
-    await signup();
-    fixture.db.AuthSession.splice(0);
-    [...fixture.profiles.values()][0].kind = "SYSTEM";
-    expect((await call("/sign-in/email", credentials)).status).not.toBe(200);
-    expect(fixture.db.AuthSession).toHaveLength(0);
+    expect(fixture.profiles.size).toBe(0);
+    expect(fixture.db.AuthSession).toHaveLength(1);
   });
 });

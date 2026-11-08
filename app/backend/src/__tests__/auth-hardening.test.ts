@@ -1,9 +1,8 @@
-import { Prisma } from "@prisma/client";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const database = vi.hoisted(() => ({
-  user: { findUnique: vi.fn(), create: vi.fn(), upsert: vi.fn() },
+  user: { findFirst: vi.fn(), create: vi.fn(), upsert: vi.fn() },
   authRateLimit: { findMany: vi.fn(), deleteMany: vi.fn() },
   $queryRaw: vi.fn(),
 }));
@@ -20,12 +19,9 @@ import {
   oidcIssuerMatches,
   safeAvatarUrl,
 } from "../lib/auth-policy";
-import { provisionAuthProfile } from "../lib/auth-profile";
 import { filterSelf, filterUser } from "../lib/filter";
 import { registerMiddleware } from "../middleware";
 import { registerHealthzRoute } from "../routes/healthz";
-
-const identity = { id: "auth-1", name: "Ann", email: "ann@example.com" };
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -64,39 +60,6 @@ describe("OIDC helpers", () => {
     expect(safeAvatarUrl("data:image/png;base64,AAAA")).toBeNull();
     expect(safeAvatarUrl(`https://x.example/${"a".repeat(200)}`)).toBeNull();
     expect(safeAvatarUrl(null)).toBeNull();
-  });
-});
-
-describe("provisionAuthProfile", () => {
-  it("only reads for an existing identity (no per-request write)", async () => {
-    database.user.findUnique.mockResolvedValue({ id: "u1" });
-    expect(await provisionAuthProfile(identity)).toEqual({ id: "u1" });
-    expect(database.user.create).not.toHaveBeenCalled();
-    expect(database.user.upsert).not.toHaveBeenCalled();
-  });
-
-  it("creates the profile on first sight, dropping unsafe avatars", async () => {
-    database.user.findUnique.mockResolvedValue(null);
-    database.user.create.mockResolvedValue({ id: "u2" });
-    await provisionAuthProfile({ ...identity, image: "javascript:x" });
-    expect(database.user.create.mock.calls[0][0].data).toMatchObject({
-      authUserId: "auth-1",
-      avatarUrl: null,
-      kind: "HUMAN",
-    });
-  });
-
-  it("recovers when a concurrent request created the row first", async () => {
-    database.user.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: "u3" });
-    database.user.create.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError("dup", {
-        code: "P2002",
-        clientVersion: "test",
-      }),
-    );
-    expect(await provisionAuthProfile(identity)).toEqual({ id: "u3" });
   });
 });
 

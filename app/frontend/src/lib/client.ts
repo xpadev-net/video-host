@@ -24,6 +24,16 @@ const customFetch = (input: RequestInfo | URL, requestInit?: RequestInit) => {
     const profileId = getSelectedProfileId();
     if (profileId) headers.set("X-Profile-Id", profileId);
   }
+  if (typeof window !== "undefined" && !headers.has("X-Account-Id")) {
+    try {
+      const accountId: unknown = JSON.parse(
+        window.localStorage.getItem("dashboard-selected-account") ?? "null",
+      );
+      if (typeof accountId === "string") headers.set("X-Account-Id", accountId);
+    } catch {
+      /* Ignore invalid local selection. */
+    }
+  }
   return fetch(input, {
     ...requestInit,
     headers,

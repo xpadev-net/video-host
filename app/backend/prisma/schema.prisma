@@ -19,11 +19,6 @@ enum Role {
   ADMIN
 }
 
-enum UserKind {
-  HUMAN
-  SYSTEM
-}
-
 enum MovieStatus {
   UPLOADING
   PROCESSING
@@ -46,11 +41,8 @@ model User {
   id                String        @id @default(uuid())
   name              String
   username          String        @unique
-  kind              UserKind      @default(HUMAN)
-  authUserId        String?       @unique
-  authUser          AuthUser?     @relation(fields: [authUserId], references: [id], onDelete: SetNull)
-  additionalProfile AuthProfile?
-  role              Role          @default(USER)
+  accountId         String
+  account           AuthUser      @relation(fields: [accountId], references: [id], onDelete: Restrict)
   avatarUrl         String?       @db.Text
   visibility        Visibility    @default(PUBLIC)
   series            Series[]
@@ -64,40 +56,25 @@ model User {
   viewableProfiles  ProfileViewer[] @relation("ProfileViewer_user")
   sentInvitations   AccessInvitation[]
 
-  @@index([kind, createdAt])
+  @@index([accountId, createdAt])
   @@index([visibility])
 }
 
-// Better Auth owns credentials, provider identities and sessions. Domain User
-// IDs, roles, ownership and visibility relations remain application-owned.
+// Common account: authentication is optional; roles apply to all owned profiles.
+// User rows are profiles; credentials and sessions belong to this account.
 model AuthUser {
   id                 String        @id
   name               String
-  email              String        @unique @db.VarChar(320)
+  email              String?       @unique @db.VarChar(320)
   emailVerified      Boolean       @default(false)
   image              String?       @db.Text
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
   sessions           AuthSession[]
   accounts           AuthAccount[]
-  profile            User?
-  additionalProfiles AuthProfile[]
+  role               Role          @default(USER)
+  profiles           User[]
   receivedInvitations AccessInvitation[]
-}
-
-// The existing User.authUserId relation remains the account's default
-// profile. Additional profiles are linked through this table so existing
-// account/profile rows need no data backfill.
-model AuthProfile {
-  id         String   @id @default(uuid())
-  authUserId String
-  profileId  String   @unique
-  authUser   AuthUser @relation(fields: [authUserId], references: [id], onDelete: Cascade)
-  profile    User     @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @default(now()) @updatedAt
-
-  @@index([authUserId])
 }
 
 model AuthSession {

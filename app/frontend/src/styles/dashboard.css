@@ -45,26 +45,26 @@
   color: var(--primary, #3b82f6);
 }
 
-/* _app.dashboard.admin.system-accounts.tsx */
-.system-accounts-page h1 {
+/* _app.dashboard.admin.accounts.tsx */
+.accounts-page h1 {
   color: var(--foreground, #fff);
   margin-bottom: 2rem;
 }
-.system-accounts-page .create-form {
+.accounts-page .create-form {
   background: var(--background, #0d0d0d);
   padding: 1.5rem;
   border-radius: 12px;
   margin-bottom: 2rem;
 }
-.system-accounts-page .create-form h3 {
+.accounts-page .create-form h3 {
   color: var(--foreground, #fff);
   margin: 0 0 1rem;
 }
-.system-accounts-page .form-row {
+.accounts-page .form-row {
   display: flex;
   gap: 1rem;
 }
-.system-accounts-page .form-row input {
+.accounts-page .form-row input {
   flex: 1;
   padding: 0.75rem;
   background: var(--secondary, #1a1a1a);
@@ -72,7 +72,7 @@
   border-radius: 8px;
   color: var(--foreground, #fff);
 }
-.system-accounts-page .form-row button {
+.accounts-page .form-row button {
   padding: 0.75rem 1.5rem;
   background: var(--primary, #3b82f6);
   color: var(--primary-foreground);
@@ -80,11 +80,11 @@
   border-radius: 8px;
   cursor: pointer;
 }
-.system-accounts-page .form-row button:disabled {
+.accounts-page .form-row button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-.system-accounts-page .error-message {
+.accounts-page .error-message {
   margin-top: 1rem;
   padding: 0.75rem;
   background: rgba(239, 68, 68, 0.1);
@@ -92,14 +92,14 @@
   border-radius: 8px;
   color: #ef4444;
 }
-.system-accounts-page .accounts-list h3 {
+.accounts-page .accounts-list h3 {
   color: var(--foreground, #fff);
   margin-bottom: 1rem;
 }
-.system-accounts-page .empty {
+.accounts-page .empty {
   color: var(--muted-foreground, #999);
 }
-.system-accounts-page .account-item {
+.accounts-page .account-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -109,19 +109,19 @@
   border-radius: 8px;
   margin-bottom: 0.5rem;
 }
-.system-accounts-page .account-info {
+.accounts-page .account-info {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
-.system-accounts-page .account-name {
+.accounts-page .account-name {
   color: var(--foreground, #fff);
 }
-.system-accounts-page .account-username {
+.accounts-page .account-username {
   color: var(--muted-foreground, #999);
   font-size: 0.875rem;
 }
-.system-accounts-page .delete-btn {
+.accounts-page .delete-btn {
   padding: 0.5rem 1rem;
   background: transparent;
   border: 1px solid #ef4444;
@@ -129,7 +129,7 @@
   color: #ef4444;
   cursor: pointer;
 }
-.system-accounts-page .delete-btn:disabled {
+.accounts-page .delete-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

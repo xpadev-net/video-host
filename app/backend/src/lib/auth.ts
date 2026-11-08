@@ -29,7 +29,6 @@ import {
   oidcProviderId,
   signupCodeMatches,
 } from "@/lib/auth-policy";
-import { provisionAuthProfile } from "@/lib/auth-profile";
 import { AUTH_CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { prisma } from "@/lib/prisma";
 
@@ -50,8 +49,6 @@ export const auth = betterAuth({
   basePath: "/api/auth",
   secret: BETTER_AUTH_SECRET,
   trustedOrigins: AUTH_TRUSTED_ORIGINS,
-  // Profile provisioning uses the application Prisma client at the session
-  // gate. Keep auth writes committed before that independent FK-bearing write.
   database: prismaAdapter(prisma, { provider: "mysql", transaction: false }),
   advanced: {
     database: { generateId: "uuid" },
@@ -221,26 +218,5 @@ export const auth = betterAuth({
         throw new APIError("FORBIDDEN", { message: "Invalid signup code" });
       }
     }),
-  },
-  databaseHooks: {
-    session: {
-      create: {
-        before: async (session, context) => {
-          // Provision once, after credentials/provider identity have persisted,
-          // immediately before issuing a session. Failure issues no session; a
-          // later sign-in can retry. Do not duplicate this with a deferred user
-          // after-hook that could fail after a session has already been created.
-          // Never classify a credential-less HUMAN as a system account.
-          const user = context
-            ? await context.context.internalAdapter.findUserById(session.userId)
-            : await prisma.authUser.findUnique({
-                where: { id: session.userId },
-              });
-          if (!user) return false;
-          const profile = await provisionAuthProfile(user);
-          return profile.kind === "HUMAN";
-        },
-      },
-    },
   },
 });

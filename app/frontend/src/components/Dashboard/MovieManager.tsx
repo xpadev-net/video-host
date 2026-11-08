@@ -87,7 +87,7 @@ export const MovieManager: FC<MovieManagerProps> = ({
       append = false,
       generation = availableRequestGenerationRef.current,
     ) => {
-      if (!session) return;
+      if (!session || !selectedProfileId) return;
       setIsLoadingMovies(true);
       try {
         const res = await client.api.v4.movies.$get(
@@ -95,11 +95,16 @@ export const MovieManager: FC<MovieManagerProps> = ({
             query: {
               page: String(page),
               limit: "100",
-              author: selectedAccountId || undefined,
-              mine: selectedAccountId ? undefined : "true",
+              author: selectedProfileId,
+              mine: "true",
             },
           },
-          { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+          {
+            headers: {
+              "X-Profile-Id": selectedProfileId,
+              "X-Account-Id": selectedAccountId ?? "",
+            },
+          },
         );
 
         if (!res.ok) throw new Error("Failed to fetch");
@@ -192,14 +197,24 @@ export const MovieManager: FC<MovieManagerProps> = ({
                 param: { series: entityId },
                 json: { movieId: selectedMovieId },
               },
-              { headers: { "X-Profile-Id": profileId ?? "" } },
+              {
+                headers: {
+                  "X-Profile-Id": profileId ?? "",
+                  "X-Account-Id": selectedAccountId ?? "",
+                },
+              },
             )
           : await client.api.v4.playlists[":playlist"].movies.$post(
               {
                 param: { playlist: entityId },
                 json: { movieId: selectedMovieId },
               },
-              { headers: { "X-Profile-Id": profileId ?? "" } },
+              {
+                headers: {
+                  "X-Profile-Id": profileId ?? "",
+                  "X-Account-Id": selectedAccountId ?? "",
+                },
+              },
             );
 
       if (!res.ok) throw new Error("Failed to add");
@@ -241,13 +256,23 @@ export const MovieManager: FC<MovieManagerProps> = ({
         entityType === "series"
           ? await client.api.v4.series[":series"].movies[":movie"].$delete(
               { param: { series: entityId, movie: movieId } },
-              { headers: { "X-Profile-Id": profileId ?? "" } },
+              {
+                headers: {
+                  "X-Profile-Id": profileId ?? "",
+                  "X-Account-Id": selectedAccountId ?? "",
+                },
+              },
             )
           : await client.api.v4.playlists[":playlist"].movies[":movie"].$delete(
               {
                 param: { playlist: entityId, movie: movieId },
               },
-              { headers: { "X-Profile-Id": profileId ?? "" } },
+              {
+                headers: {
+                  "X-Profile-Id": profileId ?? "",
+                  "X-Account-Id": selectedAccountId ?? "",
+                },
+              },
             );
 
       if (!res.ok) throw new Error("Failed to remove");
@@ -322,7 +347,12 @@ export const MovieManager: FC<MovieManagerProps> = ({
                   movieIds: ids,
                 },
               },
-              { headers: { "X-Profile-Id": profileId ?? "" } },
+              {
+                headers: {
+                  "X-Profile-Id": profileId ?? "",
+                  "X-Account-Id": selectedAccountId ?? "",
+                },
+              },
             )
           : await client.api.v4.playlists[":playlist"].movies.$patch(
               {
@@ -331,7 +361,12 @@ export const MovieManager: FC<MovieManagerProps> = ({
                   movieIds: ids,
                 },
               },
-              { headers: { "X-Profile-Id": profileId ?? "" } },
+              {
+                headers: {
+                  "X-Profile-Id": profileId ?? "",
+                  "X-Account-Id": selectedAccountId ?? "",
+                },
+              },
             );
       if (!res.ok) throw new Error("Failed to update order");
       if (!isCurrentProfileMutation(sessionId, profileId, profileGeneration))

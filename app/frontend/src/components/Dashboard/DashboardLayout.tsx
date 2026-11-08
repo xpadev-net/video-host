@@ -2,7 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Film, House, Inbox, Library, ListVideo, Users } from "lucide-react";
 import type { FC, ReactNode } from "react";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
-import { useSelf } from "@/hooks/useUser";
+import { useAccount } from "@/hooks/useAccount";
 import { AccountSwitcher } from "./AccountSwitcher";
 
 interface DashboardLayoutProps {
@@ -19,8 +19,8 @@ const navItems = [
 
 const adminNavItems = [
   {
-    href: "/dashboard/admin/system-accounts",
-    label: "システムアカウント",
+    href: "/dashboard/admin/accounts",
+    label: "アカウント",
     icon: Users,
   },
 ] as const;
@@ -29,7 +29,7 @@ export const DashboardLayout: FC<DashboardLayoutProps> = ({ children }) => {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
-  const { data: user, isLoading } = useSelf();
+  const { data: user, isLoading } = useAccount();
   const isAdmin = user && "role" in user && user.role === "ADMIN";
 
   if (isLoading) return <DashboardLoading />;

@@ -5,15 +5,13 @@ import { client } from "@/lib/client";
 
 type Props = {
   profile: FilteredUser;
-  selectedProfileId: string | null;
-  isDefault: boolean;
+  selectedProfileId: string;
   onSaved: () => void;
 };
 
 export const ProfileVisibilityEditor: React.FC<Props> = ({
   profile,
   selectedProfileId,
-  isDefault,
   onSaved,
 }) => {
   const [visibility, setVisibility] = useState<Visibility>(
@@ -21,19 +19,6 @@ export const ProfileVisibilityEditor: React.FC<Props> = ({
   );
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // The account's default profile is always public; only additional profiles
-  // can be made non-public.
-  if (isDefault) {
-    return (
-      <div className="mt-3 flex flex-col gap-1">
-        <span className="account-switcher-label">プロフィール公開設定</span>
-        <span className="text-sub-text text-sm">
-          デフォルトプロフィールは常に公開です
-        </span>
-      </div>
-    );
-  }
 
   const isShareable = visibility === "LIMITED" || visibility === "PRIVATE";
 
@@ -43,7 +28,7 @@ export const ProfileVisibilityEditor: React.FC<Props> = ({
     try {
       const res = await client.api.v4.users.me.$patch(
         { json: { visibility } },
-        { headers: { "X-Profile-Id": selectedProfileId ?? "" } },
+        { headers: { "X-Profile-Id": selectedProfileId } },
       );
       if (!res.ok) throw new Error("Failed to save");
       onSaved();

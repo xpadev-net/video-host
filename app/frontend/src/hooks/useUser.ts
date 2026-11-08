@@ -1,7 +1,11 @@
 import type { FilteredUser } from "@video-host/backend";
 import { useAtomValue } from "jotai";
-import useSWR from "swr";
-import { selectedProfileIdAtom } from "@/atoms/SelectedAccount";
+import { useEffect } from "react";
+import useSWR, { useSWRConfig } from "swr";
+import {
+  selectedAccountIdAtom,
+  selectedProfileIdAtom,
+} from "@/atoms/SelectedAccount";
 import { useStickySWR } from "@/hooks/useStickySWR";
 import { authClient } from "@/lib/auth-client";
 import { client } from "@/lib/client";
@@ -47,22 +51,62 @@ export const useUser = (query?: string) => {
 export const useSelf = () => {
   const { data: session, isPending } = authClient.useSession();
   const selectedProfileId = useAtomValue(selectedProfileIdAtom);
-  // Better Auth identifies the login; domain profile, roles and system-account
-  // permissions must continue to come from the application API.
+  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
+  const { mutate: revalidate } = useSWRConfig();
+  const sessionId = session?.user.id;
+  // The API resolves account permissions and the selected profile.
   const swr = useSWR<FilteredUser | null>(
-    session ? (["self", session.user.id, selectedProfileId] as const) : null,
-    async ([, , profileId]: readonly [string, string, string | null]) => {
+    session && selectedProfileId
+      ? ([
+          "self",
+          session.user.id,
+          selectedProfileId,
+          selectedAccountId,
+        ] as const)
+      : null,
+    async ([, , profileId, accountId]: readonly [
+      string,
+      string,
+      string | null,
+      string | null,
+    ]) => {
       const response = await client.api.v4.users.me.$get(
         {},
-        { headers: { "X-Profile-Id": profileId ?? "" } },
+        {
+          headers: {
+            "X-Profile-Id": profileId ?? "",
+            "X-Account-Id": accountId ?? "",
+          },
+        },
       );
+      if ((response.status as number) === 403) {
+        throw new InvalidProfileSelection(
+          "Profile selection is no longer valid",
+        );
+      }
       const result = await response.json();
       return result.status === "ok" ? result.data : null;
     },
+    {
+      shouldRetryOnError: (error: Error) =>
+        !(error instanceof InvalidProfileSelection),
+    },
   );
+  useEffect(() => {
+    if (!(swr.error instanceof InvalidProfileSelection) || !sessionId) return;
+    // Only the currently observed request can trigger revalidation. Late
+    // responses for an old SWR key cannot erase a newer device selection.
+    // The selection gate confirms membership before clearing an unknown ID.
+    void Promise.allSettled([
+      revalidate(["profiles", sessionId, selectedAccountId]),
+      revalidate(["account", sessionId]),
+    ]);
+  }, [swr.error, sessionId, selectedAccountId, revalidate]);
   return {
     ...swr,
     data: session ? (swr.data ?? null) : null,
     isLoading: isPending || (Boolean(session) && swr.isLoading),
   };
 };
+
+class InvalidProfileSelection extends Error {}

@@ -135,7 +135,7 @@ export const movieRoute = app
       notFound("Movie not found");
     }
 
-    // Check ownership: owner or admin (for system accounts)
+    // Check ownership: owner or admin
     if (!(await canManageOwned(user, existingMovie.authorId))) {
       forbidden("Not authorized to edit this movie");
     }
@@ -214,7 +214,7 @@ export const movieRoute = app
       notFound("Movie not found");
     }
 
-    // Check ownership: owner or admin (for system accounts)
+    // Check ownership: owner or admin
     if (!(await canManageOwned(user, movie.authorId))) {
       forbidden("Not authorized to delete this movie");
     }

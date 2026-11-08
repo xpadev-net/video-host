@@ -1,4 +1,5 @@
-import type { Prisma, User } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
+import type { User } from "@/@types/account";
 import type { Visibility } from "@/@types/models";
 
 type WhereInput =

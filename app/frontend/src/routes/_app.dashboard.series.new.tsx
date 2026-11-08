@@ -22,17 +22,14 @@ function NewSeriesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submissionIdRef = useRef(0);
-  const {
-    selectedAccountId,
-    selectedProfileId,
-    generationRef: selectionGenerationRef,
-  } = useProfileSelectionGeneration(() => {
-    setTitle("");
-    setDescription("");
-    setVisibility("PUBLIC");
-    setError(null);
-    setIsSubmitting(false);
-  });
+  const { selectedProfileId, generationRef: selectionGenerationRef } =
+    useProfileSelectionGeneration(() => {
+      setTitle("");
+      setDescription("");
+      setVisibility("PUBLIC");
+      setError(null);
+      setIsSubmitting(false);
+    });
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -50,7 +47,7 @@ function NewSeriesPage() {
             title: title.trim(),
             description: description.trim(),
             visibility,
-            asUserId: selectedAccountId || undefined,
+            asUserId: undefined,
           },
         },
         {
