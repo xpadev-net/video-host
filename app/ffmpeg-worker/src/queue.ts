@@ -22,6 +22,7 @@ import {
   RETRY_QUEUE_BATCH_SIZE,
 } from "./config";
 import {
+  REDIS_NODE_PASSWORD,
   REDIS_SENTINEL_HOSTS,
   REDIS_SENTINEL_NAME,
   REDIS_SENTINEL_PASSWORD,
@@ -42,23 +43,36 @@ interface SentinelNode {
   port: number;
 }
 
+export const buildSentinelClientOptions = (
+  name: string,
+  hosts: string,
+  sentinelPassword?: string,
+  nodePassword?: string,
+) => {
+  const sentinelRootNodes: SentinelNode[] = hosts.split(",").map((host) => {
+    const [hostname, port] = host.trim().split(":");
+    return { host: hostname, port: parseInt(port || "26379", 10) };
+  });
+
+  return {
+    name,
+    sentinelRootNodes,
+    sentinelClientOptions: { password: sentinelPassword },
+    nodeClientOptions: { password: nodePassword },
+  };
+};
+
 const createRedisClient = (): RedisClientType | RedisSentinelType => {
   // If Sentinel is configured, use Sentinel mode
   if (REDIS_SENTINEL_HOSTS && REDIS_SENTINEL_NAME) {
-    const sentinels: SentinelNode[] = REDIS_SENTINEL_HOSTS.split(",").map(
-      (host: string) => {
-        const [hostname, port] = host.trim().split(":");
-        return { host: hostname, port: parseInt(port || "26379", 10) };
-      },
+    return createSentinel(
+      buildSentinelClientOptions(
+        REDIS_SENTINEL_NAME,
+        REDIS_SENTINEL_HOSTS,
+        REDIS_SENTINEL_PASSWORD,
+        REDIS_NODE_PASSWORD,
+      ),
     );
-
-    return createSentinel({
-      name: REDIS_SENTINEL_NAME,
-      sentinelRootNodes: sentinels,
-      sentinelClientOptions: {
-        password: REDIS_SENTINEL_PASSWORD,
-      },
-    });
   }
 
   // Otherwise, use standard connection
