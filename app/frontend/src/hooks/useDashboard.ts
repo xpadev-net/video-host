@@ -24,11 +24,16 @@ export const useMyMovies = (page = 1, limit = DashboardPageSize) => {
           query: {
             page: p.toString(),
             limit: l.toString(),
-            author: account || undefined,
-            mine: account ? undefined : "true",
+            author: profileId || undefined,
+            mine: "true",
           },
         },
-        { headers: { "X-Profile-Id": profileId ?? "" } },
+        {
+          headers: {
+            "X-Profile-Id": profileId ?? "",
+            "X-Account-Id": account ?? "",
+          },
+        },
       );
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
@@ -56,11 +61,16 @@ export const useMySeries = (page = 1, limit = DashboardPageSize) => {
           query: {
             page: p.toString(),
             limit: l.toString(),
-            author: account || undefined,
-            mine: account ? undefined : "true",
+            author: profileId || undefined,
+            mine: "true",
           },
         },
-        { headers: { "X-Profile-Id": profileId ?? "" } },
+        {
+          headers: {
+            "X-Profile-Id": profileId ?? "",
+            "X-Account-Id": account ?? "",
+          },
+        },
       );
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
@@ -95,11 +105,16 @@ export const useMyPlaylists = (page = 1, limit = DashboardPageSize) => {
           query: {
             page: p.toString(),
             limit: l.toString(),
-            author: account || undefined,
-            mine: account ? undefined : "true",
+            author: profileId || undefined,
+            mine: "true",
           },
         },
-        { headers: { "X-Profile-Id": profileId ?? "" } },
+        {
+          headers: {
+            "X-Profile-Id": profileId ?? "",
+            "X-Account-Id": account ?? "",
+          },
+        },
       );
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
@@ -111,14 +126,17 @@ export const useMyPlaylists = (page = 1, limit = DashboardPageSize) => {
   );
 };
 
-export const useSystemAccounts = (enabled = true) => {
+export const useAccounts = (enabled = true) => {
   const { data: authSession } = authClient.useSession();
   const session = authSession?.user.id;
 
   return useSWR(
-    enabled && session ? ["system-accounts", session] : null,
+    enabled && session ? ["accounts", session] : null,
     async () => {
-      const res = await client.api.v4["system-accounts"].$get();
+      const res = await client.api.v4.accounts.$get(
+        {},
+        { headers: { "X-Profile-Id": "", "X-Account-Id": "" } },
+      );
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
       return json.data;

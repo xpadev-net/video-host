@@ -1,4 +1,5 @@
-import { Prisma, type User } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { User } from "@/@types/account";
 import { prisma } from "@/lib/prisma";
 
 type SuggestTable = "Series" | "Playlist";

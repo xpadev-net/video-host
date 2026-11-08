@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
 import type { Visibility } from "@video-host/backend";
-import { useAtomValue } from "jotai";
+import { useSetAtom } from "jotai";
 import { Film } from "lucide-react";
 import {
   type ChangeEvent,
@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { selectedAccountIdAtom } from "@/atoms/SelectedAccount";
+import { uploadSelectionLockedAtom } from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { useConfirm } from "@/components/Feedback/FeedbackProvider";
 import { useUpload } from "@/hooks/useUpload";
@@ -25,7 +25,6 @@ export const Route = createFileRoute("/_app/dashboard/videos/new")({
 });
 
 function NewVideoPage() {
-  const selectedAccountId = useAtomValue(selectedAccountIdAtom);
   const confirm = useConfirm();
   const { data: user, isLoading: isUserLoading } = useSelf();
   const { data: authSession } = authClient.useSession();
@@ -54,6 +53,7 @@ function NewVideoPage() {
   const uploadActiveRef = useRef(false);
   const uploadOperationRef = useRef(0);
   const cancelDeleteMovieIdRef = useRef<string | null>(null);
+  const movieAccountIdRef = useRef<string | null>(null);
   const movieProfileIdRef = useRef<string | null>(null);
   const movieSessionUserIdRef = useRef<string | null>(null);
   const currentSessionUserIdRef = useRef(sessionUserId);
@@ -81,6 +81,11 @@ function NewVideoPage() {
   // is safe. beforeunload only covers real navigation, so client-side route
   // changes need their own confirm gate.
   const needsLeaveGuard = isBusy || savePending || cancelDeletePending;
+  const setSelectionLocked = useSetAtom(uploadSelectionLockedAtom);
+  useLayoutEffect(() => {
+    setSelectionLocked(needsLeaveGuard);
+    return () => setSelectionLocked(false);
+  }, [needsLeaveGuard, setSelectionLocked]);
   useBlocker({
     shouldBlockFn: async () =>
       !(await confirm({
@@ -119,7 +124,12 @@ function NewVideoPage() {
         param: { movie: id },
         json: submitted,
       },
-      { headers: { "X-Profile-Id": movieProfileIdRef.current ?? "" } },
+      {
+        headers: {
+          "X-Profile-Id": movieProfileIdRef.current ?? "",
+          "X-Account-Id": movieAccountIdRef.current ?? "",
+        },
+      },
     );
     if (!res.ok) {
       throw new Error("メタデータの保存に失敗しました");
@@ -147,6 +157,7 @@ function NewVideoPage() {
     uploadActiveRef.current = false;
     movieIdRef.current = null;
     movieProfileIdRef.current = null;
+    movieAccountIdRef.current = null;
     movieSessionUserIdRef.current = null;
     cancelDeleteMovieIdRef.current = null;
     saveQueueRef.current = Promise.resolve();
@@ -186,6 +197,7 @@ function NewVideoPage() {
     setMovieId(null);
     movieIdRef.current = null;
     movieProfileIdRef.current = null;
+    movieAccountIdRef.current = null;
     movieSessionUserIdRef.current = null;
     setSaved(false);
     setError(null);
@@ -194,7 +206,7 @@ function NewVideoPage() {
     // Create the movie record as soon as the file is picked, YouTube-style:
     // metadata below is already editable while the upload progresses.
     const result = await init(selectedFile, {
-      asUserId: selectedAccountId || undefined,
+      asUserId: undefined,
     });
     if (!result) {
       uploadActiveRef.current = false;
@@ -205,6 +217,7 @@ function NewVideoPage() {
     movieIdRef.current = result.movieId;
     setMovieId(result.movieId);
     movieProfileIdRef.current = result.profileId;
+    movieAccountIdRef.current = result.accountId;
     movieSessionUserIdRef.current = startingSessionId;
     metadataRef.current = { ...metadataRef.current, title: result.title };
     setTitle(result.title);
@@ -296,13 +309,14 @@ function NewVideoPage() {
         ? await resume(movieId, file)
         : await (async () => {
             const result = await init(file, {
-              asUserId: selectedAccountId || undefined,
+              asUserId: undefined,
             });
             if (!result) return false;
             if (currentSessionUserIdRef.current !== sessionId) return false;
             movieIdRef.current = result.movieId;
             setMovieId(result.movieId);
             movieProfileIdRef.current = result.profileId;
+            movieAccountIdRef.current = result.accountId;
             movieSessionUserIdRef.current = sessionId;
             metadataRef.current = {
               ...metadataRef.current,
@@ -349,6 +363,7 @@ function NewVideoPage() {
     setMovieId(null);
     movieIdRef.current = null;
     movieProfileIdRef.current = null;
+    movieAccountIdRef.current = null;
     movieSessionUserIdRef.current = null;
     setTitle("");
     setDescription("");
@@ -366,7 +381,12 @@ function NewVideoPage() {
     try {
       const res = await client.api.v4.movies[":movie"].$delete(
         { param: { movie: id } },
-        { headers: { "X-Profile-Id": profileId ?? "" } },
+        {
+          headers: {
+            "X-Profile-Id": profileId ?? "",
+            "X-Account-Id": movieAccountIdRef.current ?? "",
+          },
+        },
       );
       if (!res.ok && Number(res.status) !== 404) {
         throw new Error("Failed to delete canceled upload");

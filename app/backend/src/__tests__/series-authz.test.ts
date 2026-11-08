@@ -1,6 +1,6 @@
-import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { User } from "@/@types/account";
 import type { Env } from "../@types/hono";
 
 const database = vi.hoisted(() => ({
@@ -35,9 +35,6 @@ vi.mock("@/lib/redis", () => ({
   addEncodeJob: vi.fn(),
   setEncodeProgress: vi.fn(),
 }));
-vi.mock("@/utils/systemAccountCache", () => ({
-  isSystemAccount: vi.fn().mockResolvedValue(false),
-}));
 
 import { moviesRoute } from "../routes/api/v4/movies";
 import { playlistDetailRoute } from "../routes/api/v4/playlists/[playlist]";
@@ -48,8 +45,8 @@ const person = (id: string, role: User["role"] = "USER"): User => ({
   name: id,
   username: id,
   role,
-  kind: "HUMAN",
-  authUserId: `auth-${id}`,
+
+  accountId: `auth-${id}`,
   avatarUrl: null,
   visibility: "PUBLIC",
   externalId: null,

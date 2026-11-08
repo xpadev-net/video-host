@@ -109,8 +109,8 @@ export type InvitationSummary = {
   targetLabel: string;
   // Present on received invitations: the profile that sent it.
   inviter?: FilteredUser;
-  // Present on sent invitations: the account (default profile) it was sent to.
-  invitee?: FilteredUser;
+  // Present on sent invitations: the recipient account.
+  invitee?: { id: string; name: string };
   // Present on accepted sent invitations: the profile the invitee granted.
   grantedProfile?: FilteredUser;
   createdAt: string;

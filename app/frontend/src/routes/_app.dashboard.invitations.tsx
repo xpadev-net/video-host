@@ -66,7 +66,6 @@ function ReceivedInvitation({ invitation }: { invitation: InvitationSummary }) {
             {(profiles ?? []).map((profile) => (
               <option key={profile.id} value={profile.id}>
                 {profile.name} @{profile.username}
-                {profile.isDefault ? "（デフォルト）" : ""}
               </option>
             ))}
           </select>

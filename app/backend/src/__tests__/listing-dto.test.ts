@@ -7,9 +7,6 @@ const database = vi.hoisted(() => ({
   playlist: { count: vi.fn(), groupBy: vi.fn(), findMany: vi.fn() },
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: database }));
-vi.mock("@/utils/systemAccountCache", () => ({
-  isSystemAccount: vi.fn().mockResolvedValue(false),
-}));
 
 import { playlistsRoute } from "../routes/api/v4/playlists";
 import { seriesRoute } from "../routes/api/v4/series";

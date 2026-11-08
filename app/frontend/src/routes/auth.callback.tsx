@@ -1,10 +1,5 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useSetAtom } from "jotai";
 import { useEffect } from "react";
-import {
-  selectedAccountIdAtom,
-  selectedProfileIdAtom,
-} from "@/atoms/SelectedAccount";
 import { AuthLayout } from "@/components/Auth";
 import { getSafeCallback } from "@/hooks/useAuth";
 import { authClient } from "@/lib/auth-client";
@@ -15,8 +10,6 @@ export const Route = createFileRoute("/auth/callback")({
 
 function AuthCallbackRoute() {
   const router = useRouter();
-  const setSelectedAccount = useSetAtom(selectedAccountIdAtom);
-  const setSelectedProfile = useSetAtom(selectedProfileIdAtom);
 
   useEffect(() => {
     let cancelled = false;
@@ -27,8 +20,6 @@ function AuthCallbackRoute() {
         const { data, error } = await authClient.getSession();
         if (cancelled) return;
         if (data && !error) {
-          setSelectedAccount(null);
-          setSelectedProfile(null);
           router.history.replace(callback);
           return;
         }
@@ -42,7 +33,7 @@ function AuthCallbackRoute() {
     return () => {
       cancelled = true;
     };
-  }, [router, setSelectedAccount, setSelectedProfile]);
+  }, [router]);
 
   return (
     <AuthLayout title="SSOログイン" description="ログイン処理中です...">

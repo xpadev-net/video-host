@@ -27,33 +27,21 @@ const AcceptInvitationSchema = z.object({
   profileId: z.string(),
 });
 
-// Resolve the account (authUserId) behind a public profile id picked from the
-// user search: the profile's own authUserId (default profile) or, for an
-// additional profile, the account it belongs to.
+// Resolve the owning account directly from any profile.
 async function resolveInviteeAccount(
   inviteeUserId: string,
 ): Promise<string | null> {
   const target = await prisma.user.findUnique({ where: { id: inviteeUserId } });
   if (!target) return null;
-  if (target.authUserId) return target.authUserId;
-  const membership = await prisma.authProfile.findUnique({
-    where: { profileId: inviteeUserId },
-  });
-  return membership?.authUserId ?? null;
+  return target.accountId;
 }
 
-// Profile ids owned by an account: its default profile plus additional ones.
-async function accountProfileIds(authUserId: string): Promise<string[]> {
-  const [profile, memberships] = await Promise.all([
-    prisma.user.findUnique({ where: { authUserId } }),
-    prisma.authProfile.findMany({
-      where: { authUserId },
-      select: { profileId: true },
-    }),
-  ]);
-  const ids = memberships.map((membership) => membership.profileId);
-  if (profile) ids.unshift(profile.id);
-  return ids;
+async function accountProfileIds(accountId: string): Promise<string[]> {
+  const profiles = await prisma.user.findMany({
+    where: { accountId },
+    select: { id: true },
+  });
+  return profiles.map((profile) => profile.id);
 }
 
 // Whether the target still accepts viewer grants. A movie must be LIMITED; a
@@ -98,7 +86,7 @@ async function buildSummaries(
     ),
   ];
 
-  const [movies, targetProfiles, inviters, inviteeDefaults, grantedProfiles] =
+  const [movies, targetProfiles, inviters, inviteeAccounts, grantedProfiles] =
     await Promise.all([
       movieIds.length
         ? prisma.movie.findMany({
@@ -113,8 +101,9 @@ async function buildSummaries(
         ? prisma.user.findMany({ where: { id: { in: inviterIds } } })
         : Promise.resolve([]),
       inviteeAuthIds.length
-        ? prisma.user.findMany({
-            where: { authUserId: { in: inviteeAuthIds } },
+        ? prisma.authUser.findMany({
+            where: { id: { in: inviteeAuthIds } },
+            select: { id: true, name: true },
           })
         : Promise.resolve([]),
       grantedIds.length
@@ -127,8 +116,8 @@ async function buildSummaries(
     targetProfiles.map((profile) => [profile.id, profile.name]),
   );
   const inviterById = new Map(inviters.map((user) => [user.id, user]));
-  const defaultByAuthId = new Map(
-    inviteeDefaults.map((user) => [user.authUserId as string, user]),
+  const accountById = new Map(
+    inviteeAccounts.map((account) => [account.id, account]),
   );
   const grantedById = new Map(grantedProfiles.map((user) => [user.id, user]));
 
@@ -152,13 +141,13 @@ async function buildSummaries(
         inviter: inviter ? filterUser(inviter) : undefined,
       };
     }
-    const inviteeDefault = defaultByAuthId.get(invitation.inviteeAuthUserId);
+    const inviteeAccount = accountById.get(invitation.inviteeAuthUserId);
     const granted = invitation.grantedProfileId
       ? grantedById.get(invitation.grantedProfileId)
       : undefined;
     return {
       ...base,
-      invitee: inviteeDefault ? filterUser(inviteeDefault) : undefined,
+      invitee: inviteeAccount,
       grantedProfile: granted ? filterUser(granted) : undefined,
     };
   });
@@ -167,7 +156,7 @@ async function buildSummaries(
 export const invitationsRoute = app
   .post("/", zValidator("json", CreateInvitationSchema), async (c) => {
     const user = c.get("user");
-    const authUserId = c.get("authUserId");
+    const authUserId = c.get("accountId") ?? c.get("authUserId");
     if (!user || !authUserId) unauthorized("Unauthorized");
 
     const { targetType, targetId, inviteeUserId } = c.req.valid("json");
@@ -223,7 +212,7 @@ export const invitationsRoute = app
   })
   .get("/", async (c) => {
     const user = c.get("user");
-    const authUserId = c.get("authUserId");
+    const authUserId = c.get("accountId") ?? c.get("authUserId");
     if (!user || !authUserId) unauthorized("Unauthorized");
 
     const profileIds = await accountProfileIds(authUserId);
@@ -250,7 +239,7 @@ export const invitationsRoute = app
     zValidator("json", AcceptInvitationSchema),
     async (c) => {
       const user = c.get("user");
-      const authUserId = c.get("authUserId");
+      const authUserId = c.get("accountId") ?? c.get("authUserId");
       if (!user || !authUserId) unauthorized("Unauthorized");
 
       const id = c.req.param("id");
@@ -308,7 +297,7 @@ export const invitationsRoute = app
   )
   .post("/:id/decline", async (c) => {
     const user = c.get("user");
-    const authUserId = c.get("authUserId");
+    const authUserId = c.get("accountId") ?? c.get("authUserId");
     if (!user || !authUserId) unauthorized("Unauthorized");
 
     const id = c.req.param("id");
@@ -328,7 +317,7 @@ export const invitationsRoute = app
   })
   .delete("/:id", async (c) => {
     const user = c.get("user");
-    const authUserId = c.get("authUserId");
+    const authUserId = c.get("accountId") ?? c.get("authUserId");
     if (!user || !authUserId) unauthorized("Unauthorized");
 
     const id = c.req.param("id");

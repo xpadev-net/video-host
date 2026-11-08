@@ -16,6 +16,18 @@ export const getSelectedProfileId = (): string | null => {
   }
 };
 
+export const getSelectedAccountId = (): string | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const value: unknown = JSON.parse(
+      window.localStorage.getItem("dashboard-selected-account") ?? "null",
+    );
+    return typeof value === "string" ? value : null;
+  } catch {
+    return null;
+  }
+};
+
 const customFetch = (input: RequestInfo | URL, requestInit?: RequestInit) => {
   const headers = new Headers(requestInit?.headers);
   if (headers.has("X-Profile-Id")) {
@@ -23,6 +35,10 @@ const customFetch = (input: RequestInfo | URL, requestInit?: RequestInit) => {
   } else {
     const profileId = getSelectedProfileId();
     if (profileId) headers.set("X-Profile-Id", profileId);
+  }
+  if (!headers.has("X-Account-Id")) {
+    const accountId = getSelectedAccountId();
+    if (accountId) headers.set("X-Account-Id", accountId);
   }
   return fetch(input, {
     ...requestInit,

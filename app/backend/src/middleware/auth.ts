@@ -1,9 +1,9 @@
 import { createMiddleware } from "hono/factory";
+import { HTTPException } from "hono/http-exception";
 import type { Env, HonoApp } from "@/@types/hono";
 import { AUTH_TRUSTED_ORIGINS, PUBLIC_ENDPOINTS } from "@/env";
 import { auth } from "@/lib/auth";
 import { isPathWithin, isTrustedMutationOrigin } from "@/lib/auth-policy";
-import { provisionAuthProfile } from "@/lib/auth-profile";
 import { prisma } from "@/lib/prisma";
 import { forbidden, unauthorized } from "@/utils/response";
 
@@ -45,29 +45,41 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
     c.header("Set-Cookie", cookie, { append: true });
   }
   if (session) {
-    const defaultProfile = await provisionAuthProfile(session.user);
+    const account = await prisma.authUser.findUnique({
+      where: { id: session.user.id },
+      select: { id: true, name: true, role: true },
+    });
+    if (!account) unauthorized("Account not found");
+    const requestedAccountId = c.req.header("x-account-id") || account.id;
+    if (requestedAccountId !== account.id && account.role !== "ADMIN")
+      forbidden("Admin access required");
+    c.set("account", account);
+    c.set("authUserId", account.id);
+    c.set("accountId", requestedAccountId);
     const requestedProfileId = c.req.header("x-profile-id");
-    let activeProfile = defaultProfile;
-    if (requestedProfileId && requestedProfileId !== defaultProfile.id) {
-      const membership = await prisma.authProfile.findFirst({
-        where: {
-          authUserId: session.user.id,
-          profileId: requestedProfileId,
-        },
-        include: { profile: true },
+    // Account management and profile selection must work without a selected
+    // profile, including when a stored profile has been deleted.
+    const accountOnly = isAccountEndpoint(path);
+    if (requestedProfileId && !accountOnly) {
+      const profile = await prisma.user.findUnique({
+        where: { id: requestedProfileId },
       });
-      if (membership) activeProfile = membership.profile;
+      if (!profile || profile.accountId !== requestedAccountId)
+        forbidden("Profile does not belong to your account");
+      c.set("user", { ...profile, role: account.role });
     }
-    if (activeProfile.kind === "HUMAN") {
-      c.set("authUserId", session.user.id);
-      // Account permissions remain available while the selected profile
-      // supplies the identity used for ownership and profile-level sharing.
-      c.set("user", { ...activeProfile, role: defaultProfile.role });
-      c.header("Cache-Control", "private, no-store");
+    if (
+      !c.get("user") &&
+      !accountOnly &&
+      !isPublicEndpoint(path) &&
+      hasRouteHandler(c.req.matchedRoutes, path)
+    ) {
+      throw new HTTPException(409, { message: "Profile selection required" });
     }
+    c.header("Cache-Control", "private, no-store");
   }
   if (
-    !c.get("user") &&
+    !c.get("account") &&
     !isPublicEndpoint(path) &&
     hasRouteHandler(c.req.matchedRoutes, path)
   ) {
@@ -99,4 +111,11 @@ function isPublicEndpoint(path: string): boolean {
     return true;
   }
   return PUBLIC_ENDPOINTS.some((prefix) => isPathWithin(path, prefix));
+}
+
+function isAccountEndpoint(path: string): boolean {
+  return (
+    isPathWithin(path, "/api/v4/accounts") ||
+    isPathWithin(path, "/api/v4/users/profiles")
+  );
 }

@@ -23,7 +23,7 @@ import { Route as AppMoviesMovieRouteImport } from "./routes/_app.movies.$movie"
 import { Route as AppSearchQueryRouteImport } from "./routes/_app.search.$query";
 import { Route as AppSeriesSeriesRouteImport } from "./routes/_app.series.$series";
 import { Route as AppUsersUserRouteImport } from "./routes/_app.users.$user";
-import { Route as AppDashboardAdminSystemAccountsRouteImport } from "./routes/_app.dashboard.admin.system-accounts";
+import { Route as AppDashboardAdminAccountsRouteImport } from "./routes/_app.dashboard.admin.accounts";
 import { Route as AppDashboardPlaylistsIndexRouteImport } from "./routes/_app.dashboard.playlists.index";
 import { Route as AppDashboardPlaylistsNewRouteImport } from "./routes/_app.dashboard.playlists.new";
 import { Route as AppDashboardSeriesIndexRouteImport } from "./routes/_app.dashboard.series.index";
@@ -108,10 +108,10 @@ const AppUsersUserRoute = AppUsersUserRouteImport.update({
   path: "/users/$user",
   getParentRoute: () => AppRoute,
 } as any);
-const AppDashboardAdminSystemAccountsRoute =
-  AppDashboardAdminSystemAccountsRouteImport.update({
-    id: "/admin/system-accounts",
-    path: "/admin/system-accounts",
+const AppDashboardAdminAccountsRoute =
+  AppDashboardAdminAccountsRouteImport.update({
+    id: "/admin/accounts",
+    path: "/admin/accounts",
     getParentRoute: () => AppDashboardRoute,
   } as any);
 const AppDashboardPlaylistsIndexRoute =
@@ -180,7 +180,7 @@ export interface FileRoutesByFullPath {
   "/series/$series": typeof AppSeriesSeriesRoute;
   "/users/$user": typeof AppUsersUserRoute;
   "/dashboard/": typeof AppDashboardIndexRoute;
-  "/dashboard/admin/system-accounts": typeof AppDashboardAdminSystemAccountsRoute;
+  "/dashboard/admin/accounts": typeof AppDashboardAdminAccountsRoute;
   "/dashboard/playlists/new": typeof AppDashboardPlaylistsNewRoute;
   "/dashboard/series/new": typeof AppDashboardSeriesNewRoute;
   "/dashboard/videos/new": typeof AppDashboardVideosNewRoute;
@@ -205,7 +205,7 @@ export interface FileRoutesByTo {
   "/series/$series": typeof AppSeriesSeriesRoute;
   "/users/$user": typeof AppUsersUserRoute;
   "/dashboard": typeof AppDashboardIndexRoute;
-  "/dashboard/admin/system-accounts": typeof AppDashboardAdminSystemAccountsRoute;
+  "/dashboard/admin/accounts": typeof AppDashboardAdminAccountsRoute;
   "/dashboard/playlists/new": typeof AppDashboardPlaylistsNewRoute;
   "/dashboard/series/new": typeof AppDashboardSeriesNewRoute;
   "/dashboard/videos/new": typeof AppDashboardVideosNewRoute;
@@ -233,7 +233,7 @@ export interface FileRoutesById {
   "/_app/series/$series": typeof AppSeriesSeriesRoute;
   "/_app/users/$user": typeof AppUsersUserRoute;
   "/_app/dashboard/": typeof AppDashboardIndexRoute;
-  "/_app/dashboard/admin/system-accounts": typeof AppDashboardAdminSystemAccountsRoute;
+  "/_app/dashboard/admin/accounts": typeof AppDashboardAdminAccountsRoute;
   "/_app/dashboard/playlists/new": typeof AppDashboardPlaylistsNewRoute;
   "/_app/dashboard/series/new": typeof AppDashboardSeriesNewRoute;
   "/_app/dashboard/videos/new": typeof AppDashboardVideosNewRoute;
@@ -261,7 +261,7 @@ export interface FileRouteTypes {
     | "/series/$series"
     | "/users/$user"
     | "/dashboard/"
-    | "/dashboard/admin/system-accounts"
+    | "/dashboard/admin/accounts"
     | "/dashboard/playlists/new"
     | "/dashboard/series/new"
     | "/dashboard/videos/new"
@@ -286,7 +286,7 @@ export interface FileRouteTypes {
     | "/series/$series"
     | "/users/$user"
     | "/dashboard"
-    | "/dashboard/admin/system-accounts"
+    | "/dashboard/admin/accounts"
     | "/dashboard/playlists/new"
     | "/dashboard/series/new"
     | "/dashboard/videos/new"
@@ -313,7 +313,7 @@ export interface FileRouteTypes {
     | "/_app/series/$series"
     | "/_app/users/$user"
     | "/_app/dashboard/"
-    | "/_app/dashboard/admin/system-accounts"
+    | "/_app/dashboard/admin/accounts"
     | "/_app/dashboard/playlists/new"
     | "/_app/dashboard/series/new"
     | "/_app/dashboard/videos/new"
@@ -441,11 +441,11 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AppUsersUserRouteImport;
       parentRoute: typeof AppRoute;
     };
-    "/_app/dashboard/admin/system-accounts": {
-      id: "/_app/dashboard/admin/system-accounts";
-      path: "/admin/system-accounts";
-      fullPath: "/dashboard/admin/system-accounts";
-      preLoaderRoute: typeof AppDashboardAdminSystemAccountsRouteImport;
+    "/_app/dashboard/admin/accounts": {
+      id: "/_app/dashboard/admin/accounts";
+      path: "/admin/accounts";
+      fullPath: "/dashboard/admin/accounts";
+      preLoaderRoute: typeof AppDashboardAdminAccountsRouteImport;
       parentRoute: typeof AppDashboardRoute;
     };
     "/_app/dashboard/playlists/": {
@@ -517,7 +517,7 @@ declare module "@tanstack/react-router" {
 interface AppDashboardRouteChildren {
   AppDashboardInvitationsRoute: typeof AppDashboardInvitationsRoute;
   AppDashboardIndexRoute: typeof AppDashboardIndexRoute;
-  AppDashboardAdminSystemAccountsRoute: typeof AppDashboardAdminSystemAccountsRoute;
+  AppDashboardAdminAccountsRoute: typeof AppDashboardAdminAccountsRoute;
   AppDashboardPlaylistsNewRoute: typeof AppDashboardPlaylistsNewRoute;
   AppDashboardSeriesNewRoute: typeof AppDashboardSeriesNewRoute;
   AppDashboardVideosNewRoute: typeof AppDashboardVideosNewRoute;
@@ -532,7 +532,7 @@ interface AppDashboardRouteChildren {
 const AppDashboardRouteChildren: AppDashboardRouteChildren = {
   AppDashboardInvitationsRoute: AppDashboardInvitationsRoute,
   AppDashboardIndexRoute: AppDashboardIndexRoute,
-  AppDashboardAdminSystemAccountsRoute: AppDashboardAdminSystemAccountsRoute,
+  AppDashboardAdminAccountsRoute: AppDashboardAdminAccountsRoute,
   AppDashboardPlaylistsNewRoute: AppDashboardPlaylistsNewRoute,
   AppDashboardSeriesNewRoute: AppDashboardSeriesNewRoute,
   AppDashboardVideosNewRoute: AppDashboardVideosNewRoute,

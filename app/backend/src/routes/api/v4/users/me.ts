@@ -45,12 +45,6 @@ export const meRoute = app
     }
 
     const { visibility } = data;
-    // The account's default profile is always public; only additional
-    // profiles may be made non-public. Viewer grants happen via invitations.
-    if (visibility !== undefined && user.authUserId) {
-      badRequest("The default profile is always public");
-    }
-
     const updatedUser = await prisma.user.update({
       where: {
         id: user.id,
@@ -59,9 +53,7 @@ export const meRoute = app
         name: data.name === undefined ? user.name : data.name,
         avatarUrl:
           data.avatarUrl === undefined ? user.avatarUrl : data.avatarUrl,
-        visibility: user.authUserId
-          ? undefined
-          : (visibility ?? user.visibility),
+        visibility: visibility ?? user.visibility,
       },
       include: { profileViewers: { include: { user: true } } },
     });

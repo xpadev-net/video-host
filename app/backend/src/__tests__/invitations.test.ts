@@ -1,16 +1,11 @@
-import type { User } from "@prisma/client";
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { User } from "@/@types/account";
 import type { Env } from "../@types/hono";
 
 const database = vi.hoisted(() => ({
+  authUser: { findMany: vi.fn().mockResolvedValue([]) },
   user: { findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn() },
-  authProfile: {
-    findUnique: vi.fn(),
-    findMany: vi.fn(),
-    count: vi.fn(),
-    create: vi.fn(),
-  },
   movie: { findUnique: vi.fn() },
   accessInvitation: {
     findFirst: vi.fn(),
@@ -26,9 +21,6 @@ const database = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/prisma", () => ({ prisma: database }));
-vi.mock("@/utils/systemAccountCache", () => ({
-  isSystemAccount: vi.fn().mockResolvedValue(false),
-}));
 
 import { invitationsRoute } from "../routes/api/v4/invitations";
 import { usersRoute } from "../routes/api/v4/users";
@@ -38,8 +30,8 @@ const person = (id: string, role: User["role"] = "USER"): User => ({
   name: id,
   username: id,
   role,
-  kind: "HUMAN",
-  authUserId: role === "ADMIN" ? `auth-${id}` : null,
+
+  accountId: `auth-${id}`,
   avatarUrl: null,
   visibility: "PUBLIC",
   externalId: null,
@@ -53,7 +45,14 @@ const inviteeAccountId = "auth-invitee";
 function appFor(actor?: User, authUserId?: string) {
   const app = new Hono<Env>();
   app.use("*", async (c, next) => {
-    if (actor) c.set("user", actor);
+    if (actor) {
+      c.set("user", actor);
+      c.set("account", {
+        id: actor.accountId,
+        name: actor.name,
+        role: actor.role,
+      });
+    }
     if (authUserId) c.set("authUserId", authUserId);
     await next();
   });
@@ -75,14 +74,14 @@ beforeEach(() => {
     return Promise.all(fn as unknown[]);
   });
   database.user.findUnique.mockResolvedValue(inviter);
-  database.authProfile.findMany.mockResolvedValue([]);
+  database.user.findMany.mockResolvedValue([inviter]);
 });
 
 describe("invitation creation", () => {
   it("rejects sharing a movie the caller does not own", async () => {
     database.user.findUnique.mockResolvedValue({
       ...inviter,
-      authUserId: inviteeAccountId,
+      accountId: inviteeAccountId,
     });
     database.movie.findUnique.mockResolvedValue({
       id: "m1",
@@ -106,7 +105,7 @@ describe("invitation creation", () => {
   it("rejects inviting your own account", async () => {
     database.user.findUnique.mockResolvedValue({
       ...inviter,
-      authUserId: "auth-inviter",
+      accountId: "auth-inviter",
     });
     database.movie.findUnique.mockResolvedValue({
       id: "m1",
@@ -130,7 +129,7 @@ describe("invitation creation", () => {
   it("creates an invitation for a movie the caller owns", async () => {
     database.user.findUnique.mockResolvedValue({
       ...inviter,
-      authUserId: inviteeAccountId,
+      accountId: inviteeAccountId,
     });
     database.movie.findUnique.mockResolvedValue({
       id: "m1",
@@ -191,6 +190,7 @@ describe("invitation acceptance", () => {
 
     const actor = person("chosen-profile");
     database.user.findUnique.mockResolvedValue(actor);
+    database.user.findMany.mockResolvedValue([actor]);
 
     const res = await appFor(actor, "auth-invitee").request(
       "/invitations/i1/accept",

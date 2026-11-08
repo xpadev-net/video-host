@@ -1,6 +1,10 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import { client, getSelectedProfileId } from "@/lib/client";
+import {
+  client,
+  getSelectedAccountId,
+  getSelectedProfileId,
+} from "@/lib/client";
 
 export type UploadPhase =
   | "idle"
@@ -21,6 +25,7 @@ export interface InitUploadResult {
   title: string;
   uploadUrl: string;
   profileId: string | null;
+  accountId: string | null;
 }
 
 interface UseUploadResult {
@@ -54,6 +59,7 @@ export const useUpload = (): UseUploadResult => {
   const uploadedMovieIdRef = useRef<string | null>(null);
   const uploadedFileRef = useRef<File | null>(null);
   const profileByMovieIdRef = useRef(new Map<string, string | null>());
+  const accountByMovieIdRef = useRef(new Map<string, string | null>());
   const sessionByMovieIdRef = useRef(new Map<string, string>());
   const sessionUserIdRef = useRef(sessionUserId);
 
@@ -65,6 +71,7 @@ export const useUpload = (): UseUploadResult => {
     uploadedMovieIdRef.current = null;
     uploadedFileRef.current = null;
     profileByMovieIdRef.current.clear();
+    accountByMovieIdRef.current.clear();
     sessionByMovieIdRef.current.clear();
     setState({ phase: "idle", progress: 0, error: null });
   }, [sessionUserId]);
@@ -75,6 +82,7 @@ export const useUpload = (): UseUploadResult => {
     uploadedMovieIdRef.current = null;
     uploadedFileRef.current = null;
     profileByMovieIdRef.current.clear();
+    accountByMovieIdRef.current.clear();
     sessionByMovieIdRef.current.clear();
     setState({ phase: "idle", progress: 0, error: null });
   }, []);
@@ -142,6 +150,7 @@ export const useUpload = (): UseUploadResult => {
       {
         headers: {
           "X-Profile-Id": profileByMovieIdRef.current.get(movieId) ?? "",
+          "X-Account-Id": accountByMovieIdRef.current.get(movieId) ?? "",
         },
       },
     );
@@ -171,6 +180,7 @@ export const useUpload = (): UseUploadResult => {
       if (!sessionId) return null;
       setState({ phase: "creating", progress: 0, error: null });
       const profileId = getSelectedProfileId();
+      const accountId = getSelectedAccountId();
       try {
         const res = await client.api.v4.upload.init.$post(
           {
@@ -181,7 +191,12 @@ export const useUpload = (): UseUploadResult => {
               asUserId: options?.asUserId,
             },
           },
-          { headers: { "X-Profile-Id": profileId ?? "" } },
+          {
+            headers: {
+              "X-Profile-Id": profileId ?? "",
+              "X-Account-Id": accountId ?? "",
+            },
+          },
         );
         if (!res.ok) {
           throw new Error("アップロード情報の作成に失敗しました");
@@ -190,12 +205,14 @@ export const useUpload = (): UseUploadResult => {
         if (sessionUserIdRef.current !== sessionId) return null;
         const movieId = json.data.movie.id;
         profileByMovieIdRef.current.set(movieId, profileId);
+        accountByMovieIdRef.current.set(movieId, accountId);
         sessionByMovieIdRef.current.set(movieId, sessionId);
         return {
           movieId,
           title: json.data.movie.title,
           uploadUrl: json.data.uploadUrl,
           profileId,
+          accountId,
         };
       } catch (error) {
         if (sessionUserIdRef.current === sessionId)
@@ -245,6 +262,10 @@ export const useUpload = (): UseUploadResult => {
       const profileId = profileByMovieIdRef.current.has(movieId)
         ? (profileByMovieIdRef.current.get(movieId) ?? null)
         : getSelectedProfileId();
+      const accountId = accountByMovieIdRef.current.has(movieId)
+        ? (accountByMovieIdRef.current.get(movieId) ?? null)
+        : getSelectedAccountId();
+      accountByMovieIdRef.current.set(movieId, accountId);
       profileByMovieIdRef.current.set(movieId, profileId);
       sessionByMovieIdRef.current.set(movieId, sessionId);
       if (
@@ -273,7 +294,12 @@ export const useUpload = (): UseUploadResult => {
               size: file.size,
             },
           },
-          { headers: { "X-Profile-Id": profileId ?? "" } },
+          {
+            headers: {
+              "X-Profile-Id": profileId ?? "",
+              "X-Account-Id": accountId ?? "",
+            },
+          },
         );
         if (!res.ok) {
           throw new Error("再開用URLの取得に失敗しました");

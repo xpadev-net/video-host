@@ -1,5 +1,5 @@
-import type { User } from "@prisma/client";
 import { describe, expect, it } from "vitest";
+import type { User } from "@/@types/account";
 import {
   buildMovieAccessWhere,
   buildProfileAccessFilter,
@@ -26,8 +26,8 @@ describe("Authorization - Visibility Filtering", () => {
     role: "USER",
     avatarUrl: null,
     visibility: "PUBLIC",
-    kind: "HUMAN",
-    authUserId: null,
+
+    accountId: "auth-member",
     externalId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -40,8 +40,8 @@ describe("Authorization - Visibility Filtering", () => {
     role: "ADMIN",
     avatarUrl: null,
     visibility: "PUBLIC",
-    kind: "HUMAN",
-    authUserId: null,
+
+    accountId: "auth-member",
     externalId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -54,8 +54,8 @@ describe("Authorization - Visibility Filtering", () => {
     role: "USER",
     avatarUrl: null,
     visibility: "PUBLIC",
-    kind: "HUMAN",
-    authUserId: null,
+
+    accountId: "auth-member",
     externalId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
