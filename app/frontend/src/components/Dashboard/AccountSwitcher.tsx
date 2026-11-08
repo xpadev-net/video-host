@@ -36,7 +36,6 @@ export const AccountSwitcher: FC = () => {
   );
   const [selectedProfileId, setSelectedProfileId] = useAtom(
     selectedProfileIdAtom,
-    uploadSelectionLockedAtom,
   );
   const selectionLocked = useAtomValue(uploadSelectionLockedAtom);
   const uploadBusyRef = useRef(selectionLocked);
