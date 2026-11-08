@@ -4,6 +4,7 @@ import {
   appendForwardedPeer,
   getApiProxyTarget,
 } from "../src/server/api-upstream.ts";
+import { resolveAuthBaseURL } from "../src/utils/authBaseURL.ts";
 import {
   validatePassword,
   validatePasswordMatch,
@@ -91,6 +92,33 @@ test("API endpoint placeholders are safe before runtime substitution", () => {
   assert.equal(
     resolveApiEndpoint("http://localhost:3001"),
     "http://localhost:3001",
+  );
+});
+
+test("Better Auth always gets an absolute origin in browser and SSR", () => {
+  assert.equal(
+    resolveAuthBaseURL("", "https://movie.example.test", undefined),
+    "https://movie.example.test",
+  );
+  assert.equal(
+    resolveAuthBaseURL(
+      "",
+      "https://movie.example.test",
+      "https://preview.example.test",
+    ),
+    "https://preview.example.test",
+  );
+  assert.equal(
+    resolveAuthBaseURL(
+      "https://api.example.test",
+      "https://movie.example.test",
+      undefined,
+    ),
+    "https://api.example.test",
+  );
+  assert.equal(
+    resolveAuthBaseURL("", undefined, undefined),
+    "http://localhost:3000",
   );
 });
 
