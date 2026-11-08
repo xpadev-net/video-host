@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
 import type { Visibility } from "@video-host/backend";
+import { useSetAtom } from "jotai";
 import { Film } from "lucide-react";
 import {
   type ChangeEvent,
@@ -10,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { uploadSelectionLockedAtom } from "@/atoms/SelectedAccount";
 import { DashboardLoading } from "@/components/Dashboard/DashboardLoading";
 import { useConfirm } from "@/components/Feedback/FeedbackProvider";
 import { useUpload } from "@/hooks/useUpload";
@@ -51,6 +53,7 @@ function NewVideoPage() {
   const uploadActiveRef = useRef(false);
   const uploadOperationRef = useRef(0);
   const cancelDeleteMovieIdRef = useRef<string | null>(null);
+  const movieAccountIdRef = useRef<string | null>(null);
   const movieProfileIdRef = useRef<string | null>(null);
   const movieSessionUserIdRef = useRef<string | null>(null);
   const currentSessionUserIdRef = useRef(sessionUserId);
@@ -78,6 +81,11 @@ function NewVideoPage() {
   // is safe. beforeunload only covers real navigation, so client-side route
   // changes need their own confirm gate.
   const needsLeaveGuard = isBusy || savePending || cancelDeletePending;
+  const setSelectionLocked = useSetAtom(uploadSelectionLockedAtom);
+  useLayoutEffect(() => {
+    setSelectionLocked(needsLeaveGuard);
+    return () => setSelectionLocked(false);
+  }, [needsLeaveGuard, setSelectionLocked]);
   useBlocker({
     shouldBlockFn: async () =>
       !(await confirm({
@@ -116,7 +124,12 @@ function NewVideoPage() {
         param: { movie: id },
         json: submitted,
       },
-      { headers: { "X-Profile-Id": movieProfileIdRef.current ?? "" } },
+      {
+        headers: {
+          "X-Profile-Id": movieProfileIdRef.current ?? "",
+          "X-Account-Id": movieAccountIdRef.current ?? "",
+        },
+      },
     );
     if (!res.ok) {
       throw new Error("メタデータの保存に失敗しました");
@@ -144,6 +157,7 @@ function NewVideoPage() {
     uploadActiveRef.current = false;
     movieIdRef.current = null;
     movieProfileIdRef.current = null;
+    movieAccountIdRef.current = null;
     movieSessionUserIdRef.current = null;
     cancelDeleteMovieIdRef.current = null;
     saveQueueRef.current = Promise.resolve();
@@ -183,6 +197,7 @@ function NewVideoPage() {
     setMovieId(null);
     movieIdRef.current = null;
     movieProfileIdRef.current = null;
+    movieAccountIdRef.current = null;
     movieSessionUserIdRef.current = null;
     setSaved(false);
     setError(null);
@@ -202,6 +217,7 @@ function NewVideoPage() {
     movieIdRef.current = result.movieId;
     setMovieId(result.movieId);
     movieProfileIdRef.current = result.profileId;
+    movieAccountIdRef.current = result.accountId;
     movieSessionUserIdRef.current = startingSessionId;
     metadataRef.current = { ...metadataRef.current, title: result.title };
     setTitle(result.title);
@@ -300,6 +316,7 @@ function NewVideoPage() {
             movieIdRef.current = result.movieId;
             setMovieId(result.movieId);
             movieProfileIdRef.current = result.profileId;
+            movieAccountIdRef.current = result.accountId;
             movieSessionUserIdRef.current = sessionId;
             metadataRef.current = {
               ...metadataRef.current,
@@ -346,6 +363,7 @@ function NewVideoPage() {
     setMovieId(null);
     movieIdRef.current = null;
     movieProfileIdRef.current = null;
+    movieAccountIdRef.current = null;
     movieSessionUserIdRef.current = null;
     setTitle("");
     setDescription("");
@@ -363,7 +381,12 @@ function NewVideoPage() {
     try {
       const res = await client.api.v4.movies[":movie"].$delete(
         { param: { movie: id } },
-        { headers: { "X-Profile-Id": profileId ?? "" } },
+        {
+          headers: {
+            "X-Profile-Id": profileId ?? "",
+            "X-Account-Id": movieAccountIdRef.current ?? "",
+          },
+        },
       );
       if (!res.ok && Number(res.status) !== 404) {
         throw new Error("Failed to delete canceled upload");

@@ -1,7 +1,10 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { createStore, Provider } from "jotai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { selectedProfileIdAtom } from "@/atoms/SelectedAccount";
+import {
+  selectedProfileIdAtom,
+  uploadSelectionLockedAtom,
+} from "@/atoms/SelectedAccount";
 import { ProfileSelectionGate } from "@/components/ProfileSelectionGate";
 
 const mocks = vi.hoisted(() => ({
@@ -49,9 +52,10 @@ beforeEach(() => {
   mocks.loading = false;
   mocks.pathname = "/";
 });
-function setup(profileId: string | null = null) {
+function setup(profileId: string | null = null, uploadActive = false) {
   const store = createStore();
   store.set(selectedProfileIdAtom, profileId);
+  store.set(uploadSelectionLockedAtom, uploadActive);
   render(
     <Provider store={store}>
       <ProfileSelectionGate>
@@ -138,5 +142,13 @@ describe("explicit device profile selection", () => {
     mocks.session = false;
     setup();
     expect(screen.getByText("コンテンツ")).toBeTruthy();
+  });
+  it("keeps an active upload subtree mounted when a cross-tab selection becomes unknown", () => {
+    const store = setup("profile-a", true);
+    const content = screen.getByText("コンテンツ");
+    act(() => store.set(selectedProfileIdAtom, "unknown-profile"));
+    expect(screen.getByText("コンテンツ")).toBe(content);
+    expect(content.isConnected).toBe(true);
+    expect(mocks.mutate).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,4 @@
+import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
 // Selected account ID for admin account switching
@@ -14,3 +15,6 @@ export const selectedProfileIdAtom = atomWithStorage<string | null>(
   "dashboard-selected-profile",
   null,
 );
+
+// Keep profile/account controls from discarding an active upload form.
+export const uploadSelectionLockedAtom = atom(false);

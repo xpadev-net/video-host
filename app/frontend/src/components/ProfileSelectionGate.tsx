@@ -1,9 +1,10 @@
 import { useRouterState } from "@tanstack/react-router";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 import {
   selectedAccountIdAtom,
   selectedProfileIdAtom,
+  uploadSelectionLockedAtom,
 } from "@/atoms/SelectedAccount";
 import { AccountSwitcher } from "@/components/Dashboard/AccountSwitcher";
 import { useProfiles } from "@/hooks/useProfiles";
@@ -14,6 +15,7 @@ export function ProfileSelectionGate({ children }: { children: ReactNode }) {
   const { data: profiles, error, isLoading, mutate } = useProfiles();
   const [profileId, setProfileId] = useAtom(selectedProfileIdAtom);
   const [accountId] = useAtom(selectedAccountIdAtom);
+  const selectionLocked = useAtomValue(uploadSelectionLockedAtom);
   const accountRef = useRef(accountId);
   useLayoutEffect(() => {
     accountRef.current = accountId;
@@ -29,7 +31,14 @@ export function ProfileSelectionGate({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    if (!sessionId || !profilesLoaded || !profileId || valid || hasLoadError)
+    if (
+      selectionLocked ||
+      !sessionId ||
+      !profilesLoaded ||
+      !profileId ||
+      valid ||
+      hasLoadError
+    )
       return;
     let cancelled = false;
     // A storage event may select a profile created in another tab. Cached
@@ -53,6 +62,7 @@ export function ProfileSelectionGate({ children }: { children: ReactNode }) {
     };
   }, [
     sessionId,
+    selectionLocked,
     accountId,
     profilesLoaded,
     profileId,
@@ -69,6 +79,8 @@ export function ProfileSelectionGate({ children }: { children: ReactNode }) {
       </p>
     );
   if (!session) return children;
+  // A cross-tab selection change must not unmount an active upload.
+  if (selectionLocked) return children;
   // Account administration does not require assuming a profile identity.
   if (pathname === "/dashboard/admin/accounts") return children;
   if (isLoading || (!profiles && !error))

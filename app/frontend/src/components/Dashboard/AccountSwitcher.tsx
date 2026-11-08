@@ -1,9 +1,11 @@
+import { Link } from "@tanstack/react-router";
 import type { InferResponseType } from "hono";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { type FC, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   selectedAccountIdAtom,
   selectedProfileIdAtom,
+  uploadSelectionLockedAtom,
 } from "@/atoms/SelectedAccount";
 import { ProfileVisibilityEditor } from "@/components/Dashboard/ProfileVisibilityEditor";
 import { useAccount } from "@/hooks/useAccount";
@@ -34,7 +36,11 @@ export const AccountSwitcher: FC = () => {
   );
   const [selectedProfileId, setSelectedProfileId] = useAtom(
     selectedProfileIdAtom,
+    uploadSelectionLockedAtom,
   );
+  const selectionLocked = useAtomValue(uploadSelectionLockedAtom);
+  const uploadBusyRef = useRef(selectionLocked);
+  const creationRequestRef = useRef(0);
   const selectedAccountIdRef = useRef(selectedAccountId);
   const selectedProfileIdRef = useRef(selectedProfileId);
   const selectionGenerationRef = useRef(0);
@@ -46,9 +52,17 @@ export const AccountSwitcher: FC = () => {
 
   const profileList = profiles ?? [];
 
+  useLayoutEffect(
+    () => () => {
+      creationRequestRef.current += 1;
+    },
+    [],
+  );
+
   useLayoutEffect(() => {
     if (sessionUserIdRef.current !== sessionUserId) {
       sessionUserIdRef.current = sessionUserId;
+      creationRequestRef.current += 1;
       selectionGenerationRef.current += 1;
       setProfileError(null);
       setIsCreatingProfile(false);
@@ -58,12 +72,14 @@ export const AccountSwitcher: FC = () => {
       selectionGenerationRef.current += 1;
     }
     if (selectedAccountIdRef.current !== selectedAccountId) {
+      creationRequestRef.current += 1;
       selectionGenerationRef.current += 1;
       setProfileError(null);
       setIsCreatingProfile(false);
     }
     selectedAccountIdRef.current = selectedAccountId;
-  }, [selectedAccountId, selectedProfileId, sessionUserId]);
+    uploadBusyRef.current = selectionLocked;
+  }, [selectedAccountId, selectedProfileId, sessionUserId, selectionLocked]);
 
   useEffect(() => {
     if (account && !isAdmin) {
@@ -88,6 +104,7 @@ export const AccountSwitcher: FC = () => {
   const profileSelectValue = selectedProfile?.id ?? "";
 
   const handleProfileChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    if (selectionLocked) return;
     const value = event.target.value;
     const nextProfileId = value || null;
     setSelectedProfileId(nextProfileId);
@@ -95,6 +112,8 @@ export const AccountSwitcher: FC = () => {
 
   const handleCreateProfile = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (selectionLocked || isCreatingProfile) return;
+    const creationRequest = ++creationRequestRef.current;
     const accountIdAtStart = selectedAccountIdRef.current;
     const selectionGenerationAtStart = selectionGenerationRef.current;
     const sessionUserIdAtStart = sessionUserIdRef.current;
@@ -123,7 +142,8 @@ export const AccountSwitcher: FC = () => {
       const profile = (await res.json()).data;
       if (
         sessionUserIdRef.current !== sessionUserIdAtStart ||
-        selectedAccountIdRef.current !== accountIdAtStart
+        selectedAccountIdRef.current !== accountIdAtStart ||
+        creationRequestRef.current !== creationRequest
       )
         return;
       await mutateProfiles((current) => [...(current ?? []), profile], {
@@ -131,14 +151,16 @@ export const AccountSwitcher: FC = () => {
       });
       if (
         sessionUserIdRef.current !== sessionUserIdAtStart ||
-        selectedAccountIdRef.current !== accountIdAtStart
+        selectedAccountIdRef.current !== accountIdAtStart ||
+        creationRequestRef.current !== creationRequest
       )
         return;
       setNewName("");
       setNewUsername("");
       if (
         selectedAccountIdRef.current === accountIdAtStart &&
-        selectionGenerationRef.current === selectionGenerationAtStart
+        selectionGenerationRef.current === selectionGenerationAtStart &&
+        !uploadBusyRef.current
       )
         setSelectedProfileId(profile.id);
     } catch {
@@ -152,7 +174,7 @@ export const AccountSwitcher: FC = () => {
       if (
         sessionUserIdRef.current === sessionUserIdAtStart &&
         selectedAccountIdRef.current === accountIdAtStart &&
-        selectionGenerationRef.current === selectionGenerationAtStart
+        creationRequestRef.current === creationRequest
       )
         setIsCreatingProfile(false);
     }
@@ -160,6 +182,11 @@ export const AccountSwitcher: FC = () => {
 
   return (
     <div className="account-switcher">
+      {selectionLocked && (
+        <p role="status">
+          アップロード処理が完了するまでプロフィールの切替はできません。
+        </p>
+      )}
       {profilesLoadError && (
         <p role="alert">
           プロフィールを更新できませんでした。{" "}
@@ -177,6 +204,7 @@ export const AccountSwitcher: FC = () => {
             id="profile-select"
             value={profileSelectValue}
             onChange={handleProfileChange}
+            disabled={selectionLocked}
             className="account-switcher-select"
           >
             <option value="" disabled>
@@ -220,7 +248,7 @@ export const AccountSwitcher: FC = () => {
         <button
           type="submit"
           className="rounded-md border border-border px-3 py-2 font-medium disabled:opacity-50"
-          disabled={isCreatingProfile}
+          disabled={isCreatingProfile || selectionLocked}
         >
           {isCreatingProfile ? "作成中..." : "プロフィールを追加"}
         </button>
@@ -234,7 +262,9 @@ export const AccountSwitcher: FC = () => {
           <select
             id="account-select"
             value={selectedAccountId || ""}
+            disabled={selectionLocked}
             onChange={(event) => {
+              if (selectionLocked) return;
               setSelectedAccountId(event.target.value || null);
               setSelectedProfileId(null);
             }}
@@ -247,6 +277,9 @@ export const AccountSwitcher: FC = () => {
               </option>
             ))}
           </select>
+          <Link to="/dashboard/admin/accounts" className="mt-3 block underline">
+            アカウント管理
+          </Link>
           {selectedAccount && (
             <div className="account-switcher-note">
               {selectedAccount.name} を管理中
