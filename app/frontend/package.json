@@ -39,7 +39,7 @@
     "clsx": "^2.1.1",
     "event-source-plus": "^0.1.15",
     "hls.js": "^1.7.3",
-    "hono": "^4.13.13",
+    "hono": "^4.13.16",
     "jotai": "^2.20.3",
     "lucide-react": "^0.555.0",
     "nitro": "^3.0.260610-beta",
